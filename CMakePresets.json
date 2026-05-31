@@ -1,0 +1,176 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "$schema": "https://cmake.org/cmake/help/latest/_downloads/3e0af8bd58acc9b6de479e18e26e48c2/schema.json",
+
+  "configurePresets": [
+
+    {
+      "name": "base",
+      "hidden": true,
+      "description": "Shared defaults inherited by all concrete presets",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "installDir": "${sourceDir}/install/${presetName}",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_MANIFEST_MODE": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "PLATEMAKER_BUILD_TESTS": "ON"
+      }
+    },
+
+    {
+      "name": "windows-msvc",
+      "displayName": "Windows · MSVC · Release",
+      "description": "Primary Windows build — MSVC toolchain, Release configuration",
+      "inherits": "base",
+      "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "toolset": {
+        "value": "host=x64",
+        "strategy": "set"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "PLATEMAKER_BUILD_GUI": "ON"
+      }
+    },
+
+    {
+      "name": "windows-msvc-debug",
+      "displayName": "Windows · MSVC · Debug",
+      "description": "Windows debug build — full symbols, no optimisation, assertions enabled",
+      "inherits": "windows-msvc",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+
+    {
+      "name": "linux-gcc",
+      "displayName": "Linux · GCC · Release",
+      "description": "Linux / WSL2 build — GCC toolchain, Release configuration",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "VCPKG_TARGET_TRIPLET": "x64-linux",
+        "PLATEMAKER_BUILD_GUI": "ON"
+      }
+    },
+
+    {
+      "name": "linux-gcc-debug",
+      "displayName": "Linux · GCC · Debug",
+      "description": "Linux debug build — full symbols, AddressSanitizer enabled",
+      "inherits": "linux-gcc",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_FLAGS_DEBUG": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+        "CMAKE_CXX_FLAGS_DEBUG": "-fsanitize=address,undefined -fno-omit-frame-pointer"
+      }
+    },
+
+    {
+      "name": "linux-cli-only",
+      "displayName": "Linux · GCC · CLI only (no Qt)",
+      "description": "Headless build — libplatemaker + CLI binary only, no Qt dependency",
+      "inherits": "linux-gcc",
+      "cacheVariables": {
+        "PLATEMAKER_BUILD_GUI": "OFF"
+      }
+    }
+
+  ],
+
+  "buildPresets": [
+
+    {
+      "name": "windows-msvc",
+      "displayName": "Build · Windows MSVC Release",
+      "configurePreset": "windows-msvc",
+      "configuration": "Release"
+    },
+
+    {
+      "name": "windows-msvc-debug",
+      "displayName": "Build · Windows MSVC Debug",
+      "configurePreset": "windows-msvc-debug",
+      "configuration": "Debug"
+    },
+
+    {
+      "name": "linux-gcc",
+      "displayName": "Build · Linux GCC Release",
+      "configurePreset": "linux-gcc",
+      "jobs": 0
+    },
+
+    {
+      "name": "linux-gcc-debug",
+      "displayName": "Build · Linux GCC Debug",
+      "configurePreset": "linux-gcc-debug",
+      "jobs": 0
+    },
+
+    {
+      "name": "linux-cli-only",
+      "displayName": "Build · Linux CLI only",
+      "configurePreset": "linux-cli-only",
+      "jobs": 0
+    }
+
+  ],
+
+  "testPresets": [
+
+    {
+      "name": "windows-msvc",
+      "displayName": "Test · Windows MSVC",
+      "configurePreset": "windows-msvc",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+
+    {
+      "name": "windows-msvc-debug",
+      "displayName": "Test · Windows MSVC Debug",
+      "configurePreset": "windows-msvc-debug",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+
+    {
+      "name": "linux-gcc",
+      "displayName": "Test · Linux GCC",
+      "configurePreset": "linux-gcc",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+
+    {
+      "name": "linux-gcc-debug",
+      "displayName": "Test · Linux GCC Debug",
+      "configurePreset": "linux-gcc-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+
+  ]
+}
