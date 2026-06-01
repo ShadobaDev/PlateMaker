@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "platemaker",
+  "version": "0.1.0",
+  "description": "Comic artist canvas tool — pre-processing and post-processing for Webtoon-style publishing",
+  "dependencies": [
+    {
+      "name": "vips",
+      "features": ["cpp"]
+    },
+    "nlohmann-json",
+    {
+      "name": "qtbase",
+      "features": ["concurrent", "gui", "widgets"]
+    },
+    "qtconcurrent"
+  ]
+}
