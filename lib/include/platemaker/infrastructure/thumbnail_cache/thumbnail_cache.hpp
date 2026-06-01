@@ -12,7 +12,6 @@
  * \copyright Copyright (c) 2026 ShadobaDev
  */
 
-#pragma once
 
 #ifndef PLATEMAKER_INFRASTRUCTURE_THUMBNAIL_CACHE_HPP
 #define PLATEMAKER_INFRASTRUCTURE_THUMBNAIL_CACHE_HPP

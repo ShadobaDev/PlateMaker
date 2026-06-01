@@ -13,8 +13,8 @@ For full requirements, data models, pipeline details, and the development roadma
 ```
 platemaker/
 ├── CMakeLists.txt           # Root — finds dependencies, adds sub-projects
-├── CMakePresets.json        # Presets: windows-msvc, linux-gcc, linux-cli-only, *-debug
-├── vcpkg.json               # vcpkg manifest — all third-party dependencies
+├── CMakePresets.json        # Presets: linux-system, linux-gcc, windows-msvc, …
+├── vcpkg.json               # vcpkg manifest — Windows deps; Linux uses apt
 ├── lib/                     # libplatemaker — Core + Infrastructure (zero Qt in CLI builds)
 │   ├── include/platemaker/
 │   │   ├── models/          # Shared data types (CanvasProfile, Workspace, …)
@@ -36,24 +36,26 @@ platemaker/
 
 ### Prerequisites (all platforms)
 
-| Tool | Minimum version | Purpose |
+| Tool | Minimum version | Notes |
 |---|---|---|
-| CMake | 3.21 | Build system |
-| vcpkg | latest | Package manager (dependency download + build) |
-| C++ compiler | see per-platform | C++20 support required |
-
-**vcpkg must be installed before running any CMake configure step.**
-All C++ dependencies (libvips, nlohmann/json, Qt 6) are fetched and built automatically
-by vcpkg in manifest mode — no manual library installation is needed beyond the
-prerequisites listed below.
+| CMake | 3.21 | Build system; presets file uses format version 3 |
+| Ninja | any | Generator used by all Linux presets |
+| C++ compiler | GCC 11 / MSVC 17 | C++20 support required |
 
 ---
 
 ### Linux
 
-Tested on **Ubuntu 22.04 / 24.04** and **Debian 12** (native and inside WSL 2).
+Tested on **Ubuntu 22.04 LTS** (native and inside WSL 2).  
+Two paths are available: **system packages** (fast, recommended for daily dev) and **vcpkg** (fully reproducible, required for CI).
 
-#### 1 — System build tools
+---
+
+#### Path A — System packages `linux-system` *(recommended for development)*
+
+No vcpkg installation needed.  All dependencies come from the Ubuntu package manager.
+
+**Step 1 — Build toolchain**
 
 ```bash
 sudo apt update
@@ -62,77 +64,90 @@ sudo apt install -y \
     cmake \
     ninja-build \
     pkg-config \
-    git \
-    curl \
-    zip \
-    unzip \
-    tar
+    git
 ```
 
-#### 2 — libvips system development headers
-
-Building libvips from source via vcpkg requires a large set of native libraries.
-The fastest approach during development is to install the system package and let
-vcpkg pick it up through pkg-config:
-
-```bash
-sudo apt install -y libvips-dev
-```
-
-> **Alternative — build libvips via vcpkg (fully reproducible, slower first build):**
-> Skip the `apt install libvips-dev` step.  vcpkg will build libvips from source the
-> first time `cmake --preset linux-gcc` runs.  This takes ~5 min on a modern machine
-> but only happens once; subsequent builds use the cached build.
-
-#### 3 — Qt 6 system development headers
-
-Similarly, Qt 6 is large and builds faster from the system package manager:
+**Step 2 — C++ dependencies**
 
 ```bash
 sudo apt install -y \
+    libvips-dev \
+    nlohmann-json3-dev \
     qt6-base-dev \
-    libqt6concurrent6 \
-    qt6-base-dev-tools
+    qt6-base-dev-tools \
+    libgl-dev \
+    libgles-dev
 ```
 
-> **Alternative — build Qt 6 via vcpkg:** remove the apt step above; vcpkg will build
-> Qt from source (~20–30 min on first configure).
+Package notes:
+- `libvips-dev` — image processing (libvips 8.12 on Ubuntu 22.04)
+- `nlohmann-json3-dev` — header-only JSON library (3.10 on Ubuntu 22.04)
+- `qt6-base-dev` + `qt6-base-dev-tools` — Qt 6 Core / Gui / Widgets / Concurrent (6.2.4 on Ubuntu 22.04)
+- `libgl-dev` + `libgles-dev` — OpenGL headers required by Qt 6 Gui
 
-#### 4 — vcpkg
+**Step 3 — Configure and build**
+
+```bash
+# Full build: libplatemaker + CLI + Qt GUI
+cmake --preset linux-system
+cmake --build --preset linux-system
+
+# Debug build with AddressSanitizer + UBSan
+cmake --preset linux-system-debug
+cmake --build --preset linux-system-debug
+
+# Headless build (no Qt): libplatemaker + CLI only
+cmake --preset linux-system-cli
+cmake --build --preset linux-system-cli
+```
+
+Build artefacts are written to `build/linux-system/bin/` and `build/linux-system/lib/`.
+
+**Run tests:**
+```bash
+ctest --preset linux-system
+```
+
+---
+
+#### Path B — vcpkg `linux-gcc` *(CI / reproducible builds)*
+
+Uses vcpkg to manage nlohmann/json; libvips and Qt 6 still come from apt (vcpkg
+manifest marks them as Windows-only so they are never built from source on Linux).
+
+**Step 1 — Build toolchain** *(same as Path A Step 1)*
+
+**Step 2 — libvips + Qt system packages** *(same as Path A Step 2)*
+
+**Step 3 — vcpkg**
 
 ```bash
 git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
 "$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
 ```
 
-Add to your shell profile (`~/.bashrc` or `~/.zshrc`):
+Add to `~/.bashrc` (or `~/.zshrc`):
 
 ```bash
 export VCPKG_ROOT="$HOME/vcpkg"
 export PATH="$VCPKG_ROOT:$PATH"
 ```
 
-Reload your shell:
 ```bash
-source ~/.bashrc   # or: source ~/.zshrc
+source ~/.bashrc   # reload shell
 ```
 
-#### 5 — Configure and build
+**Step 4 — Configure and build**
 
-**Full build (libplatemaker + CLI + Qt GUI):**
 ```bash
 cmake --preset linux-gcc
 cmake --build --preset linux-gcc
-```
 
-**Debug build with AddressSanitizer:**
-```bash
+# Debug with AddressSanitizer + UBSan
 cmake --preset linux-gcc-debug
 cmake --build --preset linux-gcc-debug
-```
 
-**CLI-only build (no Qt dependency at all):**
-```bash
+# CLI only (no Qt)
 cmake --preset linux-cli-only
 cmake --build --preset linux-cli-only
 ```
@@ -142,59 +157,56 @@ cmake --build --preset linux-cli-only
 ctest --preset linux-gcc
 ```
 
-Build artefacts are written to `build/linux-gcc/bin/` and `build/linux-gcc/lib/`.
+---
 
-#### 6 — VS Code IntelliSense
+#### VS Code IntelliSense (Linux)
 
-After the first successful configure step, `compile_commands.json` is generated at
-`build/linux-gcc/compile_commands.json`.  VS Code C/C++ extension picks this up
-automatically via the `cmake.buildDirectory` setting.  All "cannot open source file"
-squiggles in the editor will disappear after configure.
+After the first successful configure, `compile_commands.json` is generated at
+`build/linux-system/compile_commands.json` (or `build/linux-gcc/…` depending on preset).
+The VS Code C/C++ extension picks this up automatically.
 
-You can also run the **CMake: Select Configure Preset** command from the VS Code
-Command Palette to trigger configure from inside the editor.
+Run **CMake: Select Configure Preset** from the Command Palette to switch presets
+inside the editor without touching the terminal.
 
 ---
 
 ### Windows
 
-Tested on **Windows 10 22H2** and **Windows 11** with **Visual Studio 2022**.
+Tested on **Windows 10 22H2** and **Windows 11** with **Visual Studio 2022**.  
+All C++ dependencies (libvips, nlohmann/json, Qt 6) are built by vcpkg on first configure.
 
-#### 1 — Prerequisites
-
-Install the following in order:
+#### Step 1 — Prerequisites
 
 1. [Visual Studio 2022](https://visualstudio.microsoft.com/) — select the
-   **"Desktop development with C++"** workload.  The MSVC toolchain, CMake, and
-   Ninja are bundled with this workload.
+   **"Desktop development with C++"** workload.  MSVC, CMake, and Ninja are
+   bundled with this workload.
 
-2. [Git for Windows](https://git-scm.com/download/win) — needed to clone vcpkg.
+2. [Git for Windows](https://git-scm.com/download/win)
 
-#### 2 — vcpkg
+#### Step 2 — vcpkg
 
-Open **Developer PowerShell for VS 2022** (or any PowerShell with VS env loaded):
+Open **Developer PowerShell for VS 2022**:
 
 ```powershell
 git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
 C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
 ```
 
-Set a **permanent user environment variable** (run once in PowerShell as administrator,
-or set via *System Properties → Advanced → Environment Variables*):
+Set a permanent user environment variable (PowerShell as administrator, or via
+*System Properties → Advanced → Environment Variables*):
 
 ```powershell
 [System.Environment]::SetEnvironmentVariable("VCPKG_ROOT", "C:\vcpkg", "User")
 ```
 
-Restart your terminal / VS Code after setting the variable.
+Restart the terminal / VS Code after setting the variable.
 
-#### 3 — Configure and build
+#### Step 3 — Configure and build
 
-All dependencies (libvips, nlohmann/json, Qt 6) are fetched and built automatically
-by vcpkg on the first configure run.  **Expect the first configure to take 30–60 min**
-on a fast machine; subsequent builds are incremental and fast.
+**Expect the first configure to take 30–60 minutes** on a fast machine (vcpkg builds
+libvips + Qt 6 from source).  Subsequent builds are fast and incremental.
 
-**Open a Developer PowerShell for VS 2022**, then:
+Open **Developer PowerShell for VS 2022**, then:
 
 ```powershell
 cd C:\path\to\PlateMaker
@@ -208,45 +220,51 @@ cmake --preset windows-msvc-debug
 cmake --build --preset windows-msvc-debug
 ```
 
-Build artefacts are written to `build\windows-msvc\bin\` and `build\windows-msvc\lib\`.
+Build artefacts: `build\windows-msvc\bin\` and `build\windows-msvc\lib\`.
 
 **Run tests:**
 ```powershell
 ctest --preset windows-msvc
 ```
 
-#### 4 — VS Code (Remote-WSL)
+#### Step 4 — VS Code (Remote-WSL)
 
-The source tree lives on the **Windows filesystem** (`C:\`) so that both the native
-Windows MSVC build and the WSL2 GCC build share the same files without copying.
-Open the folder in VS Code using **Remote-WSL** (`code .` from inside WSL, or
-*File → Open Folder* from the Remote-WSL window pointing to the Windows path).
+Keep the source tree on the **Windows filesystem** (`C:\`) so that both the MSVC
+build and the WSL 2 GCC build share the same files without copying.  Open the
+folder in VS Code via **Remote-WSL** (`code .` from inside WSL, or *File → Open Folder*
+from the Remote-WSL window pointing to the Windows path).
 
-CMake Tools extension preset: select **"Linux · GCC · Debug"** for day-to-day
-development inside WSL, and switch to **"Windows · MSVC · Release"** for release
-verification.
+CMake Tools preset recommendation: **"Linux · GCC · Debug · system packages"**
+(`linux-system-debug`) for daily WSL development; switch to **"Windows · MSVC · Release"**
+(`windows-msvc`) for release verification.
 
 ---
 
 ## Build presets summary
 
-| Preset name | Platform | Compiler | Qt | Use case |
+| Preset name | Platform | vcpkg? | Qt? | Use case |
 |---|---|---|---|---|
-| `linux-gcc` | Linux / WSL2 | GCC | Yes | Standard development build |
-| `linux-gcc-debug` | Linux / WSL2 | GCC | Yes | Debug with AddressSanitizer + UBSan |
-| `linux-cli-only` | Linux / WSL2 | GCC | **No** | Headless server / CI / no-Qt check |
-| `windows-msvc` | Windows | MSVC | Yes | Release verification |
-| `windows-msvc-debug` | Windows | MSVC | Yes | Windows debug build |
+| `linux-system` | Linux / WSL2 | ❌ | ✅ | **Recommended daily dev** — system packages |
+| `linux-system-debug` | Linux / WSL2 | ❌ | ✅ | Debug + AddressSanitizer / UBSan |
+| `linux-system-cli` | Linux / WSL2 | ❌ | ❌ | Headless build, no Qt required |
+| `linux-gcc` | Linux / WSL2 | ✅ | ✅ | Reproducible build via vcpkg (CI) |
+| `linux-gcc-debug` | Linux / WSL2 | ✅ | ✅ | vcpkg debug + ASan |
+| `linux-cli-only` | Linux / WSL2 | ✅ | ❌ | vcpkg headless / no Qt |
+| `windows-msvc` | Windows | ✅ | ✅ | Primary Windows release build |
+| `windows-msvc-debug` | Windows | ✅ | ✅ | Windows debug |
+
+> All Linux presets use **Ninja** as the generator.  
+> Windows presets use **Visual Studio 17 2022** (MSBuild multi-config).
 
 ---
 
 ## Third-party dependencies
 
-| Library | Licence | How obtained |
-|---|---|---|
-| [libvips](https://www.libvips.org/) | LGPL 2.1 | vcpkg (`vips[cpp]`) or `apt install libvips-dev` |
-| [nlohmann/json](https://github.com/nlohmann/json) | MIT | vcpkg (`nlohmann-json`) |
-| [Qt 6](https://www.qt.io/) | LGPL 3 | vcpkg (`qtbase`, `qtconcurrent`) or `apt install qt6-base-dev` |
+| Library | Licence | Linux (apt) | Windows (vcpkg) |
+|---|---|---|---|
+| [libvips](https://www.libvips.org/) | LGPL 2.1 | `libvips-dev` | `vips[cpp]` |
+| [nlohmann/json](https://github.com/nlohmann/json) | MIT | `nlohmann-json3-dev` | `nlohmann-json` |
+| [Qt 6](https://www.qt.io/) | LGPL 3 | `qt6-base-dev`, `qt6-base-dev-tools`, `libgl-dev`, `libgles-dev` | `qtbase[concurrent,gui,widgets]`, `qtconcurrent` |
 
 Qt must be **dynamically linked** in all builds to comply with LGPL terms (see
 [SPECIFICATION.md §1](docs/SPECIFICATION.md) for the licensing rationale).

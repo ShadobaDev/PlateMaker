@@ -6,13 +6,20 @@
   "dependencies": [
     {
       "name": "vips",
-      "features": ["cpp"]
+      "features": ["cpp"],
+      "platform": "windows"
     },
-    "nlohmann-json",
+    {
+      "name": "nlohmann-json"
+    },
     {
       "name": "qtbase",
-      "features": ["concurrent", "gui", "widgets"]
+      "features": ["concurrent", "gui", "widgets"],
+      "platform": "windows"
     },
-    "qtconcurrent"
+    {
+      "name": "qtconcurrent",
+      "platform": "windows"
+    }
   ]
 }

@@ -42,7 +42,11 @@ find_package(nlohmann_json CONFIG REQUIRED)
 option(PLATEMAKER_BUILD_GUI "Build the Qt 6 GUI binary (platemaker-gui)" ON)
 if(PLATEMAKER_BUILD_GUI)
     find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
-    qt_standard_project_setup()
+    # qt_standard_project_setup() was added in Qt 6.3 — set the same options manually
+    # so the project builds with Qt 6.2 (Ubuntu 22.04 system package) and newer.
+    set(CMAKE_AUTOMOC ON)
+    set(CMAKE_AUTOUIC ON)
+    set(CMAKE_AUTORCC ON)
 endif()
 
 # ---------------------------------------------------------------------------

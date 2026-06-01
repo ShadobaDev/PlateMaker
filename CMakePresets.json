@@ -1,33 +1,119 @@
 {
-  "version": 6,
+  "version": 3,
   "cmakeMinimumRequired": {
     "major": 3,
     "minor": 21,
     "patch": 0
   },
-  "$schema": "https://cmake.org/cmake/help/latest/_downloads/3e0af8bd58acc9b6de479e18e26e48c2/schema.json",
 
   "configurePresets": [
 
     {
       "name": "base",
       "hidden": true,
-      "description": "Shared defaults inherited by all concrete presets",
+      "description": "Shared defaults — no vcpkg toolchain, no compiler selection. Inherited by all concrete presets.",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "installDir": "${sourceDir}/install/${presetName}",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_MANIFEST_MODE": "ON",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "PLATEMAKER_BUILD_TESTS": "ON"
       }
     },
 
     {
+      "name": "base-vcpkg",
+      "hidden": true,
+      "description": "Adds the vcpkg toolchain on top of 'base'. Requires VCPKG_ROOT env variable.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_MANIFEST_MODE": "ON"
+      }
+    },
+
+    {
+      "name": "linux-base",
+      "hidden": true,
+      "description": "Shared Linux / WSL2 GCC settings — no vcpkg, no build type.",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "VCPKG_TARGET_TRIPLET": "x64-linux",
+        "PLATEMAKER_BUILD_GUI": "ON"
+      }
+    },
+
+    {
+      "name": "linux-system",
+      "displayName": "Linux · GCC · Release · system packages",
+      "description": "Uses apt-installed libvips, nlohmann-json3, and Qt6. No vcpkg required. Fastest setup.",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+
+    {
+      "name": "linux-system-debug",
+      "displayName": "Linux · GCC · Debug · system packages",
+      "description": "Debug build with AddressSanitizer — uses system packages, no vcpkg.",
+      "inherits": "linux-system",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_FLAGS_DEBUG": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+        "CMAKE_CXX_FLAGS_DEBUG": "-fsanitize=address,undefined -fno-omit-frame-pointer"
+      }
+    },
+
+    {
+      "name": "linux-system-cli",
+      "displayName": "Linux · GCC · CLI only · system packages",
+      "description": "Headless build — libplatemaker + CLI, no Qt. Uses system packages.",
+      "inherits": "linux-system",
+      "cacheVariables": {
+        "PLATEMAKER_BUILD_GUI": "OFF"
+      }
+    },
+
+    {
+      "name": "linux-gcc",
+      "displayName": "Linux · GCC · Release (vcpkg)",
+      "description": "Linux / WSL2 build using vcpkg for all dependencies. Requires VCPKG_ROOT.",
+      "inherits": ["linux-base", "base-vcpkg"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+
+    {
+      "name": "linux-gcc-debug",
+      "displayName": "Linux · GCC · Debug (vcpkg)",
+      "description": "Linux debug build with AddressSanitizer + UBSan. Requires VCPKG_ROOT.",
+      "inherits": "linux-gcc",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_FLAGS_DEBUG": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+        "CMAKE_CXX_FLAGS_DEBUG": "-fsanitize=address,undefined -fno-omit-frame-pointer"
+      }
+    },
+
+    {
+      "name": "linux-cli-only",
+      "displayName": "Linux · GCC · CLI only (no Qt, vcpkg)",
+      "description": "Headless build — libplatemaker + CLI only, no Qt dependency. Requires VCPKG_ROOT.",
+      "inherits": "linux-gcc",
+      "cacheVariables": {
+        "PLATEMAKER_BUILD_GUI": "OFF"
+      }
+    },
+
+    {
       "name": "windows-msvc",
       "displayName": "Windows · MSVC · Release",
-      "description": "Primary Windows build — MSVC toolchain, Release configuration",
-      "inherits": "base",
+      "description": "Primary Windows build — MSVC toolchain, Release configuration. Requires VCPKG_ROOT.",
+      "inherits": "base-vcpkg",
       "generator": "Visual Studio 17 2022",
       "architecture": {
         "value": "x64",
@@ -47,53 +133,58 @@
     {
       "name": "windows-msvc-debug",
       "displayName": "Windows · MSVC · Debug",
-      "description": "Windows debug build — full symbols, no optimisation, assertions enabled",
+      "description": "Windows debug build — full symbols, no optimisation, assertions enabled.",
       "inherits": "windows-msvc",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-
-    {
-      "name": "linux-gcc",
-      "displayName": "Linux · GCC · Release",
-      "description": "Linux / WSL2 build — GCC toolchain, Release configuration",
-      "inherits": "base",
-      "generator": "Ninja",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_C_COMPILER": "gcc",
-        "CMAKE_CXX_COMPILER": "g++",
-        "VCPKG_TARGET_TRIPLET": "x64-linux",
-        "PLATEMAKER_BUILD_GUI": "ON"
-      }
-    },
-
-    {
-      "name": "linux-gcc-debug",
-      "displayName": "Linux · GCC · Debug",
-      "description": "Linux debug build — full symbols, AddressSanitizer enabled",
-      "inherits": "linux-gcc",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_C_FLAGS_DEBUG": "-fsanitize=address,undefined -fno-omit-frame-pointer",
-        "CMAKE_CXX_FLAGS_DEBUG": "-fsanitize=address,undefined -fno-omit-frame-pointer"
-      }
-    },
-
-    {
-      "name": "linux-cli-only",
-      "displayName": "Linux · GCC · CLI only (no Qt)",
-      "description": "Headless build — libplatemaker + CLI binary only, no Qt dependency",
-      "inherits": "linux-gcc",
-      "cacheVariables": {
-        "PLATEMAKER_BUILD_GUI": "OFF"
       }
     }
 
   ],
 
   "buildPresets": [
+
+    {
+      "name": "linux-system",
+      "displayName": "Build · Linux system-packages Release",
+      "configurePreset": "linux-system",
+      "jobs": 0
+    },
+
+    {
+      "name": "linux-system-debug",
+      "displayName": "Build · Linux system-packages Debug",
+      "configurePreset": "linux-system-debug",
+      "jobs": 0
+    },
+
+    {
+      "name": "linux-system-cli",
+      "displayName": "Build · Linux CLI only",
+      "configurePreset": "linux-system-cli",
+      "jobs": 0
+    },
+
+    {
+      "name": "linux-gcc",
+      "displayName": "Build · Linux GCC Release (vcpkg)",
+      "configurePreset": "linux-gcc",
+      "jobs": 0
+    },
+
+    {
+      "name": "linux-gcc-debug",
+      "displayName": "Build · Linux GCC Debug (vcpkg)",
+      "configurePreset": "linux-gcc-debug",
+      "jobs": 0
+    },
+
+    {
+      "name": "linux-cli-only",
+      "displayName": "Build · Linux CLI only (vcpkg)",
+      "configurePreset": "linux-cli-only",
+      "jobs": 0
+    },
 
     {
       "name": "windows-msvc",
@@ -107,32 +198,47 @@
       "displayName": "Build · Windows MSVC Debug",
       "configurePreset": "windows-msvc-debug",
       "configuration": "Debug"
-    },
-
-    {
-      "name": "linux-gcc",
-      "displayName": "Build · Linux GCC Release",
-      "configurePreset": "linux-gcc",
-      "jobs": 0
-    },
-
-    {
-      "name": "linux-gcc-debug",
-      "displayName": "Build · Linux GCC Debug",
-      "configurePreset": "linux-gcc-debug",
-      "jobs": 0
-    },
-
-    {
-      "name": "linux-cli-only",
-      "displayName": "Build · Linux CLI only",
-      "configurePreset": "linux-cli-only",
-      "jobs": 0
     }
 
   ],
 
   "testPresets": [
+
+    {
+      "name": "linux-system",
+      "displayName": "Test · Linux system-packages",
+      "configurePreset": "linux-system",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+
+    {
+      "name": "linux-system-debug",
+      "displayName": "Test · Linux system-packages Debug",
+      "configurePreset": "linux-system-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+
+    {
+      "name": "linux-gcc",
+      "displayName": "Test · Linux GCC (vcpkg)",
+      "configurePreset": "linux-gcc",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+
+    {
+      "name": "linux-gcc-debug",
+      "displayName": "Test · Linux GCC Debug (vcpkg)",
+      "configurePreset": "linux-gcc-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
 
     {
       "name": "windows-msvc",
@@ -149,24 +255,6 @@
       "displayName": "Test · Windows MSVC Debug",
       "configurePreset": "windows-msvc-debug",
       "configuration": "Debug",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-
-    {
-      "name": "linux-gcc",
-      "displayName": "Test · Linux GCC",
-      "configurePreset": "linux-gcc",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-
-    {
-      "name": "linux-gcc-debug",
-      "displayName": "Test · Linux GCC Debug",
-      "configurePreset": "linux-gcc-debug",
       "output": {
         "outputOnFailure": true
       }

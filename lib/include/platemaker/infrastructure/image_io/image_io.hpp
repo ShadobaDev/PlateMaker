@@ -8,7 +8,6 @@
  * \copyright Copyright (c) 2026 ShadobaDev
  */
 
-#pragma once
 
 #ifndef PLATEMAKER_INFRASTRUCTURE_IMAGE_IO_HPP
 #define PLATEMAKER_INFRASTRUCTURE_IMAGE_IO_HPP
@@ -17,6 +16,7 @@
 
 #include <platemaker/core/pixel_buffer/pixel_buffer.hpp>
 #include <platemaker/models/common_types.hpp>
+#include <platemaker/models/output_profile.hpp>
 
 /**
  * \namespace Platemaker::Infrastructure

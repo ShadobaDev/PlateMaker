@@ -11,7 +11,6 @@
  * \copyright Copyright (c) 2026 ShadobaDev
  */
 
-#pragma once
 
 #ifndef PLATEMAKER_MODELS_COMMON_TYPES_HPP
 #define PLATEMAKER_MODELS_COMMON_TYPES_HPP

@@ -8,7 +8,6 @@
  * \copyright Copyright (c) 2026 ShadobaDev
  */
 
-#pragma once
 
 #ifndef PLATEMAKER_MODELS_CANVAS_PROFILE_HPP
 #define PLATEMAKER_MODELS_CANVAS_PROFILE_HPP

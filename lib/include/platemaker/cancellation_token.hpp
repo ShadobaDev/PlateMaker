@@ -12,7 +12,6 @@
  * \copyright Copyright (c) 2026 ShadobaDev
  */
 
-#pragma once
 
 #ifndef PLATEMAKER_CANCELLATION_TOKEN_HPP
 #define PLATEMAKER_CANCELLATION_TOKEN_HPP

@@ -10,7 +10,6 @@
  * \copyright Copyright (c) 2026 ShadobaDev
  */
 
-#pragma once
 
 #ifndef PLATEMAKER_CORE_SCALER_HPP
 #define PLATEMAKER_CORE_SCALER_HPP
