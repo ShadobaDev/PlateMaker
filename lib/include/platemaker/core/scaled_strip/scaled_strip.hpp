@@ -177,6 +177,18 @@ private:
     std::vector<Entry> m_entries; //!< Appended images in order.
     int m_totalHeight = 0;        //!< Running total of appended heights.
     int m_width       = 0;        //!< Strip width (set on first append).
+
+    /**
+     * \brief Extracts one slice from the accumulated entries.
+     *
+     * Accesses \c m_entries and \c m_width to compute the output image.
+     *
+     * \param index       0-based output slice index stored in the result.
+     * \param sliceStartY Y start position of the slice in the virtual strip.
+     * \param sliceH      Height of the slice to extract in pixels.
+     * \return A SliceResult owning the composited pixel data and sourceMap.
+     */
+    [[nodiscard]] SliceResult buildSlice(int index, int sliceStartY, int sliceH) const;
 };
 
 } // namespace Platemaker::Core

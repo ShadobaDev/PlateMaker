@@ -230,6 +230,8 @@ struct SliceResult {
 Standalone binary. All commands operate on a workspace JSON file.
 
 ```
+platemaker [--help]
+platemaker help
 platemaker process   --workspace project.platemaker.json [--input ./pages] [--output ./out]
                      [--format png|jpg|webp] [--start-index 1] [--json]
 platemaker template  --workspace project.platemaker.json --profile "webtoon-standard" --output template.png
@@ -241,6 +243,7 @@ platemaker workspace list-profiles --workspace project.platemaker.json
 - `--json` flag: machine-readable JSON summary to stdout (for web backend subprocess use)
 - `--start-index N`: output numbering starts at N (default 1), e.g. `--start-index 5` → `output_005.png, output_006.png …`
 - Human-readable progress always goes to stderr
+- no options -> assume help
 
 ### 5.4 Qt GUI — `platemaker-gui`
 
@@ -457,17 +460,17 @@ This makes the web frontend entirely independent of the C++ codebase. iPad / mob
 ## 11. Development Roadmap
 
 ### Stage 1 — Core Library (no UI, no CLI)
-- [ ] Set up CMake project with vcpkg manifest (`vcpkg.json`) and `CMakePresets.json`
-- [ ] Two build presets from day one: `windows-msvc` and `linux-gcc`
-- [ ] Integrate libvips, nlohmann/json
-- [ ] Implement `ImageIO` with PNG/JPEG/WebP support and per-file error handling
-- [ ] Implement `PixelBuffer` abstraction (RAII wrapper for `VipsImage*`)
-- [ ] Implement `Scaler` (Lanczos3, aspect-preserving, sequential access)
-- [ ] Implement `ScaledStrip` (streaming, minimum-RAM policy, sourceMap tracking)
-- [ ] Implement `Slicer` (all three LastSlicePolicy values)
-- [ ] Implement `MarginCropper`
-- [ ] Implement `WorkspaceSerializer` (read + write + version field + processedFiles)
-- [ ] Implement cancellation token (`std::atomic<bool>`)
+- [x] Set up CMake project with vcpkg manifest (`vcpkg.json`) and `CMakePresets.json`
+- [x] Two build presets from day one: `windows-msvc` and `linux-gcc`
+- [x] Integrate libvips, nlohmann/json
+- [x] Implement `ImageIO` with PNG/JPEG/WebP support and per-file error handling
+- [x] Implement `PixelBuffer` abstraction (RAII wrapper for `VipsImage*`)
+- [x] Implement `Scaler` (Lanczos3, aspect-preserving, sequential access)
+- [x] Implement `ScaledStrip` (streaming, minimum-RAM policy, sourceMap tracking)
+- [x] Implement `Slicer` (all three LastSlicePolicy values)
+- [x] Implement `MarginCropper`
+- [x] Implement `WorkspaceSerializer` (read + write + version field + processedFiles)
+- [x] Implement cancellation token (`std::atomic<bool>`)
 - [ ] Unit tests for all Core components (mock ImageIO — no real files required)
 
 ### Stage 2 — CLI (`platemaker`)
