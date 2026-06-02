@@ -56,6 +56,15 @@ public:
      */
     RGBA visualColour = {255, 105, 180, 128};
 
+    /**
+     * \brief Background fill colour for the template canvas.
+     *
+     * Defaults to fully transparent so the artist can layer the template PNG
+     * over an existing canvas in any blending mode.  Set to opaque white
+     * (\c {255,255,255,255}) when the template should stand alone.
+     */
+    RGBA backgroundColour = {0, 0, 0, 0};
+
     // ---------------------------------------------------------------------------
     // Computed properties
     // ---------------------------------------------------------------------------

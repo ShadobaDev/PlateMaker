@@ -339,3 +339,234 @@ def test_workspace_list_profiles_missing_workspace(
         capture_output=True, text=True,
     )
     assert result.returncode != 0
+
+
+# ---------------------------------------------------------------------------
+# workspace add-profile / mod-profile — --canvas-safe-area
+# ---------------------------------------------------------------------------
+
+def test_canvas_safe_area_stores_computed_canvas_size(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    ``--canvas-safe-area WxH --margins T,R,B,L`` stores the computed absolute
+    canvas size (safe-area + margins) in the workspace JSON.
+    """
+    ws = tmp_workspace / "sa.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+    add_profile(
+        platemaker_bin, ws,
+        name="SA-Test",
+        canvas_safe_area="1400x10040",
+        margins="100,100,100,100",  # adds 200px in each axis
+    )
+
+    data = json.loads(ws.read_text())
+    cp = next(p for p in data["canvasProfiles"] if p["name"] == "SA-Test")
+    # Canvas = safe-area + margins: 1400+200=1600 × 10040+200=10240
+    assert cp["canvasSize"]["width"]  == 1600,  f"width:  {cp['canvasSize']}"
+    assert cp["canvasSize"]["height"] == 10240, f"height: {cp['canvasSize']}"
+    # Margins are also persisted.
+    assert cp["margins"]["top"]    == 100
+    assert cp["margins"]["right"]  == 100
+    assert cp["margins"]["bottom"] == 100
+    assert cp["margins"]["left"]   == 100
+
+
+def test_canvas_safe_area_matches_canvas_with_margins(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    A profile created with ``--canvas-safe-area`` must produce an identical
+    canvas size to one created with ``--canvas`` equal to safe-area + margins.
+    """
+    ws = tmp_workspace / "sa_match.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+
+    # Profile A: explicit absolute canvas.
+    add_profile(
+        platemaker_bin, ws,
+        name="A",
+        canvas="1600x10240",
+        margins="100,100,100,100",
+    )
+    # Profile B: computed from safe-area.
+    add_profile(
+        platemaker_bin, ws,
+        name="B",
+        canvas_safe_area="1400x10040",  # + 200px each axis = 1600×10240
+        margins="100,100,100,100",
+    )
+
+    data = json.loads(ws.read_text())
+    by_name = {p["name"]: p for p in data["canvasProfiles"]}
+    assert by_name["A"]["canvasSize"] == by_name["B"]["canvasSize"], (
+        f"A={by_name['A']['canvasSize']}  B={by_name['B']['canvasSize']}"
+    )
+
+
+def test_canvas_safe_area_and_canvas_are_mutually_exclusive_add(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    Providing both ``--canvas`` and ``--canvas-safe-area`` to add-profile
+    must exit with code 1 and an informative error message.
+    """
+    ws = tmp_workspace / "sa_mutex.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+
+    result = subprocess.run(
+        [
+            str(platemaker_bin), "workspace", "add-profile",
+            "--workspace",        str(ws),
+            "--name",             "Conflict",
+            "--canvas",           "1600x10240",
+            "--canvas-safe-area", "1400x10040",
+            "--margins",          "100,100,100,100",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "mutually exclusive" in result.stderr.lower(), (
+        f"Expected 'mutually exclusive' in stderr.\nstderr: {result.stderr}"
+    )
+
+
+def test_canvas_safe_area_and_canvas_are_mutually_exclusive_mod(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    Providing both ``--canvas`` and ``--canvas-safe-area`` to mod-profile
+    must exit with code 1.
+    """
+    ws = tmp_workspace / "sa_mutex_mod.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+    add_profile(platemaker_bin, ws, name="P", canvas="800x2560", margins="0,0,0,0")
+
+    result = subprocess.run(
+        [
+            str(platemaker_bin), "workspace", "mod-profile",
+            "--workspace",        str(ws),
+            "--name",             "P",
+            "--canvas",           "1600x10240",
+            "--canvas-safe-area", "1400x10040",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "mutually exclusive" in result.stderr.lower()
+
+
+def test_canvas_safe_area_requires_either_canvas_or_safe_area(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    ``workspace add-profile`` without ``--canvas`` or ``--canvas-safe-area``
+    must exit with code 1.
+    """
+    ws = tmp_workspace / "sa_required.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+
+    result = subprocess.run(
+        [
+            str(platemaker_bin), "workspace", "add-profile",
+            "--workspace", str(ws),
+            "--name",      "NoCanvas",
+            "--margins",   "100,100,100,100",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+
+
+def test_mod_profile_canvas_safe_area_uses_existing_margins(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    ``mod-profile --canvas-safe-area`` without ``--margins`` uses the
+    profile's existing margins to compute the new absolute canvas size.
+    """
+    ws = tmp_workspace / "sa_mod_existing.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+    # Initial profile: margins 50,50,50,50.
+    add_profile(
+        platemaker_bin, ws,
+        name="UseExisting",
+        canvas="900x2660",   # 800 + 100 margins × 2 = 900 × 2560 + 100×2 = 2760... 
+        # Let's be precise: safe-area 800×2560, margins 50 each side
+        # canvas = 800 + 50 + 50 = 900, height = 2560 + 50 + 50 = 2660
+        margins="50,50,50,50",
+    )
+
+    # Now resize safe-area to 1000×3000 keeping margins=50.
+    subprocess.run(
+        [
+            str(platemaker_bin), "workspace", "mod-profile",
+            "--workspace",        str(ws),
+            "--name",             "UseExisting",
+            "--canvas-safe-area", "1000x3000",
+            # No --margins → reuse existing 50,50,50,50
+        ],
+        capture_output=True,
+        check=True,
+    )
+
+    data = json.loads(ws.read_text())
+    cp = next(p for p in data["canvasProfiles"] if p["name"] == "UseExisting")
+    # canvas = 1000 + 50 + 50 = 1100, 3000 + 50 + 50 = 3100
+    assert cp["canvasSize"]["width"]  == 1100, f"width:  {cp['canvasSize']}"
+    assert cp["canvasSize"]["height"] == 3100, f"height: {cp['canvasSize']}"
+    # Margins should remain unchanged.
+    assert cp["margins"]["top"]    == 50
+    assert cp["margins"]["right"]  == 50
+    assert cp["margins"]["bottom"] == 50
+    assert cp["margins"]["left"]   == 50
+
+
+def test_mod_profile_canvas_safe_area_with_new_margins(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    ``mod-profile --canvas-safe-area --margins`` updates both the canvas size
+    and the margins in a single command.
+    """
+    ws = tmp_workspace / "sa_mod_new.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+    add_profile(
+        platemaker_bin, ws,
+        name="UpdateBoth",
+        canvas="800x2560",
+        margins="0,0,0,0",
+    )
+
+    subprocess.run(
+        [
+            str(platemaker_bin), "workspace", "mod-profile",
+            "--workspace",        str(ws),
+            "--name",             "UpdateBoth",
+            "--canvas-safe-area", "700x2360",
+            "--margins",          "100,50,100,50",  # top,right,bottom,left
+        ],
+        capture_output=True,
+        check=True,
+    )
+
+    data = json.loads(ws.read_text())
+    cp = next(p for p in data["canvasProfiles"] if p["name"] == "UpdateBoth")
+    # canvas = 700 + 50 + 50 = 800, 2360 + 100 + 100 = 2560
+    assert cp["canvasSize"]["width"]  == 800,  f"width:  {cp['canvasSize']}"
+    assert cp["canvasSize"]["height"] == 2560, f"height: {cp['canvasSize']}"
+    assert cp["margins"]["top"]    == 100
+    assert cp["margins"]["right"]  == 50
+    assert cp["margins"]["bottom"] == 100
+    assert cp["margins"]["left"]   == 50

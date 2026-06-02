@@ -1,7 +1,7 @@
 # Platemaker — Project Specification
 
 **Status:** Architecture planning phase — no code written yet.  
-**Last updated:** 2026-05-31  
+**Last updated:** 2026-06-02  
 **Audience:** Human developer + AI coding assistant (GitHub Copilot, Cline, Claude, etc.)
 
 > **Predecessor:** Clip2l (Python/Tkinter prototype) — https://github.com/ShadobaDev/Clip2l  

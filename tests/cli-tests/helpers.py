@@ -102,26 +102,50 @@ def add_profile(
     workspace_path: pathlib.Path,
     *,
     name: str,
-    canvas: str,
+    canvas: str = "",
+    canvas_safe_area: str = "",
     margins: str = "0,0,0,0",
 ) -> None:
     """
     Call ``platemaker workspace add-profile`` and assert success.
 
-    :param platemaker_bin: Path to the compiled CLI binary.
-    :param workspace_path: Path to an existing ``.platemaker.json`` workspace.
-    :param name:           Profile name (must be unique within the workspace).
-    :param canvas:         Canvas size string ``"WxH"``, e.g. ``"1600x10240"``.
-    :param margins:        Margins ``"T,R,B,L"``, e.g. ``"100,100,100,100"``.
-    :raises AssertionError: If the command exits with a non-zero code.
+    Exactly one of *canvas* or *canvas_safe_area* must be provided (passing
+    neither raises :class:`ValueError`; passing both is also an error because
+    the CLI rejects it).
+
+    When *canvas_safe_area* is given, ``--canvas-safe-area`` is passed to the
+    CLI instead of ``--canvas``.  The tool then computes the absolute canvas
+    size as ``canvas = safe-area + margins``.
+
+    :param platemaker_bin:  Path to the compiled CLI binary.
+    :param workspace_path:  Path to an existing ``.platemaker.json`` workspace.
+    :param name:            Profile name (must be unique within the workspace).
+    :param canvas:          Absolute canvas size ``"WxH"``, e.g. ``"1600x10240"``.
+                            Mutually exclusive with *canvas_safe_area*.
+    :param canvas_safe_area: Drawable area ``"WxH"``.  The tool adds *margins*
+                             to produce the stored absolute canvas size.
+                             Mutually exclusive with *canvas*.
+    :param margins:         Margins ``"T,R,B,L"``, e.g. ``"100,100,100,100"``.
+    :raises ValueError:     If both or neither of *canvas* / *canvas_safe_area*
+                            are provided.
+    :raises AssertionError: If the CLI command exits with a non-zero code.
     """
+    if bool(canvas) == bool(canvas_safe_area):
+        raise ValueError(
+            "Exactly one of 'canvas' or 'canvas_safe_area' must be provided, "
+            f"got canvas={canvas!r}, canvas_safe_area={canvas_safe_area!r}"
+        )
+
+    canvas_flag = "--canvas" if canvas else "--canvas-safe-area"
+    canvas_val  = canvas    if canvas else canvas_safe_area
+
     result = subprocess.run(
         [
             str(platemaker_bin),
             "workspace", "add-profile",
             "--workspace", str(workspace_path),
             "--name",      name,
-            "--canvas",    canvas,
+            canvas_flag,   canvas_val,
             "--margins",   margins,
         ],
         capture_output=True,
