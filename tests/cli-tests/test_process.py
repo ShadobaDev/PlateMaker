@@ -295,3 +295,53 @@ def test_process_incompatible_files_are_skipped(
     # Only the 2 compatible 1000-px files were processed.
     slices = sorted(output_dir.glob("output_*.png"))
     assert len(slices) >= 1, "Expected at least 1 output slice from 2 compatible files"
+
+
+# ---------------------------------------------------------------------------
+# --no-profile flag
+# ---------------------------------------------------------------------------
+
+def test_process_no_profile_bypasses_canvas_profiles(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    --no-profile must cause all input files to be processed with the standard
+    pipeline regardless of canvas profiles defined in the workspace.
+
+    The workspace has a canvas profile for 1000×2000 images.  All 3 test
+    images are 800×2560 — they would normally be skipped as incompatible.
+    With --no-profile the profile check is bypassed and all 3 files are
+    scaled and sliced normally.
+
+    3 × 800×2560 → total 7680 px → 6 slices at 1280 px.
+    """
+    input_dir  = tmp_workspace / "input"
+    output_dir = tmp_workspace / "output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    # Images that do NOT match the canvas profile below.
+    _make_pages(input_dir, 3, width=800, height=2560)
+
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
+    # Profile that would reject the 800×2560 images (different size).
+    add_profile(platemaker_bin, ws,
+                name="Canvas-1000",
+                canvas="1000x2000",
+                margins="100,100,100,100")
+
+    # Without --no-profile all files would be skipped → exit code 3.
+    # With --no-profile they must all be processed.
+    result = _run_process(platemaker_bin, ws, output_dir,
+                          ["--input", str(input_dir), "--no-profile"])
+    assert result.returncode == 0, (
+        f"process with --no-profile failed:\n{result.stderr}"
+    )
+
+    slices = sorted(output_dir.glob("output_*.png"))
+    assert len(slices) == 6, (
+        f"Expected 6 slices with --no-profile, got {len(slices)}: "
+        f"{[p.name for p in slices]}"
+    )

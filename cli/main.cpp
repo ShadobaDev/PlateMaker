@@ -13,7 +13,7 @@
  *                      [--input DIR] [--output DIR]
  *                      [--format png|jpg|webp] [--start-index N]
  *                      [--target-width N] [--slice-height N]
- *                      [--json]
+ *                      [--no-profile] [--json]
  *
  * Canvas profile matching during process:
  *   - If the workspace has canvas profiles, each input file's pixel width is
@@ -216,6 +216,25 @@ static int getImageWidth(const std::string& filePath)
     return w;
 }
 
+/**
+ * \brief Reads the pixel height of an image file from its header only (fast).
+ *
+ * Uses VIPS_ACCESS_SEQUENTIAL so no pixels are decoded; only the image
+ * metadata (IHDR for PNG, SOF for JPEG) is read.  Returns -1 on error.
+ */
+static int getImageHeight(const std::string& filePath)
+{
+    VipsImage* img = vips_image_new_from_file(
+        filePath.c_str(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr);
+    if (!img) {
+        vips_error_clear();
+        return -1;
+    }
+    const int h = img->Ysize;
+    g_object_unref(img);
+    return h;
+}
+
 /// Returns the active OutputProfile, or a default Webtoon profile if none set.
 static OutputProfile activeOutputProfile(const Workspace& ws)
 {
@@ -230,11 +249,13 @@ static OutputProfile activeOutputProfile(const Workspace& ws)
 }
 
 /// Finds the first canvas profile whose canvasSize.width matches \p fileWidth.
-static const CanvasProfile* findProfileByWidth(
-    const std::vector<CanvasProfile>& profiles, int fileWidth)
+static const CanvasProfile* findCanvasProfile(
+    const std::vector<CanvasProfile>& profiles, int fileWidth, int fileHeight)
 {
     for (const auto& cp : profiles)
-        if (cp.canvasSize.width == fileWidth) return &cp;
+        if (cp.canvasSize.width  == fileWidth &&
+            cp.canvasSize.height == fileHeight)
+            return &cp;
     return nullptr;
 }
 
@@ -285,8 +306,10 @@ static int cmdHelp(const std::string& prog)
         << "          [--target-width N]  [--slice-height N]\n"
         << "          [--json]\n"
         << "      Scale and slice all pages in the workspace.\n"
-        << "      If canvas profiles are defined, each file is matched by width.\n"
+        << "      If canvas profiles are defined, each file is matched by width+height.\n"
         << "      Files not matching any profile are reported as incompatible.\n"
+        << "      --no-profile: ignore canvas profiles; process all files with the\n"
+        << "        standard pipeline (no margin cropping) using workspace output settings.\n"
         << "\n"
         << "Exit codes: 0=success  1=usage error  2=IO error  3=processing error\n";
     return 0;
@@ -632,13 +655,18 @@ static int cmdProcess(const Opts& opts)
     if (opts.has("slice-height")) outProfile.sliceHeight  = opts.getInt("slice-height", 1280);
 
     const bool jsonMode   = opts.has("json");
-    const bool hasProfiles = !ws.canvasProfiles.empty();
+    // --no-profile bypasses canvas profile matching: treat workspace as if it
+    // had no canvas profiles (standard pipeline, no margin cropping).
+    const bool noProfile  = opts.has("no-profile");
+    const bool hasProfiles = !ws.canvasProfiles.empty() && !noProfile;
 
     if (!jsonMode) {
         std::cerr << "Processing " << ws.pages.size() << " page(s)";
-        if (hasProfiles)
+        if (noProfile)
+            std::cerr << " [--no-profile: canvas profiles ignored]";
+        else if (hasProfiles)
             std::cerr << " [" << ws.canvasProfiles.size()
-                      << " canvas profile(s), matching by width]";
+                      << " canvas profile(s), matching by width+height]";
         std::cerr << " ...\n";
     }
 
@@ -660,11 +688,16 @@ static int cmdProcess(const Opts& opts)
                 if (fileWidth <= 0) {
                     throw std::runtime_error("cannot determine image dimensions");
                 }
-                matchedProfile = findProfileByWidth(ws.canvasProfiles, fileWidth);
+                const int fileHeight = getImageHeight(page.filePath);
+                if (fileHeight <= 0) {
+                    throw std::runtime_error("cannot determine image dimensions");
+                }
+                matchedProfile = findCanvasProfile(ws.canvasProfiles, fileWidth, fileHeight);
                 if (!matchedProfile) {
                     if (!jsonMode)
                         std::cerr << "Warning: skipping '" << page.filePath
                                   << "': width=" << fileWidth
+                                  << ", height=" << fileHeight
                                   << " does not match any canvas profile\n";
                     skippedPages.push_back(page.filePath);
                     continue;
