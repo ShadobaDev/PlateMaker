@@ -141,7 +141,7 @@ std::vector<SliceResult> ScaledStrip::sliceAll(
     Models::LastSlicePolicy policy) const
 {
     // Construct a dummy no-op token so we share one implementation path.
-    CancellationToken noop;
+    Infrastructure::CancellationToken noop;
     return sliceAll(sliceHeight, policy, noop);
 }
 
@@ -150,9 +150,9 @@ std::vector<SliceResult> ScaledStrip::sliceAll(
 // ---------------------------------------------------------------------------
 
 std::vector<SliceResult> ScaledStrip::sliceAll(
-    int                      sliceHeight,
-    Models::LastSlicePolicy  policy,
-    const CancellationToken& cancelToken) const
+    int                                      sliceHeight,
+    Models::LastSlicePolicy                  policy,
+    const Infrastructure::CancellationToken& cancelToken) const
 {
     if (m_entries.empty()) {
         throw std::runtime_error("ScaledStrip::sliceAll() — strip is empty");

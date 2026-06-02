@@ -8,9 +8,9 @@
  * \copyright Copyright (c) 2026 ShadobaDev
  */
 
-#include <platemaker/cancellation_token.hpp>
+#include <platemaker/infrastructure/control/cancellation_token.hpp>
 
-namespace Platemaker {
+namespace Platemaker::Infrastructure {
 
 void CancellationToken::cancel() noexcept
 {
@@ -27,4 +27,4 @@ void CancellationToken::reset() noexcept
     m_cancelled.store(false, std::memory_order_relaxed);
 }
 
-} // namespace Platemaker
+} // namespace Platemaker::Infrastructure

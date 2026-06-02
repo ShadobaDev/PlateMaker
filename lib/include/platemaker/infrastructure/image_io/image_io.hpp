@@ -18,15 +18,6 @@
 #include <platemaker/models/common_types.hpp>
 #include <platemaker/models/output_profile.hpp>
 
-/**
- * \namespace Platemaker::Infrastructure
- * \brief Infrastructure and IO components of libplatemaker.
- *
- * Infrastructure provides services that the Core components depend on indirectly:
- * image file loading/saving (ImageIO), workspace persistence (WorkspaceSerializer),
- * and thumbnail caching (ThumbnailCache).  All components here are pure C++ with
- * no Qt dependency in CLI builds.
- */
 namespace Platemaker::Infrastructure {
 
 /**

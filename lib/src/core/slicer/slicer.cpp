@@ -27,8 +27,8 @@ std::vector<SliceResult> Slicer::slice(const ScaledStrip& strip) const
 }
 
 std::vector<SliceResult> Slicer::slice(
-    const ScaledStrip&       strip,
-    const CancellationToken& cancelToken) const
+    const ScaledStrip&                       strip,
+    const Infrastructure::CancellationToken& cancelToken) const
 {
     return strip.sliceAll(m_sliceHeight, m_policy, cancelToken);
 }

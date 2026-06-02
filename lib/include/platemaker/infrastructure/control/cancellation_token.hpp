@@ -19,10 +19,15 @@
 #include <atomic>
 
 /**
- * \namespace Platemaker
- * \brief Top-level namespace for the entire Platemaker library and applications.
+ * \namespace Platemaker::Infrastructure
+ * \brief Infrastructure and IO components of libplatemaker.
+ *
+ * Infrastructure provides services that the Core components depend on indirectly:
+ * image file loading/saving (ImageIO), workspace persistence (WorkspaceSerializer), 
+ * cancellation signaling (CancellationToken) and thumbnail caching (ThumbnailCache).
+ * All components here are pure C++ with no Qt dependency in CLI builds.
  */
-namespace Platemaker {
+namespace Platemaker::Infrastructure {
 
 /**
  * \class CancellationToken
@@ -78,6 +83,6 @@ private:
     std::atomic<bool> m_cancelled{false}; //!< The underlying atomic flag.
 };
 
-} // namespace Platemaker
+} // namespace Platemaker::Infrastructure
 
 #endif // PLATEMAKER_CANCELLATION_TOKEN_HPP

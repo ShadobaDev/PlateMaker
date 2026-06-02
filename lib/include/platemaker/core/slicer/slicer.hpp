@@ -14,7 +14,7 @@
 
 #include <vector>
 
-#include <platemaker/cancellation_token.hpp>
+#include <platemaker/infrastructure/control/cancellation_token.hpp>
 #include <platemaker/core/scaled_strip/scaled_strip.hpp>
 #include <platemaker/models/common_types.hpp>
 
@@ -71,8 +71,8 @@ public:
      * \return Completed SliceResult objects up to the point of cancellation.
      */
     [[nodiscard]] std::vector<SliceResult> slice(
-        const ScaledStrip&       strip,
-        const CancellationToken& cancelToken) const;
+        const ScaledStrip&                       strip,
+        const Infrastructure::CancellationToken& cancelToken) const;
 
 private:
     int                     m_sliceHeight; //!< Target height for each full output slice.

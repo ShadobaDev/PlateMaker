@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-#include <platemaker/cancellation_token.hpp>
+#include <platemaker/infrastructure/control/cancellation_token.hpp>
 #include <platemaker/core/pixel_buffer/pixel_buffer.hpp>
 #include <platemaker/core/scaler/scaler.hpp>
 #include <platemaker/models/common_types.hpp>
@@ -164,9 +164,9 @@ public:
      * \return Completed SliceResult objects up to the point of cancellation.
      */
     [[nodiscard]] std::vector<SliceResult> sliceAll(
-        int                          sliceHeight,
-        Models::LastSlicePolicy      policy,
-        const CancellationToken&     cancelToken) const;
+        int                                        sliceHeight,
+        Models::LastSlicePolicy                    policy,
+        const Infrastructure::CancellationToken&   cancelToken) const;
 
 private:
     struct Entry {
@@ -189,7 +189,7 @@ private:
      * \return A SliceResult owning the composited pixel data and sourceMap.
      */
     [[nodiscard]] SliceResult buildSlice(int index, int sliceStartY, int sliceH) const;
-};
+}; // class ScaledStrip
 
 } // namespace Platemaker::Core
 
