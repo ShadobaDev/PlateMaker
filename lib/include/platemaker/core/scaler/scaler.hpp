@@ -64,6 +64,27 @@ public:
      * \throws std::runtime_error if the file cannot be loaded or the scaling operation fails.
      */
     [[nodiscard]] ScaledImage scale(const std::string& filePath, int targetWidth) const;
+
+    /**
+     * \brief Scales an in-memory pixel buffer to \p targetWidth pixels wide.
+     *
+     * Use this overload in the margin-aware import pipeline where the source image
+     * has already been loaded and margin-cropped before scaling.  Internally calls
+     * \c vips_thumbnail_image() with the same Lanczos3 kernel.
+     *
+     * \param buffer          Source pixel buffer (ownership transferred in).
+     * \param sourceFilePath  Original file path — stored in the returned ScaledImage
+     *                        for provenance tracking.  Pass the absolute path of the
+     *                        file that was loaded to produce \p buffer.
+     * \param targetWidth     Target output width in pixels.  Must be greater than zero.
+     * \return ScaledImage containing the scaled pixel buffer and the source file path.
+     *
+     * \throws std::runtime_error if \p buffer is invalid or the scaling operation fails.
+     */
+    [[nodiscard]] ScaledImage scale(
+        PixelBuffer  buffer,
+        std::string  sourceFilePath,
+        int          targetWidth) const;
 };
 
 } // namespace Platemaker::Core

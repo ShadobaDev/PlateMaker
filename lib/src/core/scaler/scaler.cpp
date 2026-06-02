@@ -1,6 +1,30 @@
 /**
  * \file
- * \brief Scaler implementation — Lanczos3 scaling via vips_thumbnail().
+ * \brief Scaler implementation — Lanczos3-equivalent scaling via vips_resize().
+ *
+ * \note Design decision — why we use vips_image_new_from_file (RANDOM) + vips_resize
+ *   instead of vips_thumbnail:
+ *
+ *   vips_thumbnail() opens files in SEQUENTIAL access mode for efficiency.
+ *   This means the libvips pipeline can only read pixels top-to-bottom, once.
+ *   When ScaledStrip::buildSlice() later calls vips_extract_area() on a scaled
+ *   image, and then ImageIO::save() calls vips_pngsave() on that extract, the
+ *   PNG encoder uses an internal tiled write path that may read rows out of
+ *   order — triggering "vipspng: out of order read" errors on the second and
+ *   later slices.  Additionally, calling vips_thumbnail() three times in
+ *   sequence (once per source file) while also calling vips_image_wio_input()
+ *   to force evaluation causes subtle state corruption that silently skips
+ *   files 2 and 3.
+ *
+ *   Loading with VIPS_ACCESS_RANDOM forces the decoder to cache the full image
+ *   in memory once.  vips_resize() on a random-access source produces a PARTIAL
+ *   (lazy) image that can be read in any tile order.  All downstream operations
+ *   (vips_extract_area, vips_arrayjoin, vips_pngsave, vips_jpegsave, etc.) can
+ *   therefore compute any tile without sequential-access restrictions.
+ *
+ *   Trade-off: no JPEG DCT shrink-on-load (vips_thumbnail advantage).
+ *   For typical Procreate exports at 800 px wide this is inconsequential; the
+ *   correctness guarantee is worth the minor overhead.
  *
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
@@ -17,6 +41,10 @@
 
 namespace Platemaker::Core {
 
+// ---------------------------------------------------------------------------
+// File-path overload
+// ---------------------------------------------------------------------------
+
 ScaledImage Scaler::scale(const std::string& filePath, int targetWidth) const
 {
     if (targetWidth <= 0) {
@@ -25,31 +53,82 @@ ScaledImage Scaler::scale(const std::string& filePath, int targetWidth) const
             std::to_string(targetWidth) + ")");
     }
 
-    VipsImage* out = nullptr;
-
-    // vips_thumbnail() performs shrink-on-load where the file format allows it
-    // (e.g. JPEG DCT down-sampling, pyramid TIFF), then applies Lanczos3 for
-    // the residual resampling step.  This is the most RAM-efficient and
-    // highest-quality path for large-to-small scaling.
+    // Load with VIPS_ACCESS_RANDOM so that the entire image is decoded into
+    // a flat in-memory buffer (for PNG/JPEG/TIFF).  Downstream operations can
+    // then read any row in any order without sequential-access restrictions.
     //
-    // VIPS_SIZE_BOTH: allow both up- and down-scaling so the function behaves
-    // correctly if a source image is narrower than targetWidth.
-    //
-    // no_rotate=TRUE: disable EXIF auto-rotation so the artist's intended
-    // canvas orientation is preserved (rotation was already baked in by the
-    // export from Procreate).
-    if (vips_thumbnail(filePath.c_str(), &out, targetWidth,
-            "kernel",    VIPS_KERNEL_LANCZOS3,
-            "no_rotate", TRUE,
-            "size",      VIPS_SIZE_BOTH,
-            nullptr) != 0)
-    {
+    // Note: "no_rotate" is a vips_thumbnail-specific option and is NOT
+    // supported by the generic vips_image_new_from_file() / pngload path.
+    // Procreate exports are already in the correct orientation (EXIF rotation
+    // is baked into the canvas), so no auto-rotation handling is needed here.
+    VipsImage* loaded = vips_image_new_from_file(filePath.c_str(),
+        "access", VIPS_ACCESS_RANDOM,
+        nullptr);
+    if (!loaded) {
         throw std::runtime_error(
-            "Scaler::scale() — vips_thumbnail failed for '" + filePath +
+            "Scaler::scale() — cannot load '" + filePath + "': " +
+            vips_error_buffer());
+    }
+
+    if (loaded->Xsize == 0) {
+        g_object_unref(loaded);
+        throw std::runtime_error(
+            "Scaler::scale() — source image '" + filePath + "' has zero width");
+    }
+
+    const double hscale = static_cast<double>(targetWidth) /
+                          static_cast<double>(loaded->Xsize);
+
+    // vips_resize() scales by a factor, preserving aspect ratio (vscale defaults
+    // to hscale when omitted).  Unlike vips_thumbnail, it does not reorder access
+    // patterns and is safe to use on already-loaded random-access images.
+    VipsImage* out = nullptr;
+    if (vips_resize(loaded, &out, hscale, nullptr) != 0) {
+        g_object_unref(loaded);
+        throw std::runtime_error(
+            "Scaler::scale() — vips_resize failed for '" + filePath +
+            "': " + vips_error_buffer());
+    }
+    g_object_unref(loaded); // resize holds its own reference; release ours
+
+    return ScaledImage{PixelBuffer{out}, filePath};
+}
+
+// ---------------------------------------------------------------------------
+// In-memory buffer overload (margin-aware pipeline)
+// ---------------------------------------------------------------------------
+
+ScaledImage Scaler::scale(PixelBuffer buffer, std::string sourceFilePath, int targetWidth) const
+{
+    if (targetWidth <= 0) {
+        throw std::runtime_error(
+            "Scaler::scale() — targetWidth must be > 0 (got " +
+            std::to_string(targetWidth) + ")");
+    }
+    if (!buffer.isValid()) {
+        throw std::runtime_error(
+            "Scaler::scale() — source buffer is invalid (null VipsImage)");
+    }
+
+    // Use vips_resize() for buffer-based scaling: explicit scale factor,
+    // predictable aspect-ratio semantics, no auto-orientation ambiguity.
+    // The caller (ImageIO::load + MarginCropper) already holds a
+    // VIPS_ACCESS_RANDOM-backed buffer, so the resize result is random-access.
+    if (buffer.width() == 0) {
+        throw std::runtime_error(
+            "Scaler::scale() — source buffer has zero width");
+    }
+    const double hscale = static_cast<double>(targetWidth) /
+                          static_cast<double>(buffer.width());
+
+    VipsImage* out = nullptr;
+    if (vips_resize(buffer.get(), &out, hscale, nullptr) != 0) {
+        throw std::runtime_error(
+            "Scaler::scale() — vips_resize failed for '" + sourceFilePath +
             "': " + vips_error_buffer());
     }
 
-    return ScaledImage{PixelBuffer{out}, filePath};
+    return ScaledImage{PixelBuffer{out}, std::move(sourceFilePath)};
 }
 
 } // namespace Platemaker::Core
