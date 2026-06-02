@@ -23,6 +23,19 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 
 # ---------------------------------------------------------------------------
+# Portable runtime search paths for Linux executables
+# ---------------------------------------------------------------------------
+if(UNIX AND NOT APPLE)
+    # Keep build tree binaries runnable from build/ by embedding relative RPATH.
+    set(CMAKE_BUILD_RPATH "$ORIGIN:$ORIGIN/../lib")
+    set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
+
+    # When installed or packaged, search next to the executable and in ../lib.
+    set(CMAKE_INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib")
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
+endif()
+
+# ---------------------------------------------------------------------------
 # vcpkg toolchain is injected via CMakePresets.json — nothing to do here.
 # ---------------------------------------------------------------------------
 

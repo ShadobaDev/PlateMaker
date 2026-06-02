@@ -527,12 +527,11 @@ This makes the web frontend entirely independent of the C++ codebase. iPad / mob
 - [x] Incremental processing (SHA-256 check, dirty propagation)
 - [x] `--json` output mode
 - [-] Drop-in replacement for the Clip2l prototype (deferred — scope unclear)
-- [ ] `platemaker template` with margins, defined profile name as option
 
 ### Stage 3 — Template Generator
-- [ ] Implement `TemplateGenerator` in Core
-- [ ] `platemaker template` CLI command
-- [ ] Verify template PNG imports correctly into Procreate
+- [x] `platemaker template` with margins, defined profile name as option
+- [x] Implement `TemplateGenerator` in Core
+- [x] Verify template PNG imports correctly into Procreate
 
 ### Stage 4 — Qt GUI (MVP)
 - [ ] `MainWindow` + `ToolPanel` base class + tab registry
