@@ -1,5 +1,5 @@
 /**
- * \file
+ * \file lib/src/core/scaler/scaler.cpp
  * \brief Scaler implementation — Lanczos3-equivalent scaling via vips_resize().
  *
  * \note Design decision — why we use vips_image_new_from_file (RANDOM) + vips_resize
@@ -26,6 +26,8 @@
  *   For typical Procreate exports at 800 px wide this is inconsequential; the
  *   correctness guarantee is worth the minor overhead.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

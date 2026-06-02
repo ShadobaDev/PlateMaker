@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/include/platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp
  * \brief WorkspaceSerializer — reads and writes Workspace objects as .platemaker.json files.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

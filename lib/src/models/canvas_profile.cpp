@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/src/models/canvas_profile.cpp
  * \brief CanvasProfile implementation — computed properties.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

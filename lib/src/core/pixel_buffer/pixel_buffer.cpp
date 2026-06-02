@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/src/core/pixel_buffer/pixel_buffer.cpp
  * \brief PixelBuffer implementation — RAII lifecycle for VipsImage*.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

@@ -1,10 +1,12 @@
 /**
- * \file
+ * \file lib/include/platemaker/models/common_types.hpp
  * \brief Common primitive types, enumerations and simple structs shared across the entire library.
  *
  * This header is included by virtually every other component in libplatemaker.
  * Keep it minimal: only truly shared, dependency-free types belong here.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

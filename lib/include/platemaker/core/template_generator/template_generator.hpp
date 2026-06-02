@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/include/platemaker/core/template_generator/template_generator.hpp
  * \brief TemplateGenerator — renders a canvas template PNG for use as a Procreate guide layer.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

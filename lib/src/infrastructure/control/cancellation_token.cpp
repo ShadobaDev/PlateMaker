@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/src/infrastructure/control/cancellation_token.cpp
  * \brief CancellationToken implementation.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

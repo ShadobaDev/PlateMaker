@@ -1,5 +1,5 @@
 /**
- * \file
+ * \file lib/src/infrastructure/workspace_serializer/workspace_serializer.cpp
  * \brief WorkspaceSerializer implementation — JSON round-trip for all model types.
  *
  * All nlohmann/json from_json / to_json overloads for the Platemaker::Models
@@ -7,6 +7,8 @@
  * individual model headers, keeping the model headers free of third-party
  * dependencies.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

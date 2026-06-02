@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/include/platemaker/models/output_profile.hpp
  * \brief OutputProfile and JpegOptions data models — describe how processed output is generated.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

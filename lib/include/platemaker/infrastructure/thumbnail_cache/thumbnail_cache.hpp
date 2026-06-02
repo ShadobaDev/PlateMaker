@@ -1,5 +1,5 @@
 /**
- * \file
+ * \file lib/include/platemaker/infrastructure/thumbnail_cache/thumbnail_cache.hpp
  * \brief ThumbnailCache — generates and caches 200 px-wide preview images on disk.
  *
  * This class is part of \c libplatemaker and has zero Qt dependency.
@@ -7,6 +7,8 @@
  * for wrapping calls in \c QtConcurrent::run() when asynchronous behaviour is
  * required — \c libplatemaker does not make that policy decision.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

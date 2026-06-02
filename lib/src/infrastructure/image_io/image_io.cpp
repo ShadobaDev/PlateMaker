@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/src/infrastructure/image_io/image_io.cpp
  * \brief ImageIO implementation — libvips-backed load and save with format dispatch.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

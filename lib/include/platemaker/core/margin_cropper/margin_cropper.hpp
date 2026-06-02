@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/include/platemaker/core/margin_cropper/margin_cropper.hpp
  * \brief MarginCropper — crops margin zones from a source image, producing the safe area.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

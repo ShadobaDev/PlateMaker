@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/include/platemaker/core/slicer/slicer.hpp
  * \brief Slicer — encapsulates the slicing algorithm configuration and drives ScaledStrip.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

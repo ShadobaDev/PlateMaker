@@ -1,5 +1,5 @@
 /**
- * \file
+ * \file lib/src/core/scaled_strip/scaled_strip.cpp
  * \brief ScaledStrip implementation — virtual strip accumulator and slice engine.
  *
  * The strip accumulates ScaledImage objects and slices them into fixed-height
@@ -8,6 +8,8 @@
  * the next output slice.  At most two source images are held in memory
  * simultaneously when a slice boundary straddles a file boundary.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

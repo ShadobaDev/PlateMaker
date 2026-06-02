@@ -1,5 +1,5 @@
 /**
- * \file
+ * \file lib/src/infrastructure/thumbnail_cache/thumbnail_cache.cpp
  * \brief ThumbnailCache implementation — on-disk 200 px-wide preview cache.
  *
  * Thumbnails are stored in the configured \c .platemaker-cache/ directory and
@@ -14,6 +14,8 @@
  *       TODO Stage 2: replace with SHA-256 of the source file path for
  *       collision-resistance as specified.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

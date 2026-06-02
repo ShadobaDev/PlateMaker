@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/src/core/margin_cropper/margin_cropper.cpp
  * \brief MarginCropper implementation — pure-crop via vips_extract_area().
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

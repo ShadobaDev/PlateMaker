@@ -1,5 +1,5 @@
 /**
- * \file
+ * \file lib/include/platemaker/core/pixel_buffer/pixel_buffer.hpp
  * \brief PixelBuffer — RAII wrapper around a libvips VipsImage pointer.
  *
  * PixelBuffer is the fundamental pixel-data container used throughout libplatemaker.
@@ -7,6 +7,8 @@
  * semantics through move operations.  Copy construction is disabled — use
  * explicit clone() if a deep copy is required.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

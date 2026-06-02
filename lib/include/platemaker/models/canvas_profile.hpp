@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/include/platemaker/models/canvas_profile.hpp
  * \brief CanvasProfile data model — describes a named canvas with margin and visual settings.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/src/core/slicer/slicer.cpp
  * \brief Slicer implementation — thin wrapper that configures and drives ScaledStrip::sliceAll().
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/src/core/template_generator/template_generator.cpp
  * \brief TemplateGenerator implementation.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

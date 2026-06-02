@@ -1,9 +1,11 @@
 /**
- * \file
+ * \file lib/include/platemaker/core/scaler/scaler.hpp
  * \brief Scaler — scales a single source image to a target width using Lanczos3.
  *
  * Also defines ScaledImage, the value type produced by Scaler and consumed by ScaledStrip.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

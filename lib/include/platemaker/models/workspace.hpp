@@ -1,9 +1,11 @@
 /**
- * \file
+ * \file lib/include/platemaker/models/workspace.hpp
  * \brief Workspace data model — the root document type persisted as a .platemaker.json file.
  *
  * Also contains ProcessedFileRecord, the per-file incremental-processing cache entry.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

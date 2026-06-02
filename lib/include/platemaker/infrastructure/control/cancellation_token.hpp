@@ -1,11 +1,13 @@
 /**
- * \file
+ * \file lib/include/platemaker/infrastructure/control/cancellation_token.hpp
  * \brief CancellationToken — a thread-safe flag for cooperative pipeline cancellation.
  *
  * The token is created by the caller (GUI thread / CLI main) and passed into
  * pipeline calls by const-reference.  The pipeline checks it between slices and
  * exits early when it is set.  The token does not throw — it is purely advisory.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

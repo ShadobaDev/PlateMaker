@@ -1,7 +1,9 @@
 /**
- * \file
+ * \file lib/include/platemaker/infrastructure/image_io/image_io.hpp
  * \brief ImageIO — libvips-backed image loading and saving with per-file error resilience.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

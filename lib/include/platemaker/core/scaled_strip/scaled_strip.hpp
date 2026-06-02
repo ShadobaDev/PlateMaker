@@ -1,11 +1,13 @@
 /**
- * \file
+ * \file lib/include/platemaker/core/scaled_strip/scaled_strip.hpp
  * \brief ScaledStrip — the virtual strip abstraction that accumulates scaled images
  *        and produces output slices.
  *
  * Also defines the SourceSegment and SliceResult types that carry provenance
  * information for incremental processing.
  *
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *
