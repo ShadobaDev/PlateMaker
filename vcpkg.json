@@ -20,6 +20,9 @@
     {
       "name": "qtconcurrent",
       "platform": "windows"
+    },
+    {
+      "name": "gtest"
     }
   ]
 }

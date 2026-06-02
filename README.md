@@ -24,7 +24,9 @@ platemaker/
 ├── cli/                     # platemaker binary — links libplatemaker, no Qt
 ├── gui/                     # platemaker-gui binary — links libplatemaker + Qt 6
 │   └── panels/              # ToolPanel subclasses (one file per tab)
-├── tests/                   # Unit tests (GTest, mock ImageIO)
+├── tests/
+│   ├── lib-unit-tests/      # GoogleTest C++ unit tests for libplatemaker
+│   └── cli-tests/           # pytest-based Python integration tests for the CLI
 └── docs/
     ├── SPECIFICATION.md
     └── CODING_STYLE.md
@@ -49,6 +51,14 @@ platemaker/
 Tested on **Ubuntu 22.04 LTS** (native and inside WSL 2).  
 Two paths are available: **system packages** (fast, recommended for daily dev) and **vcpkg** (fully reproducible, required for CI).
 
+--- 
+
+#### VS Code (Remote-WSL)
+
+CMake Tools preset recommendation: **"Linux · GCC · Debug · system packages"**
+(`linux-system-debug`) for daily WSL development; switch to **"Windows · MSVC · Release"**
+(`windows-msvc`) for release verification.
+
 ---
 
 #### Path A — System packages `linux-system` *(recommended for development)*
@@ -67,7 +77,7 @@ sudo apt install -y \
     git
 ```
 
-**Step 2 — C++ dependencies**
+**Step 2 — C++ dependencies + test tooling**
 
 ```bash
 sudo apt install -y \
@@ -76,7 +86,15 @@ sudo apt install -y \
     qt6-base-dev \
     qt6-base-dev-tools \
     libgl-dev \
-    libgles-dev
+    libgles-dev \
+    libgtest-dev \
+    python3 \
+    python3-pip
+```
+
+```bash
+# Python test runner (cross-platform; same file runs on Windows)
+pip install -r tests/cli-tests/requirements.txt
 ```
 
 Package notes:
@@ -84,6 +102,10 @@ Package notes:
 - `nlohmann-json3-dev` — header-only JSON library (3.10 on Ubuntu 22.04)
 - `qt6-base-dev` + `qt6-base-dev-tools` — Qt 6 Core / Gui / Widgets / Concurrent (6.2.4 on Ubuntu 22.04)
 - `libgl-dev` + `libgles-dev` — OpenGL headers required by Qt 6 Gui
+- `libgtest-dev` — GoogleTest 1.11 unit-test framework (C++ lib-unit-tests)
+- `python3` + `python3-pip` — required for CLI integration tests (pytest)
+
+> **Note:** If `pip` reports the script is not on `PATH`, use `python3 -m pytest` directly, or add `~/.local/bin` to your `PATH`.  The CMake test configuration always uses `python3 -m pytest`, so CTest is unaffected.
 
 **Step 3 — Configure and build**
 
@@ -172,7 +194,7 @@ inside the editor without touching the terminal.
 
 ### Windows
 
-Tested on **Windows 10 22H2** and **Windows 11** with **Visual Studio 2022**.  
+NOT YET!!! Tested on **Windows 10 22H2** and **Windows 11** with **Visual Studio 2022**.  
 All C++ dependencies (libvips, nlohmann/json, Qt 6) are built by vcpkg on first configure.
 
 #### Step 1 — Prerequisites
@@ -183,7 +205,19 @@ All C++ dependencies (libvips, nlohmann/json, Qt 6) are built by vcpkg on first 
 
 2. [Git for Windows](https://git-scm.com/download/win)
 
-#### Step 2 — vcpkg
+#### Step 2 — Python + pytest (CLI tests)
+
+Install Python 3 for Windows from [python.org](https://www.python.org/downloads/) (tick
+**"Add Python to PATH"** during setup), then:
+
+```powershell
+pip install -r tests\cli-tests\requirements.txt
+```
+
+GoogleTest is declared in `vcpkg.json` and is built automatically alongside the
+other C++ dependencies in Step 3 — no separate installation needed.
+
+#### Step 3 — vcpkg
 
 Open **Developer PowerShell for VS 2022**:
 
@@ -201,7 +235,7 @@ Set a permanent user environment variable (PowerShell as administrator, or via
 
 Restart the terminal / VS Code after setting the variable.
 
-#### Step 3 — Configure and build
+#### Step 4 — Configure and build
 
 **Expect the first configure to take 30–60 minutes** on a fast machine (vcpkg builds
 libvips + Qt 6 from source).  Subsequent builds are fast and incremental.
@@ -226,17 +260,6 @@ Build artefacts: `build\windows-msvc\bin\` and `build\windows-msvc\lib\`.
 ```powershell
 ctest --preset windows-msvc
 ```
-
-#### Step 4 — VS Code (Remote-WSL)
-
-Keep the source tree on the **Windows filesystem** (`C:\`) so that both the MSVC
-build and the WSL 2 GCC build share the same files without copying.  Open the
-folder in VS Code via **Remote-WSL** (`code .` from inside WSL, or *File → Open Folder*
-from the Remote-WSL window pointing to the Windows path).
-
-CMake Tools preset recommendation: **"Linux · GCC · Debug · system packages"**
-(`linux-system-debug`) for daily WSL development; switch to **"Windows · MSVC · Release"**
-(`windows-msvc`) for release verification.
 
 ---
 
@@ -264,10 +287,14 @@ CMake Tools preset recommendation: **"Linux · GCC · Debug · system packages"*
 |---|---|---|---|
 | [libvips](https://www.libvips.org/) | LGPL 2.1 | `libvips-dev` | `vips[cpp]` |
 | [nlohmann/json](https://github.com/nlohmann/json) | MIT | `nlohmann-json3-dev` | `nlohmann-json` |
-| [Qt 6](https://www.qt.io/) | LGPL 3 | `qt6-base-dev`, `qt6-base-dev-tools`, `libgl-dev`, `libgles-dev` | `qtbase[concurrent,gui,widgets]`, `qtconcurrent` |
+| [Qt 6](https://www.qt.io/) | LGPL 3 | `qt6-base-dev qt6-base-dev-tools libgl-dev libgles-dev` | `qtbase[concurrent,gui,widgets]` `qtconcurrent` |
+| [GoogleTest](https://github.com/google/googletest) | BSD 3-Clause | `libgtest-dev` | `gtest` (via `vcpkg.json`) |
+| [pytest](https://pytest.org/) | MIT | `pip install pytest` | `pip install pytest` |
 
 Qt must be **dynamically linked** in all builds to comply with LGPL terms (see
 [SPECIFICATION.md §1](docs/SPECIFICATION.md) for the licensing rationale).
+
+`libplatemaker` is also distributed as a **shared library** (`libplatemaker.so` / `platemaker.dll`) for the same reason — end users must be able to relink against a modified version.
 
 ---
 

@@ -471,7 +471,7 @@ This makes the web frontend entirely independent of the C++ codebase. iPad / mob
 - [x] Implement `MarginCropper`
 - [x] Implement `WorkspaceSerializer` (read + write + version field + processedFiles)
 - [x] Implement cancellation token (`std::atomic<bool>`)
-- [ ] Unit tests for all Core components (mock ImageIO — no real files required)
+- [-] Unit tests for all Core components (mock ImageIO — no real files required)
 
 ### Stage 2 — CLI (`platemaker`)
 - [ ] `platemaker workspace create` command

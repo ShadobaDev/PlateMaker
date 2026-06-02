@@ -1,0 +1,4 @@
+# Python test dependencies for Platemaker CLI integration tests.
+# Install with:  pip install -r tests/cli-tests/requirements.txt
+
+pytest>=7.0
