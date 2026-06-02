@@ -52,7 +52,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <set>
@@ -257,6 +260,56 @@ static const CanvasProfile* findCanvasProfile(
             cp.canvasSize.height == fileHeight)
             return &cp;
     return nullptr;
+}
+
+// ===========================================================================
+// SHA-256 and timestamp helpers
+// ===========================================================================
+
+/**
+ * \brief Computes the hex-encoded SHA-256 digest of a file's contents.
+ *
+ * Uses GLib's GChecksum API (available via the libvips transitive dependency)
+ * so no additional dependencies are required.  Reads the file in 64 KiB
+ * chunks to keep RAM usage constant for large inputs.
+ *
+ * \param filePath Absolute path to the file to hash.
+ * \return Lowercase hex string (64 characters), or an empty string on error.
+ */
+static std::string computeFileSha256(const std::string& filePath)
+{
+    std::ifstream file(filePath, std::ios::binary);
+    if (!file) return {};
+
+    GChecksum* cs = g_checksum_new(G_CHECKSUM_SHA256);
+    char buf[65536];
+    while (file.read(buf, sizeof(buf)) || file.gcount() > 0) {
+        g_checksum_update(cs,
+            reinterpret_cast<const guchar*>(buf),
+            static_cast<gssize>(file.gcount()));
+        if (!file && !file.eof()) break; // IO error mid-file
+    }
+    const std::string result = g_checksum_get_string(cs); // GLib owns the string
+    g_checksum_free(cs);
+    return result;
+}
+
+/**
+ * \brief Returns the current UTC time as an ISO 8601 string (e.g. "2026-06-02T14:30:00Z").
+ */
+static std::string nowIso8601()
+{
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+#if defined(_WIN32)
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    return oss.str();
 }
 
 // ===========================================================================
@@ -599,10 +652,12 @@ static int cmdProcess(const Opts& opts)
         std::cerr << "Error: --workspace FILE is required\n"; return 1;
     }
 
+    const std::string wsFile = opts.get("workspace");
+
     // --- Load workspace ---
     Workspace ws;
     try {
-        ws = WorkspaceSerializer{}.load(opts.get("workspace"));
+        ws = WorkspaceSerializer{}.load(wsFile);
     } catch (const std::exception& e) {
         std::cerr << "Error: cannot load workspace: " << e.what() << '\n';
         return 2;
@@ -625,6 +680,10 @@ static int cmdProcess(const Opts& opts)
             pi.order    = i;
             ws.pages.push_back(pi);
         }
+        // Note: stripDirty is NOT forced here — the SHA-256 hash check below
+        // determines whether reprocessing is necessary.  If the file list and
+        // contents are identical to the previous run the incremental skip
+        // still applies even when --input is used.
     }
 
     if (ws.pages.empty()) {
@@ -654,11 +713,71 @@ static int cmdProcess(const Opts& opts)
     if (opts.has("target-width")) outProfile.targetWidth  = opts.getInt("target-width", 800);
     if (opts.has("slice-height")) outProfile.sliceHeight  = opts.getInt("slice-height", 1280);
 
-    const bool jsonMode   = opts.has("json");
+    const bool jsonMode    = opts.has("json");
     // --no-profile bypasses canvas profile matching: treat workspace as if it
     // had no canvas profiles (standard pipeline, no margin cropping).
-    const bool noProfile  = opts.has("no-profile");
+    const bool noProfile   = opts.has("no-profile");
     const bool hasProfiles = !ws.canvasProfiles.empty() && !noProfile;
+
+    // -----------------------------------------------------------------------
+    // Incremental processing — SHA-256 check
+    //
+    // Algorithm:
+    //   1. Build a map of stored hashes from ws.processedFiles.
+    //   2. Compute the current SHA-256 for every page.
+    //   3. If ws.stripDirty == false AND every page already has an up-to-date
+    //      record in processedFiles → nothing changed, skip reprocessing.
+    //   4. Otherwise → full reprocess.
+    //   5. After successful processing: rebuild processedFiles from the slice
+    //      sourceMap, set stripDirty = false, and save the workspace.
+    // -----------------------------------------------------------------------
+
+    // Build stored-hash lookup: filePath → sha256
+    std::unordered_map<std::string, std::string> storedHashes;
+    for (const auto& rec : ws.processedFiles)
+        storedHashes[rec.inputFilePath] = rec.sha256;
+
+    // Compute current hashes for all pages.
+    std::unordered_map<std::string, std::string> currentHashes;
+    for (const auto& page : ws.pages) {
+        const std::string h = computeFileSha256(page.filePath);
+        if (!h.empty())
+            currentHashes[page.filePath] = h;
+    }
+
+    // Decide whether to skip reprocessing.
+    bool needsReprocess = ws.stripDirty;
+    if (!needsReprocess) {
+        for (const auto& page : ws.pages) {
+            const auto storedIt  = storedHashes.find(page.filePath);
+            const auto currentIt = currentHashes.find(page.filePath);
+            // New file (not in processedFiles) or hash mismatch → reprocess.
+            if (storedIt  == storedHashes.end()  ||
+                currentIt == currentHashes.end()  ||
+                storedIt->second != currentIt->second) {
+                needsReprocess = true;
+                break;
+            }
+        }
+    }
+
+    if (!needsReprocess) {
+        if (!jsonMode)
+            std::cerr << "Nothing to do: all "
+                      << ws.pages.size()
+                      << " file(s) unchanged since last run.\n";
+        else {
+            nlohmann::json j;
+            j["sliceCount"]   = 0;
+            j["outputFiles"]  = nlohmann::json::array();
+            j["skippedPages"] = nlohmann::json::array();
+            j["cancelled"]    = false;
+            j["incremental"]  = true;
+            j["upToDate"]     = true;
+            std::cout << j.dump() << '\n';
+        }
+        return 0;
+    }
 
     if (!jsonMode) {
         std::cerr << "Processing " << ws.pages.size() << " page(s)";
@@ -683,15 +802,13 @@ static int cmdProcess(const Opts& opts)
             const CanvasProfile* matchedProfile = nullptr;
 
             if (hasProfiles) {
-                // Read image width from the file header (fast — no pixel decode).
+                // Read image dimensions from the file header (fast — no pixel decode).
                 const int fileWidth = getImageWidth(page.filePath);
-                if (fileWidth <= 0) {
+                if (fileWidth <= 0)
                     throw std::runtime_error("cannot determine image dimensions");
-                }
                 const int fileHeight = getImageHeight(page.filePath);
-                if (fileHeight <= 0) {
+                if (fileHeight <= 0)
                     throw std::runtime_error("cannot determine image dimensions");
-                }
                 matchedProfile = findCanvasProfile(ws.canvasProfiles, fileWidth, fileHeight);
                 if (!matchedProfile) {
                     if (!jsonMode)
@@ -749,17 +866,53 @@ static int cmdProcess(const Opts& opts)
 
     for (auto& slice : slices) {
         const int fileNum = outProfile.startIndex + slice.index;
-        const std::string name = "output_" + zeroPad(fileNum, 3) + ext;
-        const std::string path = outputDir + "/" + name;
+        const std::string outName = "output_" + zeroPad(fileNum, 3) + ext;
+        const std::string outPath = outputDir + "/" + outName;
         try {
-            imageIO.save(slice.image, path, outProfile.outputFormat,
+            imageIO.save(slice.image, outPath, outProfile.outputFormat,
                          outProfile.jpegOptions);
-            outputFiles.push_back(name);
-            if (!jsonMode) std::cerr << "  Saved " << name << '\n';
+            outputFiles.push_back(outName);
+            if (!jsonMode) std::cerr << "  Saved " << outName << '\n';
         } catch (const std::exception& e) {
-            std::cerr << "Error: failed to save '" << path
+            std::cerr << "Error: failed to save '" << outPath
                       << "': " << e.what() << '\n';
             return 3;
+        }
+    }
+
+    // --- Rebuild processedFiles from sourceMap and update workspace ---
+    {
+        const std::string timestamp = nowIso8601();
+
+        // Collect contributesTo per source file from all slice sourceMaps.
+        std::unordered_map<std::string, std::vector<std::string>> contributes;
+        for (std::size_t si = 0; si < slices.size(); ++si) {
+            const std::string& outName = outputFiles[si];
+            for (const auto& seg : slices[si].sourceMap)
+                contributes[seg.sourceFilePath].push_back(outName);
+        }
+
+        ws.processedFiles.clear();
+        for (auto& [path, outNames] : contributes) {
+            ProcessedFileRecord rec;
+            rec.inputFilePath = path;
+            rec.sha256 = currentHashes.count(path) ? currentHashes.at(path)
+                                                    : computeFileSha256(path);
+            rec.lastProcessed = timestamp;
+            rec.contributesTo = std::move(outNames);
+            ws.processedFiles.push_back(std::move(rec));
+        }
+
+        ws.stripDirty = false;
+
+        try {
+            WorkspaceSerializer{}.save(ws, wsFile);
+            if (!jsonMode)
+                std::cerr << "Incremental cache saved to " << wsFile << '\n';
+        } catch (const std::exception& e) {
+            // Non-fatal: processing succeeded, only the cache was not persisted.
+            std::cerr << "Warning: could not update workspace cache: "
+                      << e.what() << '\n';
         }
     }
 
@@ -770,6 +923,8 @@ static int cmdProcess(const Opts& opts)
         j["outputFiles"]  = outputFiles;
         j["skippedPages"] = skippedPages;
         j["cancelled"]    = false;
+        j["incremental"]  = false;
+        j["upToDate"]     = false;
         std::cout << j.dump() << '\n';
     } else {
         std::cerr << "Done. " << outputFiles.size()

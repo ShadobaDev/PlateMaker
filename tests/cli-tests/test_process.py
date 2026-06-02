@@ -345,3 +345,95 @@ def test_process_no_profile_bypasses_canvas_profiles(
         f"Expected 6 slices with --no-profile, got {len(slices)}: "
         f"{[p.name for p in slices]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Incremental processing (SHA-256 cache)
+# ---------------------------------------------------------------------------
+
+def test_process_incremental_skips_unchanged_files(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    A second ``process`` invocation on unchanged input files must be skipped.
+
+    1. First run → processes 6 slices, saves processedFiles to workspace.
+    2. Second run (same workspace, same --input, same files) →
+       - exits 0
+       - stderr contains "Nothing to do"
+       - output directory is NOT cleared (slices from run 1 still present)
+    """
+    input_dir  = tmp_workspace / "input"
+    output_dir = tmp_workspace / "output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    _make_pages(input_dir, 3, width=800, height=2560)
+
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
+
+    # --- First run ---
+    r1 = _run_process(platemaker_bin, ws, output_dir,
+                      ["--input", str(input_dir)])
+    assert r1.returncode == 0, f"First run failed:\n{r1.stderr}"
+    slices_after_run1 = sorted(output_dir.glob("output_*.png"))
+    assert len(slices_after_run1) == 6
+
+    # --- Second run (files unchanged) ---
+    r2 = _run_process(platemaker_bin, ws, output_dir,
+                      ["--input", str(input_dir)])
+    assert r2.returncode == 0, f"Second run failed:\n{r2.stderr}"
+
+    assert "nothing to do" in r2.stderr.lower() or \
+           "unchanged" in r2.stderr.lower(), (
+        f"Expected 'nothing to do' / 'unchanged' in stderr:\n{r2.stderr}"
+    )
+
+    # Output files are still the same (not removed/regenerated).
+    slices_after_run2 = sorted(output_dir.glob("output_*.png"))
+    assert len(slices_after_run2) == 6
+
+
+def test_process_incremental_reprocesses_changed_file(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    After modifying an input file (different pixel content), the second run
+    must reprocess and produce fresh output slices.
+
+    1. First run with red solid pages → 6 slices.
+    2. Overwrite one input file with a green solid page (same size, new SHA-256).
+    3. Second run → must NOT be skipped, must succeed and produce 6 slices.
+    """
+    input_dir  = tmp_workspace / "input"
+    output_dir = tmp_workspace / "output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    # Red pages for the first run.
+    pages = _make_pages(input_dir, 3, width=800, height=2560, color=(255, 0, 0))
+
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
+
+    # --- First run ---
+    r1 = _run_process(platemaker_bin, ws, output_dir,
+                      ["--input", str(input_dir)])
+    assert r1.returncode == 0, f"First run failed:\n{r1.stderr}"
+    assert len(sorted(output_dir.glob("output_*.png"))) == 6
+
+    # --- Modify one input file (green — different SHA-256) ---
+    make_solid_png(pages[0], 800, 2560, 0, 255, 0)
+
+    # --- Second run — must reprocess ---
+    r2 = _run_process(platemaker_bin, ws, output_dir,
+                      ["--input", str(input_dir)])
+    assert r2.returncode == 0, f"Second run failed:\n{r2.stderr}"
+
+    assert "nothing to do" not in r2.stderr.lower(), (
+        "Expected reprocessing, but 'nothing to do' appeared in stderr"
+    )
+    assert len(sorted(output_dir.glob("output_*.png"))) == 6

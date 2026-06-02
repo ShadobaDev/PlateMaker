@@ -520,13 +520,14 @@ This makes the web frontend entirely independent of the C++ codebase. iPad / mob
 
 ### Stage 2 — CLI (`platemaker`)
 - [x] `platemaker workspace create` command
-- [ ] `platemaker process` command (standard pipeline)
-- [ ] `platemaker process` with margin-aware pipeline
-- [ ] `--start-index` flag
-- [ ] `--format` flag with JPEG options passthrough
-- [ ] Incremental processing (SHA-256 check, dirty propagation)
-- [ ] `--json` output mode
-- [ ] Drop-in replacement for the Clip2l prototype
+- [x] `platemaker process` command (standard pipeline)
+- [x] `platemaker process` with margin-aware pipeline
+- [x] `--start-index` flag
+- [x] `--format` flag with JPEG options passthrough
+- [x] Incremental processing (SHA-256 check, dirty propagation)
+- [x] `--json` output mode
+- [-] Drop-in replacement for the Clip2l prototype (deferred — scope unclear)
+- [ ] `platemaker template` with margins, defined profile name as option
 
 ### Stage 3 — Template Generator
 - [ ] Implement `TemplateGenerator` in Core
