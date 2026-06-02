@@ -241,20 +241,51 @@ For non-blocking behaviour the GUI wraps that call in `QtConcurrent::run()` itse
 Standalone binary. All commands operate on a workspace JSON file.
 
 ```
-platemaker [--help]
-platemaker help
-platemaker process   --workspace project.platemaker.json [--input ./pages] [--output ./out]
-                     [--format png|jpg|webp] [--start-index 1] [--json]
-platemaker template  --workspace project.platemaker.json --profile "webtoon-standard" --output template.png
-platemaker workspace create --canvas 1600x10240 --margins 100,100,100,100 --output project.platemaker.json
-platemaker workspace list-profiles --workspace project.platemaker.json
+platemaker [--help | -h | help]
+platemaker --version
+
+platemaker workspace create      [--output FILE] [--target-width N] [--slice-height N]
+platemaker workspace add-profile  --workspace FILE --name NAME --canvas WxH --margins T,R,B,L
+platemaker workspace mod-profile  --workspace FILE --name NAME [--canvas WxH] [--margins T,R,B,L]
+platemaker workspace rm-profile   --workspace FILE --name NAME
+platemaker workspace list-profiles --workspace FILE
+
+platemaker process  --workspace FILE
+                    [--input DIR] [--output DIR]
+                    [--format png|jpg|webp] [--start-index N]
+                    [--target-width N] [--slice-height N]
+                    [--json]
+
+platemaker template  --workspace FILE --profile NAME --output FILE
 ```
 
-- Exit codes: `0` success, `1` usage error, `2` IO error, `3` processing error
-- `--json` flag: machine-readable JSON summary to stdout (for web backend subprocess use)
-- `--start-index N`: output numbering starts at N (default 1), e.g. `--start-index 5` → `output_005.png, output_006.png …`
-- Human-readable progress always goes to stderr
-- no options -> assume help
+**workspace create** — Creates an empty workspace with a default "Webtoon Standard"
+output profile (800 px target, 1280 px slice).  No canvas profiles are created at this
+point.  `--output` is optional (default: `./project.platemaker.json`).
+
+**workspace add-profile** — Adds a `CanvasProfile` entry that describes one physical
+canvas size + margins used by the artist.  A workspace can hold multiple profiles (e.g.
+one per canvas height variant).  Files are matched to profiles at processing time by
+their pixel width.
+
+**workspace mod-profile / rm-profile** — Modify or remove a named canvas profile.
+Use `list-profiles` to discover profile names.
+
+**Canvas profile matching during `process`:**
+- If the workspace has canvas profiles, each input file's width (from PNG/JPEG header,
+  no pixel decode) is compared to every profile's `canvasSize.width`.
+- Matching profile's margins are applied automatically (margin-aware pipeline).
+- Files whose width matches **no** profile are reported as incompatible and skipped.
+- If the workspace has **no** canvas profiles, all files are processed with the standard
+  pipeline (no margin cropping).
+
+**Exit codes:** `0` success · `1` usage error · `2` IO error · `3` processing error
+
+**`--json` flag:** machine-readable JSON summary to stdout (for web backend subprocess use).
+
+**`--start-index N`:** output numbering starts at N (default 1), e.g. `--start-index 5` → `output_005.png, output_006.png …`
+
+Human-readable progress always goes to **stderr**.
 
 ### 5.4 Qt GUI — `platemaker-gui`
 

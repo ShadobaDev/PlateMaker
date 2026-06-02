@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-from helpers import create_workspace, make_solid_png
+from helpers import create_workspace, add_profile, make_solid_png
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ def _make_pages(
 
 
 # ---------------------------------------------------------------------------
-# Standard pipeline
+# Standard pipeline (no canvas profiles)
 # ---------------------------------------------------------------------------
 
 def test_process_standard_pipeline_produces_slices(
@@ -67,6 +67,8 @@ def test_process_standard_pipeline_produces_slices(
     """
     3 × 800×2560 PNG pages (total 7680 px) sliced at 1280 px each must
     produce exactly 6 output files: output_001.png … output_006.png.
+
+    No canvas profiles are defined → standard pipeline (no margin cropping).
     """
     input_dir  = tmp_workspace / "input"
     output_dir = tmp_workspace / "output"
@@ -76,9 +78,7 @@ def test_process_standard_pipeline_produces_slices(
     _make_pages(input_dir, 3, width=800, height=2560)
 
     ws = tmp_workspace / "project.platemaker.json"
-    create_workspace(platemaker_bin, ws,
-                     canvas="800x2560", margins="0,0,0,0",
-                     target_width=800, slice_height=1280)
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
 
     result = _run_process(platemaker_bin, ws, output_dir,
                           ["--input", str(input_dir)])
@@ -107,9 +107,7 @@ def test_process_start_index(
     _make_pages(input_dir, 3, width=800, height=2560)
 
     ws = tmp_workspace / "project.platemaker.json"
-    create_workspace(platemaker_bin, ws,
-                     canvas="800x2560", margins="0,0,0,0",
-                     target_width=800, slice_height=1280)
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
 
     result = _run_process(platemaker_bin, ws, output_dir,
                           ["--input", str(input_dir), "--start-index", "5"])
@@ -136,22 +134,17 @@ def test_process_format_jpg(
     _make_pages(input_dir, 3, width=800, height=2560)
 
     ws = tmp_workspace / "project.platemaker.json"
-    create_workspace(platemaker_bin, ws,
-                     canvas="800x2560", margins="0,0,0,0",
-                     target_width=800, slice_height=1280)
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
 
     result = _run_process(platemaker_bin, ws, output_dir,
                           ["--input", str(input_dir), "--format", "jpg"])
     assert result.returncode == 0, f"process failed:\n{result.stderr}"
 
-    # No PNG files should appear; 6 JPG files should.
     png_files = sorted(output_dir.glob("output_*.png"))
     jpg_files = sorted(output_dir.glob("output_*.jpg"))
 
     assert len(png_files) == 0, "Expected no PNG files when format=jpg"
-    assert len(jpg_files) == 6, (
-        f"Expected 6 JPG slices, got {len(jpg_files)}"
-    )
+    assert len(jpg_files) == 6, f"Expected 6 JPG slices, got {len(jpg_files)}"
     assert jpg_files[0].name == "output_001.jpg"
 
 
@@ -170,18 +163,14 @@ def test_process_format_webp(
     _make_pages(input_dir, 3, width=800, height=2560)
 
     ws = tmp_workspace / "project.platemaker.json"
-    create_workspace(platemaker_bin, ws,
-                     canvas="800x2560", margins="0,0,0,0",
-                     target_width=800, slice_height=1280)
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
 
     result = _run_process(platemaker_bin, ws, output_dir,
                           ["--input", str(input_dir), "--format", "webp"])
     assert result.returncode == 0, f"process failed:\n{result.stderr}"
 
     webp_files = sorted(output_dir.glob("output_*.webp"))
-    assert len(webp_files) == 6, (
-        f"Expected 6 WebP slices, got {len(webp_files)}"
-    )
+    assert len(webp_files) == 6, f"Expected 6 WebP slices, got {len(webp_files)}"
 
 
 def test_process_json_flag_outputs_valid_json(
@@ -200,9 +189,7 @@ def test_process_json_flag_outputs_valid_json(
     _make_pages(input_dir, 3, width=800, height=2560)
 
     ws = tmp_workspace / "project.platemaker.json"
-    create_workspace(platemaker_bin, ws,
-                     canvas="800x2560", margins="0,0,0,0",
-                     target_width=800, slice_height=1280)
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
 
     result = _run_process(platemaker_bin, ws, output_dir,
                           ["--input", str(input_dir), "--json"])
@@ -212,9 +199,9 @@ def test_process_json_flag_outputs_valid_json(
 
     assert "sliceCount"  in summary
     assert "outputFiles" in summary
-    assert summary["sliceCount"]  == 6
-    assert len(summary["outputFiles"]) == 6
-    assert summary["outputFiles"][0]   == "output_001.png"
+    assert summary["sliceCount"]        == 6
+    assert len(summary["outputFiles"])  == 6
+    assert summary["outputFiles"][0]    == "output_001.png"
     assert summary["cancelled"] == False  # noqa: E712
 
 
@@ -227,15 +214,16 @@ def test_process_margin_aware_pipeline(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    Margin-aware pipeline:
-      * Input images are 1000×2000 (canvas including 100 px margins on each side).
-      * CanvasProfile: canvas=1000x2000, margins=100,100,100,100
-        → safe area = 800×1800 per image.
-      * 3 images × 1800 px = 5400 px total after cropping.
-      * 5400 / 1280 = 4 full slices + 1 tail → 5 output files.
+    Margin-aware pipeline via canvas profile matching by width.
 
-    Without margin cropping (standard pipeline on the same input), the images
-    would be 1000×2000 scaled to 800×1600 each (3×1600=4800 px → 3+1=4 files).
+      * Canvas profile: canvas=1000x2000, margins=100,100,100,100
+        → safe area = 800×1800 per image.
+      * Input images are 1000×2000 (full canvas including margins).
+      * 3 images × 1800 px = 5400 px total after cropping.
+      * 5400 / 1280 = 4 full slices + 1 tail (280 px) → 5 output files.
+
+    Without margin cropping (standard pipeline), the same images would be
+    1000×2000 scaled to 800×1600 each (3×1600=4800 px → 3+1=4 files).
     The different file count proves the crop step executed.
     """
     input_dir  = tmp_workspace / "input"
@@ -247,15 +235,12 @@ def test_process_margin_aware_pipeline(
     _make_pages(input_dir, 3, width=1000, height=2000, color=(200, 200, 200))
 
     ws = tmp_workspace / "project.platemaker.json"
-    # margins: top=100, right=100, bottom=100, left=100
-    # safe area: 1000-200=800 wide, 2000-200=1800 tall
-    create_workspace(
-        platemaker_bin, ws,
-        canvas="1000x2000",
-        margins="100,100,100,100",
-        target_width=800,
-        slice_height=1280,
-    )
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
+    # Profile width 1000 px — process will auto-detect this profile for 1000px files.
+    add_profile(platemaker_bin, ws,
+                name="Canvas-1000",
+                canvas="1000x2000",
+                margins="100,100,100,100")
 
     result = _run_process(platemaker_bin, ws, output_dir,
                           ["--input", str(input_dir)])
@@ -264,8 +249,49 @@ def test_process_margin_aware_pipeline(
     )
 
     slices = sorted(output_dir.glob("output_*.png"))
-    # 3 × 1800 = 5400 px → 4 full slices of 1280 + 1 tail slice of 280 = 5
+    # 3 × 1800 = 5400 px → 4 full slices + 1 tail = 5 files
     assert len(slices) == 5, (
         f"Expected 5 slices from margin-aware pipeline, got {len(slices)}: "
         f"{[p.name for p in slices]}"
     )
+
+
+def test_process_incompatible_files_are_skipped(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    When canvas profiles are defined, files whose width doesn't match any
+    profile must be skipped with a warning and not cause a hard failure.
+    Files that DO match must still be processed successfully.
+    """
+    input_dir  = tmp_workspace / "input"
+    output_dir = tmp_workspace / "output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    # 2 compatible (width=1000) + 1 incompatible (width=800)
+    make_solid_png(input_dir / "image_000.png", 1000, 2000)
+    make_solid_png(input_dir / "image_001.png", 1000, 2000)
+    make_solid_png(input_dir / "image_002.png",  800, 2560)  # incompatible
+
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
+    add_profile(platemaker_bin, ws,
+                name="Canvas-1000",
+                canvas="1000x2000",
+                margins="0,0,0,0")  # zero margins → standard scale, no crop
+
+    result = _run_process(platemaker_bin, ws, output_dir,
+                          ["--input", str(input_dir)])
+    # Should succeed (2 files processed) even though 1 was incompatible.
+    assert result.returncode == 0, f"process failed:\n{result.stderr}"
+
+    # The incompatible file warning should appear on stderr.
+    assert "incompatible" in result.stderr.lower() or \
+           "does not match" in result.stderr.lower(), \
+        "Expected an incompatibility warning on stderr"
+
+    # Only the 2 compatible 1000-px files were processed.
+    slices = sorted(output_dir.glob("output_*.png"))
+    assert len(slices) >= 1, "Expected at least 1 output slice from 2 compatible files"

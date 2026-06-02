@@ -10,4 +10,4 @@ build
 *\.clinerules
 
 # Temporary files from editors
-temp
+/temp
