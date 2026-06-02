@@ -220,10 +220,21 @@ struct SliceResult {
 - Persists `processedFiles` map (SHA-256 + sourceMap) for incremental processing
 
 #### `ThumbnailCache`
-- Generates small preview images (200 px wide) asynchronously
-- GUI build: `QtConcurrent::run`; CLI build: direct synchronous call (compile-time flag `PLATEMAKER_NO_QT`)
+- Generates small preview images (200 px wide) on demand
 - Stored in `.platemaker-cache/` sibling to the `.platemaker.json` workspace file
-- Safe to delete at any time — regenerated on next open
+- Safe to delete at any time — regenerated transparently on next access
+- **Zero Qt dependency** — provides only synchronous, blocking methods
+
+**Usage policy:** `ThumbnailCache` is **caller-driven** and is never invoked by the
+CLI binary.  Thumbnails are a pure GUI concern.  When the Qt GUI needs to display
+a thumbnail for a `PageItem` it calls `ThumbnailCache::getOrGenerate(page.filePath)`.
+For non-blocking behaviour the GUI wraps that call in `QtConcurrent::run()` itself —
+`libplatemaker` makes no threading decisions.
+
+> **Design note:** `PageItem` intentionally does **not** carry a `thumbnailPath` field.
+> The thumbnail path is deterministic (derived from `filePath` via a path digest) so
+> it never needs to be persisted in the workspace JSON.  The GUI computes it on the
+> fly with `ThumbnailCache::thumbnailPath(page.filePath)`.
 
 ### 5.3 CLI — `platemaker`
 
@@ -326,13 +337,16 @@ progressive   : bool  // default false
 
 ### `PageItem`
 ```
-id            : uuid (string)
-filePath      : string    // absolute path on disk
-order         : int       // 0-indexed display order (not filesystem order)
-thumbnailPath : string    // path in .platemaker-cache/
-status        : enum      // PENDING | PROCESSED | SKIPPED | ERROR
-errorMessage  : string    // empty unless status == ERROR or SKIPPED
+id           : uuid (string)
+filePath     : string    // absolute path on disk
+order        : int       // 0-indexed display order (not filesystem order)
+status       : enum      // PENDING | PROCESSED | SKIPPED | ERROR
+errorMessage : string    // empty unless status == ERROR or SKIPPED
 ```
+
+> **Note:** `thumbnailPath` is not persisted. The GUI derives it on demand via
+> `ThumbnailCache::thumbnailPath(page.filePath)` — the path is deterministic and
+> does not need to be stored in the workspace JSON.
 
 ### `ProcessedFileRecord`
 ```
@@ -474,7 +488,7 @@ This makes the web frontend entirely independent of the C++ codebase. iPad / mob
 - [-] Unit tests for all Core components (mock ImageIO — no real files required)
 
 ### Stage 2 — CLI (`platemaker`)
-- [ ] `platemaker workspace create` command
+- [x] `platemaker workspace create` command
 - [ ] `platemaker process` command (standard pipeline)
 - [ ] `platemaker process` with margin-aware pipeline
 - [ ] `--start-index` flag

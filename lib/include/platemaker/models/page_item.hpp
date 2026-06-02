@@ -22,9 +22,10 @@ namespace Platemaker::Models {
  * \class PageItem
  * \brief Metadata record for one source image file participating in the strip pipeline.
  *
- * PageItem does **not** hold pixel data.  It stores only the path, display order,
- * thumbnail path, and processing status.  Pixel data is loaded on demand by the
- * pipeline when that page is actually needed.
+ * PageItem does **not** hold pixel data and does **not** hold a thumbnail path.
+ * Thumbnails are a GUI concern: the Qt layer asks \c ThumbnailCache::getOrGenerate()
+ * on demand when it needs to display a preview.  The thumbnail path is deterministic
+ * (derived from \c filePath) so it never needs to be persisted in the workspace.
  *
  * \note The \c id field is a UUID string generated once at creation time and never
  *       changed thereafter — it is the stable identity key for this page across
@@ -32,10 +33,9 @@ namespace Platemaker::Models {
  */
 class PageItem {
 public:
-    std::string id;            //!< UUID v4 string — stable identity key for this page.
-    std::string filePath;      //!< Absolute path to the source image file on disk.
-    int         order = 0;     //!< 0-based display order within the strip (not filesystem order).
-    std::string thumbnailPath; //!< Absolute path to the cached 200 px-wide thumbnail image.
+    std::string id;        //!< UUID v4 string — stable identity key for this page.
+    std::string filePath;  //!< Absolute path to the source image file on disk.
+    int         order = 0; //!< 0-based display order within the strip (not filesystem order).
 
     /**
      * \brief Current processing status of this page.

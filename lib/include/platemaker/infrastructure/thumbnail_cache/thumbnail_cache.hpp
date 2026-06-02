@@ -2,9 +2,10 @@
  * \file
  * \brief ThumbnailCache — generates and caches 200 px-wide preview images on disk.
  *
- * In GUI builds (PLATEMAKER_NO_QT not defined) thumbnail generation is performed
- * asynchronously using Qt infrastructure injected by the caller.
- * In CLI builds (PLATEMAKER_NO_QT defined) generation is synchronous.
+ * This class is part of \c libplatemaker and has zero Qt dependency.
+ * It provides only synchronous, blocking methods.  The GUI layer is responsible
+ * for wrapping calls in \c QtConcurrent::run() when asynchronous behaviour is
+ * required — \c libplatemaker does not make that policy decision.
  *
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
@@ -16,7 +17,6 @@
 #ifndef PLATEMAKER_INFRASTRUCTURE_THUMBNAIL_CACHE_HPP
 #define PLATEMAKER_INFRASTRUCTURE_THUMBNAIL_CACHE_HPP
 
-#include <functional>
 #include <string>
 
 namespace Platemaker::Infrastructure {
@@ -30,13 +30,15 @@ namespace Platemaker::Infrastructure {
  * use and is safe to delete at any time — thumbnails are regenerated transparently
  * on next access.
  *
- * Each thumbnail is named by the SHA-256 of the source file path so that renames
+ * Each thumbnail is named by a digest of the source file path so that renames
  * do not produce stale entries (the old entry is simply orphaned and ignored until
  * the cache is cleaned).
  *
- * \note This class is the only component in libplatemaker with conditional Qt
- *       behaviour.  When \c PLATEMAKER_NO_QT is defined the async overload is
- *       compiled out; callers should use the synchronous \c getOrGenerate() method.
+ * \note \b Usage \b policy: The CLI binary never calls this class — thumbnails are a
+ *       pure GUI concern (file list widget, hover previews).  The Qt GUI calls
+ *       \c getOrGenerate() on demand when a \c PageItem needs to be displayed.
+ *       For non-blocking behaviour the GUI wraps the call in \c QtConcurrent::run();
+ *       \c libplatemaker itself does not depend on Qt and makes no threading decisions.
  */
 class ThumbnailCache {
 public:
@@ -46,18 +48,15 @@ public:
      * The directory is created if it does not exist.
      *
      * \param cacheDirectory Absolute path to the \c .platemaker-cache/ directory.
+     * \throws std::runtime_error if the directory cannot be created.
      */
     explicit ThumbnailCache(const std::string& cacheDirectory);
-
-    // ---------------------------------------------------------------------------
-    // Synchronous interface (available in all builds)
-    // ---------------------------------------------------------------------------
 
     /**
      * \brief Returns the path to a valid thumbnail for \p sourceFilePath.
      *
      * If a thumbnail already exists on disk it is returned immediately.  Otherwise
-     * the thumbnail is generated synchronously before returning.
+     * the thumbnail is generated synchronously (blocking) before returning.
      *
      * \param sourceFilePath Absolute path to the source image file.
      * \return Absolute path to the cached thumbnail PNG file.
@@ -70,7 +69,7 @@ public:
      * \brief Returns the expected thumbnail path without generating it.
      *
      * Useful for checking cache existence before deciding whether to request
-     * async generation.
+     * generation.
      *
      * \param sourceFilePath Absolute path to the source image file.
      * \return Absolute path where the thumbnail would be stored.
@@ -84,30 +83,6 @@ public:
      * \return \c true if the thumbnail PNG exists and is non-empty.
      */
     [[nodiscard]] bool isCached(const std::string& sourceFilePath) const;
-
-#ifndef PLATEMAKER_NO_QT
-    // ---------------------------------------------------------------------------
-    // Asynchronous interface (GUI builds only)
-    // ---------------------------------------------------------------------------
-
-    /**
-     * \brief Requests thumbnail generation in a background thread via QtConcurrent.
-     *
-     * If the thumbnail already exists the callback is invoked immediately (on the
-     * caller's thread) with the cached path.  Otherwise generation is dispatched
-     * to a thread pool and the \p callback is invoked on the calling thread via a
-     * queued connection when the thumbnail is ready.
-     *
-     * \note This overload is only compiled when \c PLATEMAKER_NO_QT is not defined.
-     *
-     * \param sourceFilePath Absolute path to the source image file.
-     * \param callback       A callable invoked with the thumbnail path when ready.
-     *                       The callback must be safe to call from the Qt main thread.
-     */
-    void requestAsync(
-        const std::string&                     sourceFilePath,
-        std::function<void(const std::string&)> callback);
-#endif // PLATEMAKER_NO_QT
 
 private:
     std::string m_cacheDirectory; //!< Root directory where thumbnails are stored.

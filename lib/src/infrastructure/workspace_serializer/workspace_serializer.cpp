@@ -148,23 +148,25 @@ void from_json(const nlohmann::json& j, OutputProfile& v) {
 }
 
 // --- PageItem ---
+// Note: thumbnailPath is intentionally NOT persisted.
+// Thumbnails are computed on demand by the GUI via ThumbnailCache::getOrGenerate()
+// using the deterministic path derived from filePath.
 void to_json(nlohmann::json& j, const PageItem& v) {
     j = nlohmann::json{
-        {"id",            v.id},
-        {"filePath",      v.filePath},
-        {"order",         v.order},
-        {"thumbnailPath", v.thumbnailPath},
-        {"status",        v.status},
-        {"errorMessage",  v.errorMessage}
+        {"id",           v.id},
+        {"filePath",     v.filePath},
+        {"order",        v.order},
+        {"status",       v.status},
+        {"errorMessage", v.errorMessage}
     };
 }
 void from_json(const nlohmann::json& j, PageItem& v) {
     j.at("id").get_to(v.id);
     j.at("filePath").get_to(v.filePath);
     j.at("order").get_to(v.order);
-    j.at("thumbnailPath").get_to(v.thumbnailPath);
     j.at("status").get_to(v.status);
     j.at("errorMessage").get_to(v.errorMessage);
+    // Silently ignore legacy "thumbnailPath" key — not part of the model.
 }
 
 // --- ProcessedFileRecord ---

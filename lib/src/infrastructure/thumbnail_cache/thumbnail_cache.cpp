@@ -6,6 +6,10 @@
  * are named by a hex digest of the source file path so that renames produce
  * orphan entries rather than stale hits.
  *
+ * This implementation has zero Qt dependency.  The GUI layer is responsible for
+ * running \c getOrGenerate() on a background thread (e.g. via \c QtConcurrent::run())
+ * when non-blocking behaviour is needed.
+ *
  * \note Stage 1 uses std::hash<std::string> for the path digest.
  *       TODO Stage 2: replace with SHA-256 of the source file path for
  *       collision-resistance as specified.
@@ -21,12 +25,7 @@
 
 #include <vips/vips.h>
 
-#ifndef PLATEMAKER_NO_QT
-#   include <QtConcurrent/QtConcurrent>
-#endif
-
 #include <filesystem>
-#include <functional>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -139,45 +138,5 @@ std::string ThumbnailCache::generate(const std::string& sourceFilePath)
 
     return destPath;
 }
-
-// ---------------------------------------------------------------------------
-// requestAsync — asynchronous interface (GUI builds only)
-// ---------------------------------------------------------------------------
-
-#ifndef PLATEMAKER_NO_QT
-void ThumbnailCache::requestAsync(
-    const std::string&                      sourceFilePath,
-    std::function<void(const std::string&)> callback)
-{
-    // If already cached, invoke the callback immediately on the calling thread.
-    if (isCached(sourceFilePath)) {
-        callback(thumbnailPath(sourceFilePath));
-        return;
-    }
-
-    // Dispatch generation to a Qt thread-pool worker.
-    // The result is delivered to the calling thread via the QFutureWatcher
-    // mechanism.
-    //
-    // TODO Stage 4 (Qt GUI): replace this synchronous stub with a proper
-    // QFutureWatcher<std::string> that invokes the callback on the Qt main
-    // thread via a queued connection.  The stub below is correct but blocks
-    // the calling thread during thumbnail generation — acceptable for Stage 1
-    // where no GUI event loop is running.
-    // Store the future so we satisfy [[nodiscard]].  The task runs to
-    // completion even after the future is destroyed (thread-pool keeps it alive).
-    // TODO Stage 4: hold the QFuture in a QFutureWatcher so the callback is
-    // delivered on the Qt main thread rather than the pool thread.
-    [[maybe_unused]] auto future =
-        QtConcurrent::run([this, sourceFilePath, callback]() {
-            try {
-                this->generate(sourceFilePath);
-                callback(this->thumbnailPath(sourceFilePath));
-            } catch (...) {
-                // Thumbnail generation failure is non-fatal: silently swallow.
-            }
-        });
-}
-#endif // PLATEMAKER_NO_QT
 
 } // namespace Platemaker::Infrastructure

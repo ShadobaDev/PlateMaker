@@ -1,7 +1,13 @@
+# build artifacts
 build
 
+# OS-generated files
 *.pyc
 *__pycache__
 *\.pytest_cache
 
+# Vibe-coding decimation
 *\.clinerules
+
+# Temporary files from editors
+temp
