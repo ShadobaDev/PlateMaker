@@ -5,6 +5,8 @@
  * Stage 4 will implement the full GUI (MainWindow, ToolPanel subclasses, etc.).
  * For now this is a compile-check stub.
  *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *

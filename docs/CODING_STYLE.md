@@ -10,6 +10,8 @@ Always use Doxygen style comments for documentation. Use backslash `\` notation.
  *
  * Detailed description of the file.
  *
+ * SPDX-License-Identifier: [license]
+ * 
  * \author [Author Name] <[Author Email]>
  * \date [Current Date in YYYY-MM-DD format]
  * 

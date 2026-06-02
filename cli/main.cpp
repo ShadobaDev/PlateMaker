@@ -29,6 +29,8 @@
  *   2  IO error (file not found, permission denied, …)
  *   3  processing error (libvips failure, pipeline error, …)
  *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * 
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-02
  *
