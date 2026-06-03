@@ -65,6 +65,11 @@ void TemplateGenerator::generate(
 {
     using namespace Models;
 
+#define GUIDLINES_ENABLED 0 // Cut of vibe-coded guide lines for now. Maybe resused in the future if needed.
+
+#if GUIDLINES_ENABLED
+    (void)outputProfile; // silence unused parameter warning since guide lines are currently disabled
+#endif
     const int W = canvasProfile.canvasSize.width;
     const int H = canvasProfile.canvasSize.height;
 
@@ -140,12 +145,14 @@ void TemplateGenerator::generate(
     // -----------------------------------------------------------------------
     // 3. Draw safe-area border (2 px, dark charcoal, nearly opaque).
     // -----------------------------------------------------------------------
+#if GUIDLINES_ENABLED
     constexpr RGBA kBorder{40, 40, 40, 220};
     constexpr int  kBW = 2;
     fillRect(canvas, safeL,        safeT,        safeW, kBW,         kBorder); // top
     fillRect(canvas, safeL,        safeB - kBW,  safeW, kBW,         kBorder); // bottom
     fillRect(canvas, safeL,        safeT,        kBW,   safeHpx,     kBorder); // left
     fillRect(canvas, safeR - kBW,  safeT,        kBW,   safeHpx,     kBorder); // right
+#endif
 
     // -----------------------------------------------------------------------
     // 4. Draw horizontal slice guide lines inside the safe area.
@@ -158,6 +165,7 @@ void TemplateGenerator::generate(
     //    Guide lines start at (safeT + scaledSliceH) and repeat every
     //    scaledSliceH pixels downward, stopping before safeB.
     // -----------------------------------------------------------------------
+#if GUIDLINES_ENABLED
     if (outputProfile.targetWidth > 0 && outputProfile.sliceHeight > 0) {
         const double scaleFactor =
             static_cast<double>(W) / static_cast<double>(outputProfile.targetWidth);
@@ -175,6 +183,7 @@ void TemplateGenerator::generate(
             guideYf += scaledSliceH;
         }
     }
+#endif
 
     // -----------------------------------------------------------------------
     // 5. Save as PNG (always lossless; alpha preserved).

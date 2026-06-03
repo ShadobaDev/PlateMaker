@@ -61,11 +61,10 @@ CMake Tools preset recommendation: **"Linux · GCC · Debug · system packages"*
 
 ---
 
-#### Path A — System packages `linux-system` *(recommended for development)*
-
+#### Path A — System packages `linux-system`
 No vcpkg installation needed.  All dependencies come from the Ubuntu package manager.
 
-**Step 1 — Build toolchain**
+**Build toolchain**
 
 ```bash
 sudo apt update
@@ -77,7 +76,7 @@ sudo apt install -y \
     git
 ```
 
-**Step 2 — C++ dependencies + test tooling**
+**Libraries**
 
 ```bash
 sudo apt install -y \
@@ -107,7 +106,7 @@ Package notes:
 
 > **Note:** If `pip` reports the script is not on `PATH`, use `python3 -m pytest` directly, or add `~/.local/bin` to your `PATH`.  The CMake test configuration always uses `python3 -m pytest`, so CTest is unaffected.
 
-**Step 3 — Configure and build**
+**Configure and build**
 
 ```bash
 # Full build: libplatemaker + CLI + Qt GUI
@@ -132,16 +131,15 @@ ctest --preset linux-system
 
 ---
 
-#### Path B — vcpkg `linux-gcc` *(CI / reproducible builds)*
+#### Alternative - vcpkg `linux-gcc` 
 
 Uses vcpkg to manage nlohmann/json; libvips and Qt 6 still come from apt (vcpkg
 manifest marks them as Windows-only so they are never built from source on Linux).
 
-**Step 1 — Build toolchain** *(same as Path A Step 1)*
+**Build toolchain** 
+*(same as Path A Step 1*
 
-**Step 2 — libvips + Qt system packages** *(same as Path A Step 2)*
-
-**Step 3 — vcpkg**
+**Libraries — vcpkg**
 
 ```bash
 git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
@@ -159,7 +157,9 @@ export PATH="$VCPKG_ROOT:$PATH"
 source ~/.bashrc   # reload shell
 ```
 
-**Step 4 — Configure and build**
+---
+
+**Configure and build**
 
 ```bash
 cmake --preset linux-gcc
@@ -197,7 +197,7 @@ inside the editor without touching the terminal.
 NOT YET!!! Tested on **Windows 10 22H2** and **Windows 11** with **Visual Studio 2022**.  
 All C++ dependencies (libvips, nlohmann/json, Qt 6) are built by vcpkg on first configure.
 
-#### Step 1 — Prerequisites
+#### Prerequisites
 
 1. [Visual Studio 2022](https://visualstudio.microsoft.com/) — select the
    **"Desktop development with C++"** workload.  MSVC, CMake, and Ninja are
@@ -205,7 +205,7 @@ All C++ dependencies (libvips, nlohmann/json, Qt 6) are built by vcpkg on first 
 
 2. [Git for Windows](https://git-scm.com/download/win)
 
-#### Step 2 — Python + pytest (CLI tests)
+#### Python + pytest (CLI tests)
 
 Install Python 3 for Windows from [python.org](https://www.python.org/downloads/) (tick
 **"Add Python to PATH"** during setup), then:
@@ -217,7 +217,7 @@ pip install -r tests\cli-tests\requirements.txt
 GoogleTest is declared in `vcpkg.json` and is built automatically alongside the
 other C++ dependencies in Step 3 — no separate installation needed.
 
-#### Step 3 — vcpkg
+#### vcpkg
 
 Open **Developer PowerShell for VS 2022**:
 
@@ -235,10 +235,7 @@ Set a permanent user environment variable (PowerShell as administrator, or via
 
 Restart the terminal / VS Code after setting the variable.
 
-#### Step 4 — Configure and build
-
-**Expect the first configure to take 30–60 minutes** on a fast machine (vcpkg builds
-libvips + Qt 6 from source).  Subsequent builds are fast and incremental.
+#### Configure and build
 
 Open **Developer PowerShell for VS 2022**, then:
 
@@ -267,7 +264,7 @@ ctest --preset windows-msvc
 
 | Preset name | Platform | vcpkg? | Qt? | Use case |
 |---|---|---|---|---|
-| `linux-system` | Linux / WSL2 | ❌ | ✅ | **Recommended daily dev** — system packages |
+| `linux-system` | Linux / WSL2 | ❌ | ✅ | **Iniotial dev** — system packages |
 | `linux-system-debug` | Linux / WSL2 | ❌ | ✅ | Debug + AddressSanitizer / UBSan |
 | `linux-system-cli` | Linux / WSL2 | ❌ | ❌ | Headless build, no Qt required |
 | `linux-gcc` | Linux / WSL2 | ✅ | ✅ | Reproducible build via vcpkg (CI) |
