@@ -323,6 +323,85 @@ def test_process_project_incremental_skips(tmp_path, platemaker_bin):
     assert "nothing to do" in r2.stderr.lower()
 
 
+def test_process_multi_input_per_output_provenance(tmp_path, platemaker_bin):
+    """
+    Verify that when a slice spans two input files, both files appear in
+    the output's sourceMap and the crossing file lists both outputs in
+    its contributesTo field.
+
+    Setup:
+      page_001.png  — 800 × 1200 px
+      page_002.png  — 800 × 1200 px
+      sliceHeight = 1280 px
+
+    Virtual strip: 2400 px total
+      slice_0 (output_001): pixels 0–1279 → 1200 from page_001 + 80 from page_002
+      slice_1 (output_002): pixels 1280–2399 → 1120 from page_002 (plus tail kept)
+
+    Expectations:
+      • output_001 sourceMap has 2 segments (page_001 AND page_002)
+      • page_002.contributesTo contains BOTH output_001 and output_002
+      • page_001.contributesTo contains only output_001
+    """
+    import json
+
+    ws = tmp_path / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws, slice_height=1280)
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    make_solid_png(pages / "page_001.png", 800, 1200)
+    make_solid_png(pages / "page_002.png", 800, 1200)
+    out_dir = tmp_path / "out"
+
+    _run(platemaker_bin, "project", "create",
+         "--workspace", str(ws),
+         "--name", "Ch01",
+         "--input", str(pages),
+         "--output", str(out_dir))
+
+    r = _run(platemaker_bin, "process",
+             "--workspace", str(ws), "--project", "Ch01")
+    assert r.returncode == 0, r.stderr
+
+    # --- Parse saved workspace JSON and inspect provenance data ---
+    data = json.loads(ws.read_text())
+    proj = data["projectItems"][0]
+
+    # Build lookup: filePath → contributesTo  (from saved JSON)
+    contrib_map = {
+        inf["filePath"]: inf["contributesTo"]
+        for inf in proj["inputFiles"]
+    }
+    # Build lookup: fileName → sourceMap  (from saved JSON)
+    source_map = {
+        outf["fileName"]: outf["sourceMap"]
+        for outf in proj["outputFiles"]
+    }
+
+    # Identify which path is page_001 / page_002 (sorted by filename)
+    sorted_paths = sorted(contrib_map.keys())
+    path_001, path_002 = sorted_paths[0], sorted_paths[1]
+
+    # output_001 must draw from BOTH page_001 and page_002
+    assert "output_001.png" in source_map, "output_001.png not found in saved outputFiles"
+    sm_001 = source_map["output_001.png"]
+    source_paths_001 = {seg["sourceFilePath"] for seg in sm_001}
+    assert path_001 in source_paths_001, (
+        f"page_001 not in output_001 sourceMap: {source_paths_001}")
+    assert path_002 in source_paths_001, (
+        f"page_002 not in output_001 sourceMap (expected boundary-crossing): {source_paths_001}")
+
+    # page_001 contributes only to output_001 (it fits inside one slice)
+    assert contrib_map[path_001] == ["output_001.png"], (
+        f"page_001.contributesTo expected [output_001.png], got {contrib_map[path_001]}")
+
+    # page_002 contributes to BOTH output_001 (boundary) and output_002 (remainder)
+    assert "output_001.png" in contrib_map[path_002], (
+        f"page_002 should contribute to output_001 (boundary crossing)")
+    assert "output_002.png" in contrib_map[path_002], (
+        f"page_002 should contribute to output_002 (remainder)")
+
+
 def test_process_project_reprocesses_after_mod(tmp_path, platemaker_bin):
     """After project mod --input (new scan), next process re-runs."""
     ws = tmp_path / "project.platemaker.json"

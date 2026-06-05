@@ -326,6 +326,12 @@ Models::Workspace WorkspaceSerializer::load(const std::string& filePath) const
         migrate(workspace, fileVersion);
     }
 
+    // Rebuild runtime lookup tables for every project.
+    // These tables are not serialised so they must always be reconstructed
+    // after loading from JSON.
+    for (auto& pi : workspace.projectItems)
+        pi.rebuildLookupTables();
+
     return workspace;
 }
 

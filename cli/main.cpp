@@ -362,6 +362,10 @@ static int cmdHelp(const std::string& prog)
         << "        --canvas-safe-area WxH  Drawable area only; canvas = safe-area + margins.\n"
         << "      Add a canvas profile to an existing workspace.\n"
         << "\n"
+        << "  workspace add-profile / mod-profile also accept:\n"
+        << "    --margins-tpl-color R,G,B[,A]    Margin overlay colour for templates.\n"
+        << "    --background-tpl-color R,G,B[,A] Background fill colour for templates.\n"
+        << "\n"
         << "  workspace mod-profile\n"
         << "      --workspace FILE --name NAME\n"
         << "      [--canvas WxH | --canvas-safe-area WxH]  [--margins T,R,B,L]\n"
@@ -396,9 +400,13 @@ static int cmdHelp(const std::string& prog)
         << "        3. Built-in defaults: margins=pink(255,105,180,128), bg=transparent(0,0,0,0)\n"
         << "      Bad colour values are silently ignored (colours are cosmetic).\n"
         << "\n"
-        << "  workspace add-profile / mod-profile also accept:\n"
-        << "    --margins-tpl-color R,G,B[,A]    Margin overlay colour for templates.\n"
-        << "    --background-tpl-color R,G,B[,A] Background fill colour for templates.\n"
+        << " platemaker project create  --workspace FILE --name NAME\n"
+        << "           [--input DIR] [--output DIR]\n"
+        << " platemaker project mod     --workspace FILE --name NAME \n"
+        << "           [--new-name N] [--input DIR] [--output DIR]\n"
+        << " platemaker project rm      --workspace FILE --name NAME\n"
+        << " platemaker project status  --workspace FILE --name NAME\n"
+        << "      Manage named projects (input directories) within a workspace.\n"
         << "\n"
         << "Exit codes: 0=success  1=usage error  2=IO error  3=processing error\n";
     return 0;
@@ -834,16 +842,16 @@ static int cmdProcess(const Opts& opts)
             // No match — create a new project and append to workspace.
             ProjectItem newProj;
             newProj.name           = inputDir.filename().string();
-            newProj.uuid           = "proj-" + nowIso8601(); // simple unique ID
+            newProj.uuid           = "proj-" + nowIso8601();
             newProj.inputDirectory = absInput;
+            // Use mergeFileScan() on the empty project to populate the file
+            // list via the library layer (same path as updates later on).
             const auto files = scanImageDir(inputDir);
-            for (int i = 0; i < static_cast<int>(files.size()); ++i) {
-                InputFile inf;
-                inf.uuid     = "file-" + std::to_string(i);
-                inf.filePath = fs::absolute(files[static_cast<std::size_t>(i)]).string();
-                inf.order    = i;
-                newProj.getInputImages().push_back(std::move(inf));
-            }
+            std::vector<std::string> paths;
+            paths.reserve(files.size());
+            for (const auto& f : files)
+                paths.push_back(fs::absolute(f).string());
+            newProj.mergeFileScan(paths);
             ws.projectItems.push_back(std::move(newProj));
             projectIdx = static_cast<int>(ws.projectItems.size()) - 1;
         }
@@ -1003,46 +1011,24 @@ static int cmdProcess(const Opts& opts)
         }
     }
 
-    // --- Update ProjectItem and save workspace ---
+    // --- Update ProjectItem via library API, then save workspace ---
     {
-        const std::string timestamp = nowIso8601();
-
-        // Build contributesTo map: filePath → [output file names it contributed to].
-        std::unordered_map<std::string, std::vector<std::string>> contributes;
+        // Build ProcessingSliceRecord list (Models layer — no pixel data).
+        std::vector<ProcessingSliceRecord> records;
+        records.reserve(slices.size());
         for (std::size_t si = 0; si < slices.size(); ++si) {
-            const std::string& outName = outputFiles[si];
-            for (const auto& seg : slices[si].sourceMap)
-                contributes[seg.sourceFilePath].push_back(outName);
+            ProcessingSliceRecord rec;
+            rec.fileName     = outputFiles[si];
+            rec.outputSha256 = FileMetaData::computeFileSha256(
+                                   outputDir + "/" + outputFiles[si]);
+            rec.sourceMap    = slices[si].sourceMap;
+            records.push_back(std::move(rec));
         }
 
-        // Update each InputFile: hash, status, timestamp, contributesTo.
-        for (auto& inf : project.getInputImages()) {
-            const std::string h = FileMetaData::computeFileSha256(inf.filePath);
-            if (!h.empty()) {
-                inf.sha256        = h;
-                inf.status        = FileStatus::Processed;
-                inf.lastProcessed = timestamp;
-            }
-            const auto it = contributes.find(inf.filePath);
-            if (it != contributes.end())
-                inf.contributesTo = it->second;
-        }
-
-        // Rebuild OutputFile list from slices.
-        project.getOutputImages().clear();
-        for (std::size_t si = 0; si < slices.size(); ++si) {
-            OutputFile outf;
-            outf.uuid      = "out-" + std::to_string(si);
-            outf.fileName  = outputFiles[si];
-            outf.sha256    = FileMetaData::computeFileSha256(
-                                 outputDir + "/" + outputFiles[si]);
-            outf.sourceMap = slices[si].sourceMap;
-            outf.status    = FileStatus::Done;
-            project.getOutputImages().push_back(std::move(outf));
-        }
-
-        // Persist output directory back to the project.
-        project.getOutputDirectory() = outputDir;
+        // applyProcessingResults() updates sha256 hashes, contributesTo,
+        // OutputFile list and rebuilds runtime lookup tables — all in the
+        // library layer rather than scattered across CLI code.
+        project.applyProcessingResults(records, outputDir, nowIso8601());
 
         try {
             WorkspaceSerializer{}.save(ws, wsFile);
@@ -1157,14 +1143,14 @@ static int cmdProjectCreate(const Opts& opts)
             return 2;
         }
         newProj.inputDirectory = fs::absolute(inputDir).string();
+        // mergeFileScan() on an empty project just populates the input list;
+        // sha256-based rename detection is available on the first mod later.
         const auto files = scanImageDir(inputDir);
-        for (int i = 0; i < static_cast<int>(files.size()); ++i) {
-            InputFile inf;
-            inf.uuid     = "file-" + std::to_string(i);
-            inf.filePath = fs::absolute(files[static_cast<std::size_t>(i)]).string();
-            inf.order    = i;
-            newProj.getInputImages().push_back(std::move(inf));
-        }
+        std::vector<std::string> paths;
+        paths.reserve(files.size());
+        for (const auto& f : files)
+            paths.push_back(fs::absolute(f).string());
+        newProj.mergeFileScan(paths);
     }
 
     if (opts.has("output"))
@@ -1240,19 +1226,25 @@ static int cmdProjectMod(const Opts& opts)
             return 2;
         }
         pi->inputDirectory = fs::absolute(inputDir).string();
-        // Rescan the directory and replace the file list.
-        pi->getInputImages().clear();
-        pi->getOutputImages().clear(); // output is now stale
+        // mergeFileScan() detects renames via sha256 and only invalidates
+        // outputs when the strip structure changes (add / remove / reorder).
         const auto files = scanImageDir(inputDir);
-        for (int i = 0; i < static_cast<int>(files.size()); ++i) {
-            InputFile inf;
-            inf.uuid     = "file-" + std::to_string(i);
-            inf.filePath = fs::absolute(files[static_cast<std::size_t>(i)]).string();
-            inf.order    = i;
-            pi->getInputImages().push_back(std::move(inf));
-        }
-        std::cerr << "  Input updated: "
-                  << pi->getInputImages().size() << " file(s) from " << opts.get("input") << '\n';
+        std::vector<std::string> paths;
+        paths.reserve(files.size());
+        for (const auto& f : files)
+            paths.push_back(fs::absolute(f).string());
+        const auto scanResult = pi->mergeFileScan(paths);
+        std::cerr << "  Input updated: " << pi->getInputImages().size()
+                  << " file(s) from " << opts.get("input");
+        if (!scanResult.added.empty())
+            std::cerr << "  [+" << scanResult.added.size() << " new]";
+        if (!scanResult.renamed.empty())
+            std::cerr << "  [" << scanResult.renamed.size() << " renamed]";
+        if (!scanResult.removed.empty())
+            std::cerr << "  [-" << scanResult.removed.size() << " removed]";
+        if (scanResult.outputsInvalidated)
+            std::cerr << "  [outputs invalidated]";
+        std::cerr << '\n';
     }
 
     if (opts.has("output"))
