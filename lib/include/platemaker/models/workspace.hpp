@@ -21,23 +21,9 @@
 
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/output_profile.hpp>
-#include <platemaker/models/page_item.hpp>
+#include <platemaker/models/project_item.hpp>
 
 namespace Platemaker::Models {
-
-/**
- * \brief Incremental processing cache entry for a single input file.
- *
- * Persisted inside \c Workspace::processedFiles.  On the next run the pipeline
- * compares the current SHA-256 of each source file against this record; files
- * whose hash is unchanged do not need to be reprocessed.
- */
-struct ProcessedFileRecord {
-    std::string              inputFilePath; //!< Absolute path of the source image at the time of processing.
-    std::string              sha256;        //!< Hex-encoded SHA-256 digest of the file contents.
-    std::string              lastProcessed; //!< ISO 8601 timestamp of the last successful processing run.
-    std::vector<std::string> contributesTo; //!< Output filenames (e.g. "output_003.png") that contain pixels from this input.
-};
 
 /**
  * \class Workspace
@@ -72,8 +58,6 @@ public:
     std::string activeCanvasProfileName; //!< Name of the currently selected CanvasProfile.
     std::string activeOutputProfileName; //!< Name of the currently selected OutputProfile.
 
-    std::vector<PageItem> pages; //!< Ordered list of source image files forming the virtual strip.
-
     std::string outputDirectory; //!< Absolute path to the directory where output slices are written.
 
     /**
@@ -82,7 +66,7 @@ public:
      * On each run the pipeline compares current file hashes against these records
      * to determine which outputs are still valid.
      */
-    std::vector<ProcessedFileRecord> processedFiles;
+    std::vector<ProjectItem> projectItems; //!< List of all projects (input and output files) that have been processed at least once.
 
     /**
      * \brief Indicates that the entire strip must be reprocessed on the next run.

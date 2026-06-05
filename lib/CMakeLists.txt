@@ -6,6 +6,7 @@ cmake_minimum_required(VERSION 3.21)
 set(PLATEMAKER_SOURCES
     # Models (non-trivial computed properties)
     src/models/canvas_profile.cpp
+    src/models/project_item.cpp
 
     # Infrastructure — control
     src/infrastructure/control/cancellation_token.cpp
@@ -19,6 +20,7 @@ set(PLATEMAKER_SOURCES
     src/core/template_generator/template_generator.cpp
 
     # Infrastructure / IO
+    src/infrastructure/file/file_meta_data.cpp
     src/infrastructure/image_io/image_io.cpp
     src/infrastructure/workspace_serializer/workspace_serializer.cpp
     src/infrastructure/thumbnail_cache/thumbnail_cache.cpp

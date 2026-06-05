@@ -67,7 +67,7 @@ void TemplateGenerator::generate(
 
 #define GUIDLINES_ENABLED 0 // Cut of vibe-coded guide lines for now. Maybe resused in the future if needed.
 
-#if GUIDLINES_ENABLED
+#if !GUIDLINES_ENABLED
     (void)outputProfile; // silence unused parameter warning since guide lines are currently disabled
 #endif
     const int W = canvasProfile.canvasSize.width;

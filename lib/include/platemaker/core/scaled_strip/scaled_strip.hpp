@@ -3,7 +3,7 @@
  * \brief ScaledStrip — the virtual strip abstraction that accumulates scaled images
  *        and produces output slices.
  *
- * Also defines the SourceSegment and SliceResult types that carry provenance
+ * Also defines SliceResult type that carry provenance
  * information for incremental processing.
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
@@ -25,25 +25,13 @@
 #include <platemaker/core/pixel_buffer/pixel_buffer.hpp>
 #include <platemaker/core/scaler/scaler.hpp>
 #include <platemaker/models/common_types.hpp>
+#include <platemaker/models/project_item.hpp>
 
 namespace Platemaker::Core {
 
 // ---------------------------------------------------------------------------
 // Helper types (companions of ScaledStrip, not primary classes)
 // ---------------------------------------------------------------------------
-
-/**
- * \brief Describes the contribution of one source file to a single output slice.
- *
- * The pipeline stores one SourceSegment per source image that contributed pixels
- * to the parent SliceResult.  This is the data persisted in
- * \c ProcessedFileRecord::contributesTo for incremental processing decisions.
- */
-struct SourceSegment {
-    std::string sourceFilePath; //!< Absolute path of the scaled source image.
-    int         srcY   = 0;     //!< Y offset (pixels from the top) within the scaled source image where this segment begins.
-    int         height = 0;     //!< Number of pixels taken from this source image for this slice.
-};
 
 /**
  * \brief The result of slicing one segment out of the virtual strip.
@@ -54,9 +42,9 @@ struct SourceSegment {
  * \note SliceResult is move-only because PixelBuffer is move-only.
  */
 struct SliceResult {
-    PixelBuffer                image;     //!< Pixel data for this output slice.
-    int                        index = 0; //!< 0-based output index — use with startIndex to build the filename.
-    std::vector<SourceSegment> sourceMap; //!< Provenance: one entry per source file that contributed pixels to this slice.
+    PixelBuffer                image;       //!< Pixel data for this output slice.
+    int                        index = 0;   //!< 0-based output index — use with startIndex to build the filename.
+    std::vector<Models::SourceSegment> sourceMap;   //!< Provenance: one entry per source file that contributed pixels to this slice.
 };
 
 // ---------------------------------------------------------------------------

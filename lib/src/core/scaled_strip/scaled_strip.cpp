@@ -93,7 +93,7 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
         }
 
         // Record provenance for incremental processing.
-        SourceSegment seg;
+        Models::SourceSegment seg;
         seg.sourceFilePath = entry.image.sourceFilePath;
         seg.srcY           = localSrcY;
         seg.height         = overlapH;

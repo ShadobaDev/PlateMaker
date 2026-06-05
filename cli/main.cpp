@@ -4,21 +4,23 @@
  *
  * Supported subcommands:
  *   platemaker --version
- *   platemaker workspace create      [--output FILE] [--target-width N] [--slice-height N]
- *   platemaker workspace add-profile  --workspace FILE --name NAME --canvas WxH --margins T,R,B,L
- *                      [--margins-tpl-color R,G,B[,A] --background-tpl-color R,G,B[,A]]
- *   platemaker workspace mod-profile  --workspace FILE --name NAME [--canvas WxH] 
- *                      [--margins T,R,B,L --margins-tpl-color R,G,B[,A] --background-tpl-color R,G,B[,A]]
- *   platemaker workspace rm-profile   --workspace FILE --name NAME
- *   platemaker workspace list-profiles --workspace FILE
+ *   platemaker workspace create         [--output FILE] [--target-width N] [--slice-height N]
+ *   platemaker workspace add-profile    --workspace FILE --name NAME --canvas WxH --margins T,R,B,L
+ *   platemaker workspace mod-profile    --workspace FILE --name NAME [--canvas WxH] [--margins T,R,B,L]
+ *   platemaker workspace rm-profile     --workspace FILE --name NAME
+ *   platemaker workspace list-profiles  --workspace FILE
+ *   platemaker workspace list-projects  --workspace FILE
+ *   platemaker project create  --workspace FILE --name NAME [--input DIR] [--output DIR]
+ *   platemaker project mod     --workspace FILE --name NAME [--new-name N] [--input DIR] [--output DIR]
+ *   platemaker project rm      --workspace FILE --name NAME
+ *   platemaker project status  --workspace FILE --name NAME
  *   platemaker process --workspace FILE
- *                      [--input DIR] [--output DIR]
- *                      [--format png|jpg|webp] [--start-index N]
+ *                      { --input DIR | --project NAME }
+ *                      [--output DIR] [--format png|jpg|webp] [--start-index N]
  *                      [--target-width N] [--slice-height N]
  *                      [--no-profile] [--json]
- *  platemaker template --workspace FILE --profile NAME --output FILE
- *                      [--margins-tpl-color R,G,B[,A]]  
- *                      [--background-tpl-color R,G,B[,A]]\n"
+ *   platemaker template --workspace FILE --profile NAME --output FILE
+ *                       [--margins-tpl-color R,G,B[,A]] [--background-tpl-color R,G,B[,A]]
  * 
  * Canvas profile matching during process:
  *   - If the workspace has canvas profiles, each input file's pixel width is
@@ -50,10 +52,11 @@
 #include <platemaker/core/template_generator/template_generator.hpp>
 #include <platemaker/infrastructure/image_io/image_io.hpp>
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
+#include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/common_types.hpp>
 #include <platemaker/models/output_profile.hpp>
-#include <platemaker/models/page_item.hpp>
+#include <platemaker/models/project_item.hpp>
 #include <platemaker/models/workspace.hpp>
 
 #include <nlohmann/json.hpp>
@@ -304,38 +307,6 @@ static const CanvasProfile* findCanvasProfile(
             cp.canvasSize.height == fileHeight)
             return &cp;
     return nullptr;
-}
-
-// ===========================================================================
-// SHA-256 and timestamp helpers
-// ===========================================================================
-
-/**
- * \brief Computes the hex-encoded SHA-256 digest of a file's contents.
- *
- * Uses GLib's GChecksum API (available via the libvips transitive dependency)
- * so no additional dependencies are required.  Reads the file in 64 KiB
- * chunks to keep RAM usage constant for large inputs.
- *
- * \param filePath Absolute path to the file to hash.
- * \return Lowercase hex string (64 characters), or an empty string on error.
- */
-static std::string computeFileSha256(const std::string& filePath)
-{
-    std::ifstream file(filePath, std::ios::binary);
-    if (!file) return {};
-
-    GChecksum* cs = g_checksum_new(G_CHECKSUM_SHA256);
-    char buf[65536];
-    while (file.read(buf, sizeof(buf)) || file.gcount() > 0) {
-        g_checksum_update(cs,
-            reinterpret_cast<const guchar*>(buf),
-            static_cast<gssize>(file.gcount()));
-        if (!file && !file.eof()) break; // IO error mid-file
-    }
-    const std::string result = g_checksum_get_string(cs); // GLib owns the string
-    g_checksum_free(cs);
-    return result;
 }
 
 /**
@@ -811,40 +782,116 @@ static int cmdProcess(const Opts& opts)
         return 2;
     }
 
-    // --- Override pages from --input directory ---
-    if (opts.has("input")) {
+    // -----------------------------------------------------------------------
+    // Resolve the working ProjectItem.
+    //
+    // Priority:
+    //   1. --project NAME  → named project from workspace
+    //   2. --input DIR     → find by inputDirectory or create new in-flight
+    //   3. Neither         → error
+    // -----------------------------------------------------------------------
+
+    // Resolve output profile now (before we might return early).
+    OutputProfile outProfile = activeOutputProfile(ws);
+    if (opts.has("format"))       outProfile.outputFormat = parseFormat(opts.get("format"));
+    if (opts.has("start-index"))  outProfile.startIndex   = opts.getInt("start-index", 1);
+    if (opts.has("target-width")) outProfile.targetWidth  = opts.getInt("target-width", 800);
+    if (opts.has("slice-height")) outProfile.sliceHeight  = opts.getInt("slice-height", 1280);
+
+    const bool jsonMode    = opts.has("json");
+    const bool noProfile   = opts.has("no-profile");
+    const bool hasProfiles = !ws.canvasProfiles.empty() && !noProfile;
+
+    int projectIdx = -1; // index into ws.projectItems; -1 = new project
+
+    if (opts.has("project")) {
+        const std::string projName = opts.get("project");
+        for (int i = 0; i < static_cast<int>(ws.projectItems.size()); ++i)
+            if (ws.projectItems[static_cast<std::size_t>(i)].name == projName)
+                { projectIdx = i; break; }
+        if (projectIdx < 0) {
+            std::cerr << "Error: project '" << projName
+                      << "' not found in workspace.\n"
+                      << "  Use 'workspace list-projects --workspace " << wsFile
+                      << "' to see available projects.\n";
+            return 1;
+        }
+    } else if (opts.has("input")) {
         fs::path inputDir = opts.get("input");
         if (!fs::is_directory(inputDir)) {
             std::cerr << "Error: --input '" << inputDir.string()
                       << "' is not a directory\n";
             return 2;
         }
-        const auto files = scanImageDir(inputDir);
-        ws.pages.clear();
-        for (int i = 0; i < static_cast<int>(files.size()); ++i) {
-            PageItem pi;
-            pi.id       = std::to_string(i);
-            pi.filePath = files[static_cast<std::size_t>(i)].string();
-            pi.order    = i;
-            ws.pages.push_back(pi);
-        }
-        // Note: stripDirty is NOT forced here — the SHA-256 hash check below
-        // determines whether reprocessing is necessary.  If the file list and
-        // contents are identical to the previous run the incremental skip
-        // still applies even when --input is used.
-    }
+        const std::string absInput = fs::absolute(inputDir).string();
 
-    if (ws.pages.empty()) {
-        std::cerr << "Error: no pages found. "
-                     "Use --input DIR or add pages to the workspace.\n";
+        // Look for an existing project matching this directory.
+        for (int i = 0; i < static_cast<int>(ws.projectItems.size()); ++i)
+            if (ws.projectItems[static_cast<std::size_t>(i)].inputDirectory == absInput)
+                { projectIdx = i; break; }
+
+        if (projectIdx < 0) {
+            // No match — create a new project and append to workspace.
+            ProjectItem newProj;
+            newProj.name           = inputDir.filename().string();
+            newProj.uuid           = "proj-" + nowIso8601(); // simple unique ID
+            newProj.inputDirectory = absInput;
+            const auto files = scanImageDir(inputDir);
+            for (int i = 0; i < static_cast<int>(files.size()); ++i) {
+                InputFile inf;
+                inf.uuid     = "file-" + std::to_string(i);
+                inf.filePath = fs::absolute(files[static_cast<std::size_t>(i)]).string();
+                inf.order    = i;
+                newProj.getInputImages().push_back(std::move(inf));
+            }
+            ws.projectItems.push_back(std::move(newProj));
+            projectIdx = static_cast<int>(ws.projectItems.size()) - 1;
+        }
+    } else {
+        std::cerr << "Error: either --project NAME or --input DIR is required.\n"
+                  << "  --project NAME : process an existing workspace project.\n"
+                  << "  --input DIR    : process a directory (find or create project).\n";
         return 1;
     }
 
+    ProjectItem& project = ws.projectItems[static_cast<std::size_t>(projectIdx)];
+
+    if (project.getInputImages().empty()) {
+        std::cerr << "Error: project '" << project.name
+                  << "' has no input files.\n";
+        return 1;
+    }
+
+    // --- Sanitize — update file statuses and check if reprocess is needed ---
+    project.sanitize();
+
+    if (project.isUpToDate()) {
+        if (!jsonMode)
+            std::cerr << "Nothing to do: all "
+                      << project.getInputImages().size()
+                      << " file(s) unchanged since last run (project: "
+                      << project.name << ").\n";
+        else {
+            nlohmann::json j;
+            j["sliceCount"]   = 0;
+            j["outputFiles"]  = nlohmann::json::array();
+            j["skippedPages"] = nlohmann::json::array();
+            j["cancelled"]    = false;
+            j["incremental"]  = true;
+            j["upToDate"]     = true;
+            j["project"]      = project.name;
+            std::cout << j.dump() << '\n';
+        }
+        return 0;
+    }
+
     // --- Resolve output directory ---
-    const std::string outputDir = opts.get("output", ws.outputDirectory);
+    std::string outputDir = opts.get("output");
+    if (outputDir.empty()) outputDir = project.getOutputDirectory();
+    if (outputDir.empty()) outputDir = ws.outputDirectory;
     if (outputDir.empty()) {
         std::cerr << "Error: --output DIR is required "
-                     "(workspace has no outputDirectory)\n";
+                     "(project and workspace have no outputDirectory)\n";
         return 1;
     }
     try {
@@ -854,81 +901,9 @@ static int cmdProcess(const Opts& opts)
         return 2;
     }
 
-    // --- Resolve active output profile; apply CLI overrides ---
-    OutputProfile outProfile = activeOutputProfile(ws);
-    if (opts.has("format"))       outProfile.outputFormat = parseFormat(opts.get("format"));
-    if (opts.has("start-index"))  outProfile.startIndex   = opts.getInt("start-index", 1);
-    if (opts.has("target-width")) outProfile.targetWidth  = opts.getInt("target-width", 800);
-    if (opts.has("slice-height")) outProfile.sliceHeight  = opts.getInt("slice-height", 1280);
-
-    const bool jsonMode    = opts.has("json");
-    // --no-profile bypasses canvas profile matching: treat workspace as if it
-    // had no canvas profiles (standard pipeline, no margin cropping).
-    const bool noProfile   = opts.has("no-profile");
-    const bool hasProfiles = !ws.canvasProfiles.empty() && !noProfile;
-
-    // -----------------------------------------------------------------------
-    // Incremental processing — SHA-256 check
-    //
-    // Algorithm:
-    //   1. Build a map of stored hashes from ws.processedFiles.
-    //   2. Compute the current SHA-256 for every page.
-    //   3. If ws.stripDirty == false AND every page already has an up-to-date
-    //      record in processedFiles → nothing changed, skip reprocessing.
-    //   4. Otherwise → full reprocess.
-    //   5. After successful processing: rebuild processedFiles from the slice
-    //      sourceMap, set stripDirty = false, and save the workspace.
-    // -----------------------------------------------------------------------
-
-    // Build stored-hash lookup: filePath → sha256
-    std::unordered_map<std::string, std::string> storedHashes;
-    for (const auto& rec : ws.processedFiles)
-        storedHashes[rec.inputFilePath] = rec.sha256;
-
-    // Compute current hashes for all pages.
-    std::unordered_map<std::string, std::string> currentHashes;
-    for (const auto& page : ws.pages) {
-        const std::string h = computeFileSha256(page.filePath);
-        if (!h.empty())
-            currentHashes[page.filePath] = h;
-    }
-
-    // Decide whether to skip reprocessing.
-    bool needsReprocess = ws.stripDirty;
-    if (!needsReprocess) {
-        for (const auto& page : ws.pages) {
-            const auto storedIt  = storedHashes.find(page.filePath);
-            const auto currentIt = currentHashes.find(page.filePath);
-            // New file (not in processedFiles) or hash mismatch → reprocess.
-            if (storedIt  == storedHashes.end()  ||
-                currentIt == currentHashes.end()  ||
-                storedIt->second != currentIt->second) {
-                needsReprocess = true;
-                break;
-            }
-        }
-    }
-
-    if (!needsReprocess) {
-        if (!jsonMode)
-            std::cerr << "Nothing to do: all "
-                      << ws.pages.size()
-                      << " file(s) unchanged since last run.\n";
-        else {
-            nlohmann::json j;
-            j["sliceCount"]   = 0;
-            j["outputFiles"]  = nlohmann::json::array();
-            j["skippedPages"] = nlohmann::json::array();
-            j["cancelled"]    = false;
-            j["incremental"]  = true;
-            j["upToDate"]     = true;
-            std::cout << j.dump() << '\n';
-        }
-        return 0;
-    }
-
+    // --- Pipeline ---
     if (!jsonMode) {
-        std::cerr << "Processing " << ws.pages.size() << " page(s)";
+        std::cerr << "Processing " << project.getInputImages().size() << " file(s)";
         if (noProfile)
             std::cerr << " [--no-profile: canvas profiles ignored]";
         else if (hasProfiles)
@@ -937,7 +912,6 @@ static int cmdProcess(const Opts& opts)
         std::cerr << " ...\n";
     }
 
-    // --- Pipeline: for each page → detect profile → (crop) → scale → strip ---
     Scaler        scaler;
     MarginCropper cropper;
     ImageIO       imageIO;
@@ -945,31 +919,32 @@ static int cmdProcess(const Opts& opts)
 
     std::vector<std::string> skippedPages;
 
-    for (const auto& page : ws.pages) {
+    for (const auto& file : project.getInputImages()) {
+        if (file.status == FileStatus::Missing) {
+            if (!jsonMode)
+                std::cerr << "Warning: skipping missing file '"
+                          << file.filePath << "'\n";
+            skippedPages.push_back(file.filePath);
+            continue;
+        }
         try {
             const CanvasProfile* matchedProfile = nullptr;
-
             if (hasProfiles) {
-                // Read image dimensions from the file header (fast — no pixel decode).
-                const int fileWidth = getImageWidth(page.filePath);
-                if (fileWidth <= 0)
-                    throw std::runtime_error("cannot determine image dimensions");
-                const int fileHeight = getImageHeight(page.filePath);
-                if (fileHeight <= 0)
+                const int fileWidth  = getImageWidth(file.filePath);
+                const int fileHeight = getImageHeight(file.filePath);
+                if (fileWidth <= 0 || fileHeight <= 0)
                     throw std::runtime_error("cannot determine image dimensions");
                 matchedProfile = findCanvasProfile(ws.canvasProfiles, fileWidth, fileHeight);
                 if (!matchedProfile) {
                     if (!jsonMode)
-                        std::cerr << "Warning: skipping '" << page.filePath
-                                  << "': width=" << fileWidth
-                                  << ", height=" << fileHeight
+                        std::cerr << "Warning: skipping '" << file.filePath
+                                  << "': " << fileWidth << 'x' << fileHeight
                                   << " does not match any canvas profile\n";
-                    skippedPages.push_back(page.filePath);
+                    skippedPages.push_back(file.filePath);
                     continue;
                 }
             }
 
-            // Margin-aware pipeline only when the matched profile has non-zero margins.
             const bool doMarginCrop =
                 matchedProfile != nullptr &&
                 (matchedProfile->margins.top    > 0 ||
@@ -978,19 +953,19 @@ static int cmdProcess(const Opts& opts)
                  matchedProfile->margins.right  > 0);
 
             if (doMarginCrop) {
-                auto buf     = imageIO.load(page.filePath);
+                auto buf     = imageIO.load(file.filePath);
                 auto cropped = cropper.crop(buf, matchedProfile->margins);
-                auto scaled  = scaler.scale(std::move(cropped), page.filePath,
+                auto scaled  = scaler.scale(std::move(cropped), file.filePath,
                                             outProfile.targetWidth);
                 strip.append(std::move(scaled));
             } else {
-                auto scaled = scaler.scale(page.filePath, outProfile.targetWidth);
+                auto scaled = scaler.scale(file.filePath, outProfile.targetWidth);
                 strip.append(std::move(scaled));
             }
         } catch (const std::exception& e) {
-            std::cerr << "Warning: skipping '" << page.filePath
+            std::cerr << "Warning: skipping '" << file.filePath
                       << "': " << e.what() << '\n';
-            skippedPages.push_back(page.filePath);
+            skippedPages.push_back(file.filePath);
         }
     }
 
@@ -1028,11 +1003,11 @@ static int cmdProcess(const Opts& opts)
         }
     }
 
-    // --- Rebuild processedFiles from sourceMap and update workspace ---
+    // --- Update ProjectItem and save workspace ---
     {
         const std::string timestamp = nowIso8601();
 
-        // Collect contributesTo per source file from all slice sourceMaps.
+        // Build contributesTo map: filePath → [output file names it contributed to].
         std::unordered_map<std::string, std::vector<std::string>> contributes;
         for (std::size_t si = 0; si < slices.size(); ++si) {
             const std::string& outName = outputFiles[si];
@@ -1040,26 +1015,41 @@ static int cmdProcess(const Opts& opts)
                 contributes[seg.sourceFilePath].push_back(outName);
         }
 
-        ws.processedFiles.clear();
-        for (auto& [path, outNames] : contributes) {
-            ProcessedFileRecord rec;
-            rec.inputFilePath = path;
-            rec.sha256 = currentHashes.count(path) ? currentHashes.at(path)
-                                                    : computeFileSha256(path);
-            rec.lastProcessed = timestamp;
-            rec.contributesTo = std::move(outNames);
-            ws.processedFiles.push_back(std::move(rec));
+        // Update each InputFile: hash, status, timestamp, contributesTo.
+        for (auto& inf : project.getInputImages()) {
+            const std::string h = FileMetaData::computeFileSha256(inf.filePath);
+            if (!h.empty()) {
+                inf.sha256        = h;
+                inf.status        = FileStatus::Processed;
+                inf.lastProcessed = timestamp;
+            }
+            const auto it = contributes.find(inf.filePath);
+            if (it != contributes.end())
+                inf.contributesTo = it->second;
         }
 
-        ws.stripDirty = false;
+        // Rebuild OutputFile list from slices.
+        project.getOutputImages().clear();
+        for (std::size_t si = 0; si < slices.size(); ++si) {
+            OutputFile outf;
+            outf.uuid      = "out-" + std::to_string(si);
+            outf.fileName  = outputFiles[si];
+            outf.sha256    = FileMetaData::computeFileSha256(
+                                 outputDir + "/" + outputFiles[si]);
+            outf.sourceMap = slices[si].sourceMap;
+            outf.status    = FileStatus::Done;
+            project.getOutputImages().push_back(std::move(outf));
+        }
+
+        // Persist output directory back to the project.
+        project.getOutputDirectory() = outputDir;
 
         try {
             WorkspaceSerializer{}.save(ws, wsFile);
             if (!jsonMode)
                 std::cerr << "Incremental cache saved to " << wsFile << '\n';
         } catch (const std::exception& e) {
-            // Non-fatal: processing succeeded, only the cache was not persisted.
-            std::cerr << "Warning: could not update workspace cache: "
+            std::cerr << "Warning: could not update workspace: "
                       << e.what() << '\n';
         }
     }
@@ -1077,6 +1067,330 @@ static int cmdProcess(const Opts& opts)
     } else {
         std::cerr << "Done. " << outputFiles.size()
                   << " slice(s) written to " << outputDir << '\n';
+    }
+
+    return 0;
+}
+
+// ===========================================================================
+// platemaker workspace list-projects
+// ===========================================================================
+
+static int cmdWorkspaceListProjects(const Opts& opts)
+{
+    if (!opts.has("workspace")) {
+        std::cerr << "Error: --workspace FILE is required\n"; return 1;
+    }
+
+    Workspace ws;
+    try {
+        ws = WorkspaceSerializer{}.load(opts.get("workspace"));
+    } catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n';
+        return 2;
+    }
+
+    if (ws.projectItems.empty()) {
+        std::cout << "Projects: (none)\n"
+                  << "  Tip: platemaker project create --workspace "
+                  << opts.get("workspace")
+                  << " --name NAME [--input DIR] [--output DIR]\n";
+        return 0;
+    }
+
+    std::cout << "Projects (" << ws.projectItems.size() << "):\n";
+    for (const auto& pi : ws.projectItems) {
+        std::cout << "  name          : " << pi.name << '\n'
+                  << "    uuid        : " << pi.uuid << '\n'
+                  << "    input dir   : "
+                  << (pi.inputDirectory.empty() ? "(not set)" : pi.inputDirectory) << '\n'
+                  << "    output dir  : "
+                  << (pi.getOutputDirectory().empty() ? "(not set)"
+                                                      : pi.getOutputDirectory()) << '\n'
+                  << "    input files : " << pi.getInputImages().size() << '\n'
+                  << "    output files: " << pi.getOutputImages().size() << '\n';
+    }
+    return 0;
+}
+
+// ===========================================================================
+// platemaker project create
+// ===========================================================================
+
+static int cmdProjectCreate(const Opts& opts)
+{
+    if (!opts.has("workspace")) {
+        std::cerr << "Error: --workspace FILE is required\n"; return 1;
+    }
+    if (!opts.has("name")) {
+        std::cerr << "Error: --name NAME is required\n"; return 1;
+    }
+
+    const std::string wsFile = opts.get("workspace");
+
+    Workspace ws;
+    try {
+        ws = WorkspaceSerializer{}.load(wsFile);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n';
+        return 2;
+    }
+
+    // Duplicate name check.
+    for (const auto& pi : ws.projectItems) {
+        if (pi.name == opts.get("name")) {
+            std::cerr << "Error: project '" << opts.get("name")
+                      << "' already exists. Use 'project mod' to modify it.\n";
+            return 1;
+        }
+    }
+
+    ProjectItem newProj;
+    newProj.name = opts.get("name");
+    newProj.uuid = "proj-" + nowIso8601();
+
+    if (opts.has("input")) {
+        const fs::path inputDir = opts.get("input");
+        if (!fs::is_directory(inputDir)) {
+            std::cerr << "Error: --input '" << opts.get("input")
+                      << "' is not a directory\n";
+            return 2;
+        }
+        newProj.inputDirectory = fs::absolute(inputDir).string();
+        const auto files = scanImageDir(inputDir);
+        for (int i = 0; i < static_cast<int>(files.size()); ++i) {
+            InputFile inf;
+            inf.uuid     = "file-" + std::to_string(i);
+            inf.filePath = fs::absolute(files[static_cast<std::size_t>(i)]).string();
+            inf.order    = i;
+            newProj.getInputImages().push_back(std::move(inf));
+        }
+    }
+
+    if (opts.has("output"))
+        newProj.getOutputDirectory() = opts.get("output");
+
+    ws.projectItems.push_back(std::move(newProj));
+
+    try {
+        WorkspaceSerializer{}.save(ws, wsFile);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: cannot save workspace: " << e.what() << '\n';
+        return 2;
+    }
+
+    std::cerr << "Project '" << opts.get("name") << "' created";
+    if (opts.has("input"))
+        std::cerr << " (" << ws.projectItems.back().getInputImages().size()
+                  << " input file(s) from " << opts.get("input") << ")";
+    std::cerr << ".\n";
+    return 0;
+}
+
+// ===========================================================================
+// platemaker project mod
+// ===========================================================================
+
+static int cmdProjectMod(const Opts& opts)
+{
+    if (!opts.has("workspace")) {
+        std::cerr << "Error: --workspace FILE is required\n"; return 1;
+    }
+    if (!opts.has("name")) {
+        std::cerr << "Error: --name NAME is required\n"; return 1;
+    }
+
+    const std::string wsFile = opts.get("workspace");
+
+    Workspace ws;
+    try {
+        ws = WorkspaceSerializer{}.load(wsFile);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n';
+        return 2;
+    }
+
+    ProjectItem* pi = nullptr;
+    for (auto& p : ws.projectItems)
+        if (p.name == opts.get("name")) { pi = &p; break; }
+    if (!pi) {
+        std::cerr << "Error: project '" << opts.get("name") << "' not found.\n"
+                  << "  Use 'workspace list-projects --workspace " << wsFile
+                  << "' to see available projects.\n";
+        return 1;
+    }
+
+    if (opts.has("new-name")) {
+        // Duplicate check for new name.
+        for (const auto& p : ws.projectItems) {
+            if (p.name == opts.get("new-name") && &p != pi) {
+                std::cerr << "Error: project '" << opts.get("new-name")
+                          << "' already exists.\n";
+                return 1;
+            }
+        }
+        pi->name = opts.get("new-name");
+    }
+
+    if (opts.has("input")) {
+        const fs::path inputDir = opts.get("input");
+        if (!fs::is_directory(inputDir)) {
+            std::cerr << "Error: --input '" << opts.get("input")
+                      << "' is not a directory\n";
+            return 2;
+        }
+        pi->inputDirectory = fs::absolute(inputDir).string();
+        // Rescan the directory and replace the file list.
+        pi->getInputImages().clear();
+        pi->getOutputImages().clear(); // output is now stale
+        const auto files = scanImageDir(inputDir);
+        for (int i = 0; i < static_cast<int>(files.size()); ++i) {
+            InputFile inf;
+            inf.uuid     = "file-" + std::to_string(i);
+            inf.filePath = fs::absolute(files[static_cast<std::size_t>(i)]).string();
+            inf.order    = i;
+            pi->getInputImages().push_back(std::move(inf));
+        }
+        std::cerr << "  Input updated: "
+                  << pi->getInputImages().size() << " file(s) from " << opts.get("input") << '\n';
+    }
+
+    if (opts.has("output"))
+        pi->getOutputDirectory() = opts.get("output");
+
+    try {
+        WorkspaceSerializer{}.save(ws, wsFile);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: cannot save workspace: " << e.what() << '\n';
+        return 2;
+    }
+
+    std::cerr << "Project '" << pi->name << "' updated.\n";
+    return 0;
+}
+
+// ===========================================================================
+// platemaker project rm
+// ===========================================================================
+
+static int cmdProjectRm(const Opts& opts)
+{
+    if (!opts.has("workspace")) {
+        std::cerr << "Error: --workspace FILE is required\n"; return 1;
+    }
+    if (!opts.has("name")) {
+        std::cerr << "Error: --name NAME is required\n"; return 1;
+    }
+
+    const std::string wsFile = opts.get("workspace");
+    const std::string name   = opts.get("name");
+
+    Workspace ws;
+    try {
+        ws = WorkspaceSerializer{}.load(wsFile);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n';
+        return 2;
+    }
+
+    const std::size_t sizeBefore = ws.projectItems.size();
+
+    // ProjectItem is move-only so we must use index-based removal.
+    for (std::size_t i = 0; i < ws.projectItems.size(); ++i) {
+        if (ws.projectItems[i].name == name) {
+            ws.projectItems.erase(ws.projectItems.begin() + static_cast<std::ptrdiff_t>(i));
+            break;
+        }
+    }
+
+    if (ws.projectItems.size() == sizeBefore) {
+        std::cerr << "Error: project '" << name << "' not found.\n";
+        return 1;
+    }
+
+    try {
+        WorkspaceSerializer{}.save(ws, wsFile);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: cannot save workspace: " << e.what() << '\n';
+        return 2;
+    }
+
+    std::cerr << "Project '" << name << "' removed.\n";
+    return 0;
+}
+
+// ===========================================================================
+// platemaker project status
+// ===========================================================================
+
+static int cmdProjectStatus(const Opts& opts)
+{
+    if (!opts.has("workspace")) {
+        std::cerr << "Error: --workspace FILE is required\n"; return 1;
+    }
+    if (!opts.has("name")) {
+        std::cerr << "Error: --name NAME is required\n"; return 1;
+    }
+
+    const std::string wsFile = opts.get("workspace");
+    const std::string name   = opts.get("name");
+
+    Workspace ws;
+    try {
+        ws = WorkspaceSerializer{}.load(wsFile);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n';
+        return 2;
+    }
+
+    ProjectItem* pi = nullptr;
+    for (auto& p : ws.projectItems)
+        if (p.name == name) { pi = &p; break; }
+    if (!pi) {
+        std::cerr << "Error: project '" << name << "' not found.\n"
+                  << "  Use 'workspace list-projects --workspace " << wsFile
+                  << "' to see available projects.\n";
+        return 1;
+    }
+
+    // Sanitize updates file statuses by checking hashes on disk.
+    const bool upToDate = pi->sanitize();
+
+    static const auto statusStr = [](FileStatus s) -> const char* {
+        switch (s) {
+            case FileStatus::Pending:        return "PENDING";
+            case FileStatus::Processed:      return "PROCESSED";
+            case FileStatus::Modified:       return "MODIFIED";
+            case FileStatus::Missing:        return "MISSING";
+            case FileStatus::Desynchronized: return "DESYNC";
+            case FileStatus::Done:           return "DONE";
+        }
+        return "UNKNOWN";
+    };
+
+    std::cout << "Project: " << pi->name << '\n'
+              << "  uuid        : " << pi->uuid << '\n'
+              << "  input dir   : "
+              << (pi->inputDirectory.empty() ? "(not set)" : pi->inputDirectory) << '\n'
+              << "  output dir  : "
+              << (pi->getOutputDirectory().empty() ? "(not set)"
+                                                   : pi->getOutputDirectory()) << '\n'
+              << "  up-to-date  : " << (upToDate ? "yes" : "no") << '\n'
+              << '\n'
+              << "  Input files (" << pi->getInputImages().size() << "):\n";
+
+    for (const auto& inf : pi->getInputImages()) {
+        std::cout << "    [" << statusStr(inf.status) << "] "
+                  << inf.filePath << '\n';
+        if (!inf.lastProcessed.empty())
+            std::cout << "      last processed: " << inf.lastProcessed << '\n';
+    }
+
+    if (!pi->getOutputImages().empty()) {
+        std::cout << "\n  Output files (" << pi->getOutputImages().size() << "):\n";
+        for (const auto& outf : pi->getOutputImages())
+            std::cout << "    [" << statusStr(outf.status) << "] "
+                      << outf.fileName << '\n';
     }
 
     return 0;
@@ -1233,13 +1547,32 @@ int main(int argc, char** argv)
             } else {
                 const std::string cmd2 = argv[2];
                 Opts opts = parseOpts(argc, argv, 3);
-                if      (cmd2 == "create")        exitCode = cmdWorkspaceCreate(opts);
-                else if (cmd2 == "add-profile")   exitCode = cmdWorkspaceAddProfile(opts);
-                else if (cmd2 == "mod-profile")   exitCode = cmdWorkspaceModProfile(opts);
-                else if (cmd2 == "rm-profile")    exitCode = cmdWorkspaceRmProfile(opts);
-                else if (cmd2 == "list-profiles") exitCode = cmdWorkspaceListProfiles(opts);
+                if      (cmd2 == "create")         exitCode = cmdWorkspaceCreate(opts);
+                else if (cmd2 == "add-profile")    exitCode = cmdWorkspaceAddProfile(opts);
+                else if (cmd2 == "mod-profile")    exitCode = cmdWorkspaceModProfile(opts);
+                else if (cmd2 == "rm-profile")     exitCode = cmdWorkspaceRmProfile(opts);
+                else if (cmd2 == "list-profiles")  exitCode = cmdWorkspaceListProfiles(opts);
+                else if (cmd2 == "list-projects")  exitCode = cmdWorkspaceListProjects(opts);
                 else {
                     std::cerr << "Unknown workspace subcommand '" << cmd2
+                              << "'. Run with --help for usage.\n";
+                    exitCode = 1;
+                }
+            }
+        } else if (cmd1 == "project") {
+            if (argc < 3) {
+                std::cerr << "Error: 'project' requires a subcommand. "
+                             "Run with --help for usage.\n";
+                exitCode = 1;
+            } else {
+                const std::string cmd2 = argv[2];
+                Opts opts = parseOpts(argc, argv, 3);
+                if      (cmd2 == "create") exitCode = cmdProjectCreate(opts);
+                else if (cmd2 == "mod")    exitCode = cmdProjectMod(opts);
+                else if (cmd2 == "rm")     exitCode = cmdProjectRm(opts);
+                else if (cmd2 == "status") exitCode = cmdProjectStatus(opts);
+                else {
+                    std::cerr << "Unknown project subcommand '" << cmd2
                               << "'. Run with --help for usage.\n";
                     exitCode = 1;
                 }

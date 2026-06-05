@@ -88,11 +88,13 @@ NLOHMANN_JSON_SERIALIZE_ENUM(JpegSubsampling, {
     {JpegSubsampling::YUV_420, "YUV_420"}
 })
 
-NLOHMANN_JSON_SERIALIZE_ENUM(PageStatus, {
-    {PageStatus::Pending,   "Pending"},
-    {PageStatus::Processed, "Processed"},
-    {PageStatus::Skipped,   "Skipped"},
-    {PageStatus::Error,     "Error"}
+NLOHMANN_JSON_SERIALIZE_ENUM(FileStatus, {
+    {FileStatus::Pending,        "Pending"},
+    {FileStatus::Processed,      "Processed"},
+    {FileStatus::Modified,       "Modified"},
+    {FileStatus::Missing,        "Missing"},
+    {FileStatus::Desynchronized, "Desynchronized"},
+    {FileStatus::Done,           "Done"}
 })
 
 // --- JpegOptions ---
@@ -155,42 +157,84 @@ void from_json(const nlohmann::json& j, OutputProfile& v) {
     j.at("startIndex").get_to(v.startIndex);
 }
 
-// --- PageItem ---
-// Note: thumbnailPath is intentionally NOT persisted.
-// Thumbnails are computed on demand by the GUI via ThumbnailCache::getOrGenerate()
-// using the deterministic path derived from filePath.
-void to_json(nlohmann::json& j, const PageItem& v) {
-    j = nlohmann::json{
-        {"id",           v.id},
-        {"filePath",     v.filePath},
-        {"order",        v.order},
-        {"status",       v.status},
-        {"errorMessage", v.errorMessage}
-    };
-}
-void from_json(const nlohmann::json& j, PageItem& v) {
-    j.at("id").get_to(v.id);
-    j.at("filePath").get_to(v.filePath);
-    j.at("order").get_to(v.order);
-    j.at("status").get_to(v.status);
-    j.at("errorMessage").get_to(v.errorMessage);
-    // Silently ignore legacy "thumbnailPath" key — not part of the model.
-}
 
-// --- ProcessedFileRecord ---
-void to_json(nlohmann::json& j, const ProcessedFileRecord& v) {
+// --- InputFile ---
+void to_json(nlohmann::json& j, const InputFile& v) {
     j = nlohmann::json{
-        {"inputFilePath", v.inputFilePath},
-        {"sha256",        v.sha256},
+        {"uuid", v.uuid},
+        {"filePath", v.filePath},
+        {"sha256", v.sha256},
+        {"order", v.order},
+        {"thumbnailPath", v.thumbnailPath},
+        {"status", v.status},
         {"lastProcessed", v.lastProcessed},
         {"contributesTo", v.contributesTo}
     };
 }
-void from_json(const nlohmann::json& j, ProcessedFileRecord& v) {
-    j.at("inputFilePath").get_to(v.inputFilePath);
+
+void from_json(const nlohmann::json& j, InputFile& v) {
+    j.at("uuid").get_to(v.uuid);
+    j.at("filePath").get_to(v.filePath);
     j.at("sha256").get_to(v.sha256);
+    j.at("order").get_to(v.order);
+    j.at("thumbnailPath").get_to(v.thumbnailPath);
+    j.at("status").get_to(v.status);
     j.at("lastProcessed").get_to(v.lastProcessed);
     j.at("contributesTo").get_to(v.contributesTo);
+}
+
+// --- SourceSegment ---
+void to_json(nlohmann::json& j, const SourceSegment& v) {
+    j = nlohmann::json{
+        {"sourceFilePath", v.sourceFilePath},
+        {"srcY", v.srcY},
+        {"height", v.height}
+    };
+}
+
+void from_json(const nlohmann::json& j, SourceSegment& v) {
+    j.at("sourceFilePath").get_to(v.sourceFilePath);
+    j.at("srcY").get_to(v.srcY);
+    j.at("height").get_to(v.height);
+}
+
+// --- OutputFile ---
+void to_json(nlohmann::json& j, const OutputFile& v) {
+    j = nlohmann::json{
+        {"uuid", v.uuid},
+        {"fileName", v.fileName},
+        {"sha256", v.sha256},
+        {"sourceMap", v.sourceMap},
+        {"status", v.status}
+    };
+}
+
+void from_json(const nlohmann::json& j, OutputFile& v) {
+    j.at("uuid").get_to(v.uuid);
+    j.at("fileName").get_to(v.fileName);
+    j.at("sha256").get_to(v.sha256);
+    j.at("sourceMap").get_to(v.sourceMap);
+    j.at("status").get_to(v.status);
+}
+
+// --- ProjectItem ---
+void to_json(nlohmann::json& j, const ProjectItem& v) {
+    j = nlohmann::json{
+        {"name",            v.name},
+        {"uuid",            v.uuid},
+        {"inputDirectory",  v.inputDirectory},
+        {"inputFiles",      v.getInputImages()},
+        {"outputFiles",     v.getOutputImages()},
+        {"outputDirectory", v.getOutputDirectory()}
+    };
+}
+void from_json(const nlohmann::json& j, ProjectItem& v) {
+    if (j.contains("name"))           j.at("name").get_to(v.name);
+    if (j.contains("uuid"))           j.at("uuid").get_to(v.uuid);
+    if (j.contains("inputDirectory")) j.at("inputDirectory").get_to(v.inputDirectory);
+    j.at("inputFiles").get_to(v.getInputImages());
+    j.at("outputFiles").get_to(v.getOutputImages());
+    j.at("outputDirectory").get_to(v.getOutputDirectory());
 }
 
 // --- Workspace ---
@@ -201,22 +245,31 @@ void to_json(nlohmann::json& j, const Workspace& v) {
         {"outputProfiles",          v.outputProfiles},
         {"activeCanvasProfileName", v.activeCanvasProfileName},
         {"activeOutputProfileName", v.activeOutputProfileName},
-        {"pages",                   v.pages},
+        {"projectItems",            v.projectItems},
         {"outputDirectory",         v.outputDirectory},
-        {"processedFiles",          v.processedFiles},
         {"stripDirty",              v.stripDirty}
     };
 }
+
 void from_json(const nlohmann::json& j, Workspace& v) {
+    // Detect legacy workspace format (pre-ProjectItem refactoring).
+    if (j.contains("pages") || j.contains("processedFiles")) {
+        throw std::runtime_error(
+            "Workspace schema is incompatible with this version of Platemaker.\n"
+            "  The workspace was created with an older version that stored 'pages'\n"
+            "  and 'processedFiles' directly in the workspace.\n"
+            "  Please create a new workspace with:\n"
+            "    platemaker workspace create --output <new-workspace.platemaker.json>");
+    }
+
     j.at("version").get_to(v.version);
     j.at("canvasProfiles").get_to(v.canvasProfiles);
     j.at("outputProfiles").get_to(v.outputProfiles);
     j.at("activeCanvasProfileName").get_to(v.activeCanvasProfileName);
     j.at("activeOutputProfileName").get_to(v.activeOutputProfileName);
-    j.at("pages").get_to(v.pages);
-    j.at("outputDirectory").get_to(v.outputDirectory);
-    j.at("processedFiles").get_to(v.processedFiles);
-    j.at("stripDirty").get_to(v.stripDirty);
+    if (j.contains("projectItems")) j.at("projectItems").get_to(v.projectItems);
+    if (j.contains("outputDirectory")) j.at("outputDirectory").get_to(v.outputDirectory);
+    if (j.contains("stripDirty")) j.at("stripDirty").get_to(v.stripDirty);
 }
 
 } // namespace Platemaker::Models
