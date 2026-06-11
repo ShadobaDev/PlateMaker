@@ -19,6 +19,8 @@
 #ifndef PLATEMAKER_INFRASTRUCTURE_THUMBNAIL_CACHE_HPP
 #define PLATEMAKER_INFRASTRUCTURE_THUMBNAIL_CACHE_HPP
 
+#include "platemaker/platemaker_export.h"
+
 #include <string>
 
 namespace Platemaker::Infrastructure {
@@ -42,7 +44,7 @@ namespace Platemaker::Infrastructure {
  *       For non-blocking behaviour the GUI wraps the call in \c QtConcurrent::run();
  *       \c libplatemaker itself does not depend on Qt and makes no threading decisions.
  */
-class ThumbnailCache {
+class PLATEMAKER_EXPORT ThumbnailCache {
 public:
     /**
      * \brief Constructs a ThumbnailCache rooted at the given directory.

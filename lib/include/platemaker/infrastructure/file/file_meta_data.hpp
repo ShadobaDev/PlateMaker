@@ -14,6 +14,8 @@
 #ifndef PLATEMAKER_INFRASTRUCTURE_FILE_META_DATA_HPP
 #define PLATEMAKER_INFRASTRUCTURE_FILE_META_DATA_HPP
 
+#include "platemaker/platemaker_export.h"
+
 #include <string>
 
 namespace Platemaker::Infrastructure {
@@ -27,7 +29,7 @@ namespace Platemaker::Infrastructure {
  * FileMetaData is stateless and thread-safe.
  *
  */
-class FileMetaData {
+class PLATEMAKER_EXPORT FileMetaData {
 public:
     static std::string computeFileSha256(const std::string& filePath);
 

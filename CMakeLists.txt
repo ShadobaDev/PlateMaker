@@ -162,7 +162,7 @@ set(CPACK_STRIP_FILES ON)               # strip debug symbols from release packa
 
 # Install only the library target (not CLI, not tests)
 set(CPACK_INSTALL_CMAKE_PROJECTS
-    "${CMAKE_BINARY_DIR}" "${PROJECT_NAME}" "platemaker-lib" "/"
+    "${CMAKE_BINARY_DIR}" "${PROJECT_NAME}" "ALL" "/"
 )
 
 include(CPack)

@@ -18,6 +18,8 @@
 #ifndef PLATEMAKER_CANCELLATION_TOKEN_HPP
 #define PLATEMAKER_CANCELLATION_TOKEN_HPP
 
+#include "platemaker/platemaker_export.h"
+
 #include <atomic>
 
 
@@ -47,7 +49,7 @@ namespace Platemaker::Infrastructure {
  * \warning Calling \c cancel() is non-blocking and does not wait for the pipeline
  *          to finish.  The caller must join the worker thread separately.
  */
-class CancellationToken {
+class PLATEMAKER_EXPORT CancellationToken {
 public:
     CancellationToken() noexcept = default;
 

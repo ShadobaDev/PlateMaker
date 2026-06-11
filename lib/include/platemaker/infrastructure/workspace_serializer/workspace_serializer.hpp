@@ -16,6 +16,8 @@
 
 #include <string>
 
+#include "platemaker/platemaker_export.h"
+
 #include <platemaker/models/workspace.hpp>
 
 namespace Platemaker::Infrastructure {
@@ -34,7 +36,7 @@ namespace Platemaker::Infrastructure {
  *
  * \note The JSON library used internally is nlohmann/json (MIT licence).
  */
-class WorkspaceSerializer {
+class PLATEMAKER_EXPORT WorkspaceSerializer {
 public:
     WorkspaceSerializer() = default;
 

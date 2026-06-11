@@ -16,6 +16,8 @@
 
 #include <string>
 
+#include "platemaker/platemaker_export.h"
+
 #include <platemaker/core/pixel_buffer/pixel_buffer.hpp>
 #include <platemaker/models/common_types.hpp>
 #include <platemaker/models/output_profile.hpp>
@@ -38,7 +40,7 @@ namespace Platemaker::Infrastructure {
  * \note Supported input formats: PNG, JPEG, TIFF (anything libvips can open).
  *       Supported output formats: PNG, JPEG, WebP — as selected by OutputFormat.
  */
-class ImageIO {
+class PLATEMAKER_EXPORT ImageIO {
 public:
     ImageIO() = default;
 
