@@ -15,7 +15,7 @@
 #define PLATEMAKER_MODELS_CANVAS_PROFILE_HPP
 
 #include <string>
-
+#include "platemaker/platemaker_export.h"
 #include <platemaker/models/common_types.hpp>
 
 namespace Platemaker::Models {
@@ -33,7 +33,7 @@ namespace Platemaker::Models {
  * The \c safeArea is a computed, read-only property; it is never serialised
  * directly — it is always derived from \c canvasSize and \c margins on the fly.
  */
-class CanvasProfile {
+class PLATEMAKER_EXPORT CanvasProfile {
 public:
     // ---------------------------------------------------------------------------
     // Data members

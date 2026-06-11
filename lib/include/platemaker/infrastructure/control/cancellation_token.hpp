@@ -20,6 +20,7 @@
 
 #include <atomic>
 
+
 /**
  * \namespace Platemaker::Infrastructure
  * \brief Infrastructure and IO components of libplatemaker.

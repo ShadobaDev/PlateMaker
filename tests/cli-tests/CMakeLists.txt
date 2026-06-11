@@ -47,7 +47,7 @@ add_test(
                 "${CMAKE_CURRENT_SOURCE_DIR}"
                 -v
                 --tb=short
-                "--platemaker-bin=$<TARGET_FILE:platemaker>"
+                "--platemaker-bin=$<TARGET_FILE:platemaker-cli>"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 

@@ -1,22 +1,15 @@
 cmake_minimum_required(VERSION 3.21)
 
-add_executable(platemaker
+add_executable(platemaker-cli
     main.cpp
 )
 
-target_link_libraries(platemaker
+# CLI uses vips directly (VIPS_INIT, vips_image_new_from_file, vips_error_buffer,
+# vips_shutdown) and nlohmann/json directly — declare them explicitly since
+# platemaker-lib exposes neither in its public API (both are PRIVATE there).
+target_link_libraries(platemaker-cli
     PRIVATE
         Platemaker::platemaker
+        VIPS::vips-cpp
+        nlohmann_json::nlohmann_json
 )
-
-# ---------------------------------------------------------------------------
-# Windows-specific: ensure the binary finds Qt DLLs next to the executable
-# ---------------------------------------------------------------------------
-if(WIN32 AND PLATEMAKER_BUILD_GUI)
-    add_custom_command(TARGET platemaker POST_BUILD
-        COMMAND ${QT_DEPLOY_PREFIX}/bin/windeployqt.exe
-                --no-translations
-                $<TARGET_FILE:platemaker>
-        COMMENT "Deploying Qt runtime alongside platemaker.exe"
-    )
-endif()

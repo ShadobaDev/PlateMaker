@@ -62,7 +62,7 @@ TEST(MarginCropperTest, ThrowsOnInvalidSourceBuffer)
     const PixelBuffer   empty;
     const Models::Margins margins{10, 10, 10, 10};
 
-    EXPECT_THROW(cropper.crop(empty, margins), std::invalid_argument);
+    EXPECT_THROW((void)cropper.crop(empty, margins), std::invalid_argument);
 }
 
 // ---------------------------------------------------------------------------

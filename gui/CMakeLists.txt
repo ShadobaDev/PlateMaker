@@ -1,36 +1,37 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.19)
+project(Platemaker LANGUAGES CXX)
 
-# This sub-directory is only added when PLATEMAKER_BUILD_GUI=ON (see root CMakeLists.txt)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets)
 
-set(PLATEMAKER_GUI_SOURCES
+qt_standard_project_setup()
+
+qt_add_executable(Platemaker
+    WIN32 MACOSX_BUNDLE
     main.cpp
+    mainwindow.cpp
+    mainwindow.h
+    mainwindow.ui
+
+    project.h project.cpp project.ui
+    imagetile.h imagetile.cpp imagetile.ui
+
 )
 
-qt_add_executable(platemaker-gui
-    ${PLATEMAKER_GUI_SOURCES}
-)
-
-target_link_libraries(platemaker-gui
+target_link_libraries(Platemaker
     PRIVATE
-        Platemaker::platemaker
-        Qt6::Core
-        Qt6::Gui
-        Qt6::Widgets
-        Qt6::Concurrent
+        Qt::Core
+        Qt::Widgets
 )
 
-# ---------------------------------------------------------------------------
-# Windows: bundle Qt DLLs alongside the GUI binary
-# ---------------------------------------------------------------------------
-if(WIN32)
-    add_custom_command(TARGET platemaker-gui POST_BUILD
-        COMMAND ${QT_DEPLOY_PREFIX}/bin/windeployqt.exe
-                --no-translations
-                $<TARGET_FILE:platemaker-gui>
-        COMMENT "Deploying Qt runtime alongside platemaker-gui.exe"
-    )
-endif()
+install(TARGETS Platemaker
+    BUNDLE  DESTINATION .
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
 
-# ---------------------------------------------------------------------------
-# Linux: AppImage packaging handled externally via linuxdeploy (see docs)
-# ---------------------------------------------------------------------------
+qt_generate_deploy_app_script(
+    TARGET Platemaker
+    OUTPUT_SCRIPT deploy_script
+    NO_UNSUPPORTED_PLATFORM_ERROR
+)
+install(SCRIPT ${deploy_script})

@@ -4,6 +4,8 @@
 
 Platemaker handles both ends of the comic-art workflow: generating canvas templates with margin guides before drawing, and scaling + slicing finished artwork into upload-ready panels. It is designed around the Webtoon vertical-scroll format (800 px wide, 1280 px-high slices) but is architecturally extensible to other formats.
 
+This repository contains **`libplatemaker`** (the core processing library) and the **`platemaker`** CLI binary. The Qt GUI lives in a separate repository and links against `libplatemaker` as a shared library.
+
 For full requirements, data models, pipeline details, and the development roadmap see **[docs/SPECIFICATION.md](docs/SPECIFICATION.md)**.
 
 ---
@@ -14,16 +16,15 @@ For full requirements, data models, pipeline details, and the development roadma
 platemaker/
 ├── CMakeLists.txt           # Root — finds dependencies, adds sub-projects
 ├── CMakePresets.json        # Presets: linux-system, linux-gcc, windows-msvc, …
-├── vcpkg.json               # vcpkg manifest — Windows deps; Linux uses apt
-├── lib/                     # libplatemaker — Core + Infrastructure (zero Qt in CLI builds)
+├── vcpkg.json               # vcpkg manifest — Windows C++ deps
+├── lib/                     # libplatemaker — Core + Infrastructure
+│   ├── cmake/               # CMake package config template
 │   ├── include/platemaker/
 │   │   ├── models/          # Shared data types (CanvasProfile, Workspace, …)
 │   │   ├── core/            # Pipeline components (Scaler, ScaledStrip, Slicer, …)
 │   │   └── infrastructure/  # IO + caching (ImageIO, WorkspaceSerializer, ThumbnailCache)
 │   └── src/                 # Implementation files (mirrors include/ structure)
-├── cli/                     # platemaker binary — links libplatemaker, no Qt
-├── gui/                     # platemaker-gui binary — links libplatemaker + Qt 6
-│   └── panels/              # ToolPanel subclasses (one file per tab)
+├── cli/                     # platemaker binary — links libplatemaker
 ├── tests/
 │   ├── lib-unit-tests/      # GoogleTest C++ unit tests for libplatemaker
 │   └── cli-tests/           # pytest-based Python integration tests for the CLI
@@ -34,268 +35,222 @@ platemaker/
 
 ---
 
-## Development environment
+## System requirements
 
-### Prerequisites (all platforms)
+### All platforms
 
-| Tool | Minimum version | Notes |
+| Tool | Version | Notes |
 |---|---|---|
-| CMake | 3.21 | Build system; presets file uses format version 3 |
-| Ninja | any | Generator used by all Linux presets |
-| C++ compiler | GCC 11 / MSVC 17 | C++20 support required |
+| CMake | 3.25+ | Presets format v6 |
+| Git | any | |
+| Python 3 | any | Only for CLI integration tests |
 
 ---
 
-### Linux
+### Windows — MSVC (recommended)
 
-Tested on **Ubuntu 22.04 LTS** (native and inside WSL 2).  
-Two paths are available: **system packages** (fast, recommended for daily dev) and **vcpkg** (fully reproducible, required for CI).
+**Tools to install:**
 
---- 
+1. **[Visual Studio 2022](https://visualstudio.microsoft.com/)** — select the **"Desktop development with C++"** workload.  
+   This installs: MSVC compiler, CMake, Ninja, Windows SDK.
 
-#### VS Code (Remote-WSL)
+2. **[Git for Windows](https://git-scm.com/download/win)**
 
-CMake Tools preset recommendation: **"Linux · GCC · Debug · system packages"**
-(`linux-system-debug`) for daily WSL development; switch to **"Windows · MSVC · Release"**
-(`windows-msvc`) for release verification.
+No package manager needed. `libvips`, `nlohmann-json`, and `GoogleTest` are all fetched automatically by CMake on the first configure.
+
+**Optional (for CLI tests):**
+
+```powershell
+# Python 3 from https://www.python.org — check "Add Python to PATH"
+pip install -r tests\cli-tests\requirements.txt
+```
 
 ---
 
-#### Path A — System packages `linux-system`
-No vcpkg installation needed.  All dependencies come from the Ubuntu package manager.
+### Windows — MinGW (MSYS2)
 
-**Build toolchain**
+**Tools to install:**
+
+1. **[MSYS2](https://www.msys2.org/)** — installs to `C:\msys64` by default.
+
+2. In the MSYS2 **MinGW64** terminal, install the required packages:
+
+```bash
+pacman -S \
+  mingw-w64-x86_64-gcc \
+  mingw-w64-x86_64-ninja \
+  mingw-w64-x86_64-pkg-config \
+  mingw-w64-x86_64-libvips
+```
+
+`nlohmann-json` and `GoogleTest` are fetched automatically by CMake — no pacman packages needed for them.
+
+**Required environment variable** (set as a permanent Windows user variable):
+
+| Variable | Value |
+|---|---|
+| `PKG_CONFIG_PATH` | `C:\msys64\mingw64\lib\pkgconfig` |
+
+**Required PATH entry:** add `C:\msys64\mingw64\bin` to your Windows system PATH.  
+This makes `gcc`, `g++`, `ninja`, `pkg-config`, and the vips DLLs available in any terminal.
+
+> **Tip:** The MSYS2 installer offers to add itself to PATH automatically — accept that, then also add `C:\msys64\mingw64\bin` manually if it was not added.
+
+---
+
+### Linux / WSL2
+
+Tested on **Ubuntu 22.04 LTS** (native and inside WSL 2).
 
 ```bash
 sudo apt update
 sudo apt install -y \
-    build-essential \
-    cmake \
-    ninja-build \
-    pkg-config \
-    git
-```
-
-**Libraries**
-
-```bash
-sudo apt install -y \
+    build-essential cmake ninja-build pkg-config git \
     libvips-dev \
-    nlohmann-json3-dev \
-    qt6-base-dev \
-    qt6-base-dev-tools \
-    libgl-dev \
-    libgles-dev \
-    libgtest-dev \
-    python3 \
-    python3-pip
-```
-
-```bash
-# Python test runner (cross-platform; same file runs on Windows)
+    python3 python3-pip
 pip install -r tests/cli-tests/requirements.txt
 ```
 
-Package notes:
-- `libvips-dev` — image processing (libvips 8.12 on Ubuntu 22.04)
-- `nlohmann-json3-dev` — header-only JSON library (3.10 on Ubuntu 22.04)
-- `qt6-base-dev` + `qt6-base-dev-tools` — Qt 6 Core / Gui / Widgets / Concurrent (6.2.4 on Ubuntu 22.04)
-- `libgl-dev` + `libgles-dev` — OpenGL headers required by Qt 6 Gui
-- `libgtest-dev` — GoogleTest 1.11 unit-test framework (C++ lib-unit-tests)
-- `python3` + `python3-pip` — required for CLI integration tests (pytest)
-
-> **Note:** If `pip` reports the script is not on `PATH`, use `python3 -m pytest` directly, or add `~/.local/bin` to your `PATH`.  The CMake test configuration always uses `python3 -m pytest`, so CTest is unaffected.
-
-**Configure and build**
-
-```bash
-# Full build: libplatemaker + CLI + Qt GUI
-cmake --preset linux-system
-cmake --build --preset linux-system
-
-# Debug build with AddressSanitizer + UBSan
-cmake --preset linux-system-debug
-cmake --build --preset linux-system-debug
-
-# Headless build (no Qt): libplatemaker + CLI only
-cmake --preset linux-system-cli
-cmake --build --preset linux-system-cli
-```
-
-Build artefacts are written to `build/linux-system/bin/` and `build/linux-system/lib/`.
-
-**Run tests:**
-```bash
-ctest --preset linux-system
-```
+`nlohmann-json` and `GoogleTest` are fetched automatically from source if the system packages (`nlohmann-json3-dev`, `libgtest-dev`) are not installed. Installing them via apt is optional but speeds up the first configure.
 
 ---
 
-#### Alternative - vcpkg `linux-gcc` 
+## Build instructions
 
-Uses vcpkg to manage nlohmann/json; libvips and Qt 6 still come from apt (vcpkg
-manifest marks them as Windows-only so they are never built from source on Linux).
-
-**Build toolchain** 
-*(same as Path A Step 1*
-
-**Libraries — vcpkg**
-
-```bash
-git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
-"$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
-```
-
-Add to `~/.bashrc` (or `~/.zshrc`):
-
-```bash
-export VCPKG_ROOT="$HOME/vcpkg"
-export PATH="$VCPKG_ROOT:$PATH"
-```
-
-```bash
-source ~/.bashrc   # reload shell
-```
-
----
-
-**Configure and build**
-
-```bash
-cmake --preset linux-gcc
-cmake --build --preset linux-gcc
-
-# Debug with AddressSanitizer + UBSan
-cmake --preset linux-gcc-debug
-cmake --build --preset linux-gcc-debug
-
-# CLI only (no Qt)
-cmake --preset linux-cli-only
-cmake --build --preset linux-cli-only
-```
-
-**Run tests:**
-```bash
-ctest --preset linux-gcc
-```
-
----
-
-#### VS Code IntelliSense (Linux)
-
-After the first successful configure, `compile_commands.json` is generated at
-`build/linux-system/compile_commands.json` (or `build/linux-gcc/…` depending on preset).
-The VS Code C/C++ extension picks this up automatically.
-
-Run **CMake: Select Configure Preset** from the Command Palette to switch presets
-inside the editor without touching the terminal.
-
----
-
-### Windows
-
-NOT YET!!! Tested on **Windows 10 22H2** and **Windows 11** with **Visual Studio 2022**.  
-All C++ dependencies (libvips, nlohmann/json, Qt 6) are built by vcpkg on first configure.
-
-#### Prerequisites
-
-1. [Visual Studio 2022](https://visualstudio.microsoft.com/) — select the
-   **"Desktop development with C++"** workload.  MSVC, CMake, and Ninja are
-   bundled with this workload.
-
-2. [Git for Windows](https://git-scm.com/download/win)
-
-#### Python + pytest (CLI tests)
-
-Install Python 3 for Windows from [python.org](https://www.python.org/downloads/) (tick
-**"Add Python to PATH"** during setup), then:
-
-```powershell
-pip install -r tests\cli-tests\requirements.txt
-```
-
-GoogleTest is declared in `vcpkg.json` and is built automatically alongside the
-other C++ dependencies in Step 3 — no separate installation needed.
-
-#### vcpkg
+### Windows MSVC
 
 Open **Developer PowerShell for VS 2022**:
 
 ```powershell
-git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
-C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-```
-
-Set a permanent user environment variable (PowerShell as administrator, or via
-*System Properties → Advanced → Environment Variables*):
-
-```powershell
-[System.Environment]::SetEnvironmentVariable("VCPKG_ROOT", "C:\vcpkg", "User")
-```
-
-Restart the terminal / VS Code after setting the variable.
-
-#### Configure and build
-
-Open **Developer PowerShell for VS 2022**, then:
-
-```powershell
-cd C:\path\to\PlateMaker
-
-# Release build
 cmake --preset windows-msvc
 cmake --build --preset windows-msvc
 
 # Debug build
 cmake --preset windows-msvc-debug
 cmake --build --preset windows-msvc-debug
+
+# Run tests
+ctest --preset windows-msvc
 ```
 
-Build artefacts: `build\windows-msvc\bin\` and `build\windows-msvc\lib\`.
+### Windows MinGW
 
-**Run tests:**
+Open **any PowerShell** (MSYS2 environment variables must be set — see above):
+
 ```powershell
-ctest --preset windows-msvc
+cmake --preset windows-mingw
+cmake --build --preset windows-mingw
+```
+
+### Linux
+
+```bash
+cmake --preset linux-system
+cmake --build --preset linux-system
+ctest --preset linux-system
+
+# Debug + AddressSanitizer
+cmake --preset linux-system-debug
+cmake --build --preset linux-system-debug
 ```
 
 ---
 
-## Build presets summary
+## Building the dev package
 
-| Preset name | Platform | vcpkg? | Qt? | Use case |
-|---|---|---|---|---|
-| `linux-system` | Linux / WSL2 | ❌ | ✅ | **Iniotial dev** — system packages |
-| `linux-system-debug` | Linux / WSL2 | ❌ | ✅ | Debug + AddressSanitizer / UBSan |
-| `linux-system-cli` | Linux / WSL2 | ❌ | ❌ | Headless build, no Qt required |
-| `linux-gcc` | Linux / WSL2 | ✅ | ✅ | Reproducible build via vcpkg (CI) |
-| `linux-gcc-debug` | Linux / WSL2 | ✅ | ✅ | vcpkg debug + ASan |
-| `linux-cli-only` | Linux / WSL2 | ✅ | ❌ | vcpkg headless / no Qt |
-| `windows-msvc` | Windows | ✅ | ✅ | Primary Windows release build |
-| `windows-msvc-debug` | Windows | ✅ | ✅ | Windows debug |
+The dev package contains the shared library, all public headers, CMake config files, and bundled runtime DLLs (Windows).
 
-> All Linux presets use **Ninja** as the generator.  
-> Windows presets use **Visual Studio 17 2022** (MSBuild multi-config).
+### Option A — ZIP archive (releases)
+
+Produces a versioned archive ready to attach to a GitHub Release.
+
+```powershell
+# Windows MSVC — configure + build + package in one command
+cmake --workflow --preset release-windows-msvc
+# → build/windows-msvc/platemaker-dev-0.1.1-Windows-AMD64.zip
+
+# Windows MinGW
+cmake --workflow --preset release-windows-mingw
+# → build/windows-mingw/platemaker-dev-0.1.1-Windows-AMD64.zip
+```
+
+```bash
+# Linux
+cmake --workflow --preset release-linux
+# → build/linux-system/platemaker-dev-0.1.1-Linux-x86_64.tar.gz
+```
+
+### Option B — cmake --install (local development)
+
+Installs to `install/<preset>/` for direct use during active development of the Qt GUI.
+
+```powershell
+cmake --preset windows-msvc
+cmake --build --preset windows-msvc
+cmake --install build/windows-msvc --config Release
+# → install/windows-msvc/
+```
+
+### Install layout
+
+```
+install/<preset>/
+  bin/
+    platemaker.dll            Windows runtime
+    libvips*.dll              runtime DLLs (MSVC: vips package; MinGW: MSYS2 mingw64/bin/)
+  lib/
+    platemaker.lib            Windows import lib
+    libplatemaker.so.1        Linux (SOVERSION symlink)
+  lib/cmake/platemaker/
+    platemaker-config.cmake
+    platemaker-config-version.cmake
+    platemaker-targets.cmake
+  include/platemaker/         all public headers
+```
+
+### Consuming in the Qt project
+
+```cmake
+list(APPEND CMAKE_PREFIX_PATH "path/to/install/windows-msvc")
+# or: list(APPEND CMAKE_PREFIX_PATH "path/to/platemaker-dev-0.1.1-Windows-AMD64")
+
+find_package(platemaker CONFIG REQUIRED)
+target_link_libraries(platemaker-gui PRIVATE Platemaker::platemaker)
+```
+
+---
+
+## Build presets reference
+
+| Preset | Platform | Compiler | Notes |
+|---|---|---|---|
+| `linux-system` | Linux / WSL2 | GCC | libvips from apt; others auto-fetched |
+| `linux-system-debug` | Linux / WSL2 | GCC | + ASan/UBSan |
+| `windows-msvc` | Windows | MSVC | all deps auto-fetched |
+| `windows-msvc-debug` | Windows | MSVC | debug symbols |
+| `windows-mingw` | Windows | MinGW GCC | libvips from MSYS2; others auto-fetched |
+
+| Workflow preset | Steps |
+|---|---|
+| `release-windows-msvc` | configure → build → CPack ZIP |
+| `release-windows-mingw` | configure → build → CPack ZIP |
+| `release-linux` | configure → build → CPack TGZ |
 
 ---
 
 ## Third-party dependencies
 
-| Library | Licence | Linux (apt) | Windows (vcpkg) |
+| Library | Licence | Linux (apt) | Windows |
 |---|---|---|---|
-| [libvips](https://www.libvips.org/) | LGPL 2.1 | `libvips-dev` | `vips[cpp]` |
-| [nlohmann/json](https://github.com/nlohmann/json) | MIT | `nlohmann-json3-dev` | `nlohmann-json` |
-| [Qt 6](https://www.qt.io/) | LGPL 3 | `qt6-base-dev qt6-base-dev-tools libgl-dev libgles-dev` | `qtbase[concurrent,gui,widgets]` `qtconcurrent` |
-| [GoogleTest](https://github.com/google/googletest) | BSD 3-Clause | `libgtest-dev` | `gtest` (via `vcpkg.json`) |
+| [libvips](https://www.libvips.org/) | LGPL 2.1 | `libvips-dev` | auto-fetched (MSVC) / MSYS2 pacman (MinGW) |
+| [nlohmann/json](https://github.com/nlohmann/json) | MIT | `nlohmann-json3-dev` (optional) | auto-fetched |
+| [GoogleTest](https://github.com/google/googletest) | BSD 3-Clause | `libgtest-dev` (optional) | auto-fetched |
 | [pytest](https://pytest.org/) | MIT | `pip install pytest` | `pip install pytest` |
 
-Qt must be **dynamically linked** in all builds to comply with LGPL terms (see
-[SPECIFICATION.md §1](docs/SPECIFICATION.md) for the licensing rationale).
-
-`libplatemaker` is also distributed as a **shared library** (`libplatemaker.so` / `platemaker.dll`) for the same reason — end users must be able to relink against a modified version.
+`libplatemaker` is distributed as a **shared library** — LGPL 3.0 requires that end users be able to relink against a modified version.
 
 ---
 
 ## Coding style
 
-See **[docs/CODING_STYLE.md](docs/CODING_STYLE.md)** for naming conventions, Doxygen
-comment format, namespace-to-directory mapping rules, and file layout requirements.
+See **[docs/CODING_STYLE.md](docs/CODING_STYLE.md)** for naming conventions, Doxygen comment format, namespace-to-directory mapping rules, and file layout requirements.

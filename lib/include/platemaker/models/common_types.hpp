@@ -18,7 +18,7 @@
 #define PLATEMAKER_MODELS_COMMON_TYPES_HPP
 
 #include <cstdint>
-
+#include "platemaker/platemaker_export.h"
 /**
  * \namespace Platemaker::Models
  * \brief Data model types shared across Core, Infrastructure, CLI and GUI layers.
@@ -88,16 +88,6 @@ enum class OutputFormat {
     WebP  //!< WebP (lossy or lossless depending on quality setting).
 };
 
-/**
- * \enum PageStatus
- * \brief Processing state of a single PageItem in the workspace.
- */
-enum class PageStatus {
-    Pending,   //!< Not yet processed in the current session.
-    Processed, //!< Successfully processed and output written.
-    Skipped,   //!< Skipped due to incremental-processing logic (hash unchanged).
-    Error      //!< Failed to load or process; see PageItem::errorMessage for details.
-};
 
 /**
  * \enum JpegSubsampling

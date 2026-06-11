@@ -40,6 +40,11 @@ add_library(platemaker-lib SHARED ${PLATEMAKER_SOURCES})
 
 set_target_properties(platemaker-lib PROPERTIES
     OUTPUT_NAME platemaker
+    # Linux/macOS: creates libplatemaker.so.1 symlink (SOVERSION) and
+    # libplatemaker.so.1.0.1 (VERSION).  Windows ignores VERSION for the DLL
+    # filename but embeds it in the PE import-lib metadata.
+    VERSION   ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 
 # Namespaced alias — consumers use Platemaker::platemaker in target_link_libraries
@@ -59,24 +64,28 @@ target_include_directories(platemaker-lib
 
 # ---------------------------------------------------------------------------
 # Dependencies
+#
+# PRIVATE: neither VipsImage nor nlohmann types appear in the public API headers,
+# so consumers of the installed package do not need these headers or import libs.
 # ---------------------------------------------------------------------------
 target_link_libraries(platemaker-lib
-    PUBLIC
-        PkgConfig::VIPS
+    PRIVATE
+        VIPS::vips-cpp
         nlohmann_json::nlohmann_json
 )
-
-# ThumbnailCache uses QtConcurrent in GUI builds; synchronous fallback in CLI-only builds.
-# NOTE: When PLATEMAKER_BUILD_GUI=ON the CLI binary will transitively link Qt6::Concurrent
-#       as well. Use the linux-cli-only preset for a truly Qt-free CLI binary.
-if(PLATEMAKER_BUILD_GUI)
-    target_link_libraries(platemaker-lib PUBLIC Qt6::Concurrent)
-endif()
 
 # ---------------------------------------------------------------------------
 # Compiler features
 # ---------------------------------------------------------------------------
 target_compile_features(platemaker-lib PUBLIC cxx_std_20)
+
+# MSVC: suppress C4251 (STL members in __declspec(dllexport) classes).
+# This warning fires for every std::string / std::vector member in an exported
+# type, which is expected for a header-only public API compiled by the same
+# toolchain.  PUBLIC so consumers building against our headers are also quiet.
+if(MSVC)
+    target_compile_options(platemaker-lib PUBLIC /wd4251)
+endif()
 
 # ---------------------------------------------------------------------------
 # Windows DLL export helper
@@ -90,3 +99,102 @@ generate_export_header(platemaker-lib
     EXPORT_FILE_NAME
         "${CMAKE_CURRENT_SOURCE_DIR}/include/platemaker/platemaker_export.h"
 )
+
+# Windows DLL symbol export.
+# MSVC: WINDOWS_EXPORT_ALL_SYMBOLS generates a .def file automatically.
+# MinGW/GCC: the equivalent is the --export-all-symbols linker flag;
+#   WINDOWS_EXPORT_ALL_SYMBOLS is silently ignored by CMake for GCC.
+if(MSVC)
+    set_target_properties(platemaker-lib PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+elseif(WIN32)
+    target_link_options(platemaker-lib PRIVATE "-Wl,--export-all-symbols")
+endif()
+
+# ---------------------------------------------------------------------------
+# Install rules — produces a libplatemaker-dev package
+#
+# After building, run:
+#   cmake --install build/<preset> [--config Release]
+#
+# This installs to the installDir set in CMakePresets.json:
+#   install/<preset>/
+#     bin/          platemaker.dll             (Windows runtime)
+#     lib/          platemaker.lib             (Windows import lib / Linux .so)
+#     lib/cmake/platemaker/
+#                   platemaker-config.cmake
+#                   platemaker-config-version.cmake
+#                   platemaker-targets.cmake
+#     include/platemaker/                      (all public headers)
+#
+# The Qt GUI project consumes the package with:
+#   find_package(platemaker CONFIG REQUIRED)
+#   target_link_libraries(my-target PRIVATE Platemaker::platemaker)
+# ---------------------------------------------------------------------------
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+install(TARGETS platemaker-lib
+    EXPORT platemaker-targets
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}          # .dll on Windows
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}           # .so on Linux
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}           # .lib on Windows
+)
+
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+install(EXPORT platemaker-targets
+    FILE     platemaker-targets.cmake
+    NAMESPACE Platemaker::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/platemaker
+)
+
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/platemaker-config.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/cmake/platemaker-config.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/platemaker
+)
+
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/cmake/platemaker-config-version.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/cmake/platemaker-config.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/cmake/platemaker-config-version.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/platemaker
+)
+
+# ---------------------------------------------------------------------------
+# Windows: bundle runtime DLLs (libvips + transitive deps) into bin/.
+#
+# Two paths:
+#   MSVC  — VIPS_ROOT_DIR is set by FetchContent; copy the whole vips bin/.
+#   MinGW — use file(GET_RUNTIME_DEPENDENCIES) against the built DLL; cmake
+#            walks the import table recursively and copies every non-system DLL.
+#            DIRECTORIES tells it where to search (MSYS2 bin/, derived from the
+#            pkg-config library dir that was found at configure time).
+# ---------------------------------------------------------------------------
+if(WIN32)
+    if(MSVC AND DEFINED VIPS_ROOT_DIR)
+        install(
+            DIRECTORY "${VIPS_ROOT_DIR}/bin/"
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            FILES_MATCHING PATTERN "*.dll"
+        )
+    elseif(NOT MSVC AND DEFINED VIPS_LIBRARY_DIRS)
+        # MinGW/MSYS2: vips DLLs live alongside all other MSYS2 DLLs in the same bin/.
+        # Derive the directory from the lib path reported by pkg-config and copy
+        # everything — same simple approach as MSVC above.
+        list(GET VIPS_LIBRARY_DIRS 0 _vips_lib_dir)
+        get_filename_component(_vips_bin_dir "${_vips_lib_dir}/../bin" ABSOLUTE)
+        install(
+            DIRECTORY "${_vips_bin_dir}/"
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            FILES_MATCHING PATTERN "*.dll"
+        )
+    endif()
+endif()

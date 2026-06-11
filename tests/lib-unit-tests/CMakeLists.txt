@@ -3,19 +3,26 @@ cmake_minimum_required(VERSION 3.21)
 # ---------------------------------------------------------------------------
 # GoogleTest-based unit tests for libplatemaker (platemaker-lib target).
 #
-# System packages (Linux):  sudo apt install libgtest-dev
-# vcpkg (Windows):          declared in vcpkg.json as "gtest"
+# GTest is discovered in this order:
+#   1. System install  (Linux: apt install libgtest-dev)
+#   2. FetchContent    (Windows / any platform without a system install)
 # ---------------------------------------------------------------------------
 
 find_package(GTest QUIET)
-
 if(NOT GTest_FOUND)
-    message(WARNING
-        "GoogleTest not found — lib-unit-tests will be skipped.\n"
-        "  Linux : sudo apt install libgtest-dev\n"
-        "  vcpkg : included in vcpkg.json; run cmake with the vcpkg preset"
+    include(FetchContent)
+    # MSVC: link the shared CRT (/MD) to match our build.
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    # We only use gtest/gtest_main — skip gmock to avoid its include-path
+    # issues when building with MSVC multi-config.
+    set(BUILD_GMOCK   OFF CACHE BOOL "" FORCE)
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        GTest
+        URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
-    return()
+    FetchContent_MakeAvailable(GTest)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -33,9 +40,6 @@ target_link_libraries(platemaker-lib-tests
         GTest::gtest
         GTest::gtest_main
 )
-
-# Inherit include paths from the library so test files can use
-# #include <platemaker/...> without extra configuration.
 
 # ---------------------------------------------------------------------------
 # CTest integration — discovers individual TEST() cases automatically

@@ -21,6 +21,8 @@
 #include <string>
 #include <vector>
 
+#include "platemaker/platemaker_export.h"
+
 #include <platemaker/infrastructure/control/cancellation_token.hpp>
 #include <platemaker/core/pixel_buffer/pixel_buffer.hpp>
 #include <platemaker/core/scaler/scaler.hpp>
@@ -41,7 +43,7 @@ namespace Platemaker::Core {
  *
  * \note SliceResult is move-only because PixelBuffer is move-only.
  */
-struct SliceResult {
+struct PLATEMAKER_EXPORT SliceResult {
     PixelBuffer                image;       //!< Pixel data for this output slice.
     int                        index = 0;   //!< 0-based output index — use with startIndex to build the filename.
     std::vector<Models::SourceSegment> sourceMap;   //!< Provenance: one entry per source file that contributed pixels to this slice.
@@ -72,7 +74,7 @@ struct SliceResult {
  * \warning \c sliceAll() may only be called once.  After slicing, the strip is in
  *          an undefined state and the instance should be discarded.
  */
-class ScaledStrip {
+class PLATEMAKER_EXPORT ScaledStrip {
 public:
     ScaledStrip() = default;
 

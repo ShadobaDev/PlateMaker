@@ -16,6 +16,8 @@
 
 #include <string>
 
+#include "platemaker/platemaker_export.h"
+
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/output_profile.hpp>
 
@@ -42,7 +44,7 @@ namespace Platemaker::Core {
  * \note The template is always saved as a lossless PNG regardless of the
  *       OutputProfile::outputFormat setting.
  */
-class TemplateGenerator {
+class PLATEMAKER_EXPORT TemplateGenerator {
 public:
     TemplateGenerator() = default;
 

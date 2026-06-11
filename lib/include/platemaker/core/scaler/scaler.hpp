@@ -18,6 +18,7 @@
 
 #include <string>
 
+#include "platemaker/platemaker_export.h"
 #include <platemaker/core/pixel_buffer/pixel_buffer.hpp>
 
 namespace Platemaker::Core {
@@ -49,7 +50,7 @@ struct ScaledImage {
  *       original aspect ratio.  This matches the Webtoon publish requirement where
  *       the horizontal dimension is constrained to 800 px.
  */
-class Scaler {
+class PLATEMAKER_EXPORT Scaler {
 public:
     Scaler() = default;
 

@@ -16,6 +16,8 @@
 
 #include <vector>
 
+#include "platemaker/platemaker_export.h"
+
 #include <platemaker/infrastructure/control/cancellation_token.hpp>
 #include <platemaker/core/scaled_strip/scaled_strip.hpp>
 #include <platemaker/models/common_types.hpp>
@@ -35,7 +37,7 @@ namespace Platemaker::Core {
  * It is the appropriate entry point for the pipeline orchestrator rather than
  * calling ScaledStrip directly.
  */
-class Slicer {
+class PLATEMAKER_EXPORT Slicer {
 public:
     /**
      * \brief Constructs a Slicer with the specified output parameters.

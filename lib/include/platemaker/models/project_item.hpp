@@ -48,7 +48,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
+#include "platemaker/platemaker_export.h"
 namespace Platemaker::Models {
 
 // ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ enum class FileStatus {
  * \c SliceResult or \c OutputFile.  This provenance information drives
  * incremental processing.
  */
-struct SourceSegment {
+struct PLATEMAKER_EXPORT SourceSegment {
     std::string sourceFilePath; //!< Absolute path of the scaled source image.
     int         srcY   = 0;     //!< Y offset within the scaled source where this segment starts.
     int         height = 0;     //!< Number of pixels taken from this source for this slice.
@@ -88,7 +88,7 @@ struct SourceSegment {
 /**
  * \brief An input image file tracked by a \c ProjectItem.
  */
-struct InputFile {
+struct PLATEMAKER_EXPORT InputFile {
     std::string uuid;                    //!< Unique identifier for this entry.
     std::string filePath;                //!< Absolute path on disk.
     std::string sha256;                  //!< SHA-256 hex digest from the last processing run.
@@ -102,7 +102,7 @@ struct InputFile {
 /**
  * \brief An output slice file produced by a \c ProjectItem processing run.
  */
-struct OutputFile {
+struct PLATEMAKER_EXPORT OutputFile {
     std::string uuid;     //!< Unique identifier for this entry.
     std::string fileName; //!< Filename only (e.g. "output_001.png").
     std::string sha256;   //!< SHA-256 hex digest of the generated file.
@@ -125,7 +125,7 @@ struct OutputFile {
  * The calling layer (CLI / GUI) is responsible for constructing these records
  * from \c Core::SliceResult objects after saving the pixel data to disk.
  */
-struct ProcessingSliceRecord {
+struct PLATEMAKER_EXPORT ProcessingSliceRecord {
     std::string                fileName;     //!< Output filename, e.g. "output_001.png".
     std::string                outputSha256; //!< SHA-256 of the saved output file (may be empty).
     std::vector<SourceSegment> sourceMap;    //!< Provenance: one entry per contributing source file.
@@ -141,7 +141,7 @@ struct ProcessingSliceRecord {
  * Summarises the changes detected when a new directory scan is merged into
  * the existing input file list.
  */
-struct ScanMergeResult {
+struct PLATEMAKER_EXPORT ScanMergeResult {
     std::vector<std::string> added;              //!< Absolute paths of newly added files.
     std::vector<std::string> renamed;            //!< Absolute paths of renamed files (same content).
     std::vector<std::string> removed;            //!< Absolute paths of files no longer present.
@@ -172,7 +172,7 @@ struct ScanMergeResult {
  *       \c m_sha256Index) are NOT written to JSON.  They must be rebuilt
  *       after every deserialisation via \c rebuildLookupTables().
  */
-class ProjectItem {
+class PLATEMAKER_EXPORT ProjectItem {
 public:
     // -----------------------------------------------------------------------
     // Public serialised fields

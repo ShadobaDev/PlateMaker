@@ -14,6 +14,8 @@
 #ifndef PLATEMAKER_CORE_MARGIN_CROPPER_HPP
 #define PLATEMAKER_CORE_MARGIN_CROPPER_HPP
 
+#include "platemaker/platemaker_export.h"
+
 #include <platemaker/core/pixel_buffer/pixel_buffer.hpp>
 #include <platemaker/models/common_types.hpp>
 
@@ -33,7 +35,7 @@ namespace Platemaker::Core {
  *       source image (i.e. the canvas pixel dimensions, not the scaled dimensions).
  *       Always crop before scaling, not after.
  */
-class MarginCropper {
+class PLATEMAKER_EXPORT MarginCropper {
 public:
     MarginCropper() = default;
 

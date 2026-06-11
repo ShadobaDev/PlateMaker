@@ -18,7 +18,7 @@
 
 #include <string>
 #include <vector>
-
+#include "platemaker/platemaker_export.h"
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/project_item.hpp>
@@ -44,6 +44,16 @@ namespace Platemaker::Models {
  */
 class Workspace {
 public:
+    Workspace() = default;
+    ~Workspace() = default;
+
+    // Non-copyable: std::vector<ProjectItem> cannot be copied (ProjectItem is move-only).
+    Workspace(const Workspace&)            = delete;
+    Workspace& operator=(const Workspace&) = delete;
+
+    Workspace(Workspace&&)            = default;
+    Workspace& operator=(Workspace&&) = default;
+
     /**
      * \brief Schema version number.
      *

@@ -40,35 +40,76 @@ endif()
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Dependencies (found via vcpkg / system)
+# Dependencies
 # ---------------------------------------------------------------------------
+include(FetchContent)
 
 # libvips  — image processing engine (LGPL 2.1)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(VIPS REQUIRED IMPORTED_TARGET vips-cpp)
+if(MSVC)
+    message(STATUS "[MSVC] Automating libvips deployment via FetchContent...")
 
-# nlohmann/json — header-only JSON (MIT)
-find_package(nlohmann_json CONFIG REQUIRED)
+    # Select libvips for download
+    # Version 8.16.0
+    FetchContent_Declare(
+        vips_binaries
+        URL https://github.com/libvips/build-win64-mxe/releases/download/v8.18.2/vips-dev-x64-all-8.18.2.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    
+    # Download libvips and unpack directly to build/
+    FetchContent_MakeAvailable(vips_binaries)
+    
+    # Get path to binaries where CMake automatically unpacked them
+    FetchContent_GetProperties(vips_binaries SOURCE_DIR VIPS_EXTRACTED_DIR)
+    
+    # Register includes
+    # include_directories(SYSTEM "${VIPS_EXTRACTED_DIR}/include")
+    set(VIPS_ROOT_DIR "${VIPS_EXTRACTED_DIR}")
 
-# Qt 6 — GUI layer only; guarded by the PLATEMAKER_BUILD_GUI option below
-# (Qt is NOT linked into libplatemaker or the CLI binary)
-option(PLATEMAKER_BUILD_GUI "Build the Qt 6 GUI binary (platemaker-gui)" ON)
-if(PLATEMAKER_BUILD_GUI)
-    find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
-    # qt_standard_project_setup() was added in Qt 6.3 — set the same options manually
-    # so the project builds with Qt 6.2 (Ubuntu 22.04 system package) and newer.
-    set(CMAKE_AUTOMOC ON)
-    set(CMAKE_AUTOUIC ON)
-    set(CMAKE_AUTORCC ON)
+    # Make alias for linker, so the other sub-projects (lib/cli/gui) do not require specific cmake sections
+    add_library(VIPS::vips-cpp SHARED  IMPORTED GLOBAL)
+    set_target_properties(VIPS::vips-cpp PROPERTIES
+        IMPORTED_IMPLIB   "${VIPS_ROOT_DIR}/lib/libvips-cpp.lib"
+        IMPORTED_LOCATION "${VIPS_ROOT_DIR}/bin/libvips-cpp-42.dll" # <--- Wskaż faktyczną nazwę pliku .dll w folderze bin (np. libvips-cpp-42.dll lub libvips-cpp.dll)
+        
+        # Collect vips-cpp alltogheter with glib and basic vips, so linker sees all of the functions
+        INTERFACE_LINK_LIBRARIES "${VIPS_ROOT_DIR}/lib/libvips.lib;${VIPS_ROOT_DIR}/lib/libglib-2.0.lib;${VIPS_ROOT_DIR}/lib/libgobject-2.0.lib"
+    )
+    
+    target_include_directories(VIPS::vips-cpp INTERFACE 
+        "${VIPS_ROOT_DIR}/include"
+        "${VIPS_ROOT_DIR}/include/glib-2.0"
+        "${VIPS_ROOT_DIR}/lib/glib-2.0/include"
+    )
+    message(STATUS "[MSVC] libvips extracted and linked from: ${VIPS_EXTRACTED_DIR}")
+
+else()
+    # For Linux (WSL) and MinGW (MSYS2) keep vips native and let the pkg-config do the job
+    message(STATUS "[GCC] Using system pkg-config to discover libvips...")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(VIPS REQUIRED IMPORTED_TARGET vips-cpp)
+    
+    # Make alias for linker, so the other sub-projects (lib/cli/gui) do not require specific cmake sections
+    add_library(VIPS::vips-cpp INTERFACE IMPORTED GLOBAL)
+    target_link_libraries(VIPS::vips-cpp INTERFACE PkgConfig::VIPS)
 endif()
 
-# ---------------------------------------------------------------------------
-# Compile-time feature flags propagated to all targets
-# ---------------------------------------------------------------------------
-# When building without Qt the thumbnail cache falls back to synchronous mode.
-if(NOT PLATEMAKER_BUILD_GUI)
-    add_compile_definitions(PLATEMAKER_NO_QT)
+# nlohmann/json — header-only, header is unpacked by FetchContent (no compilation)
+# FIND_PACKAGE first: Linux system install (apt nlohmann-json3-dev) is reused if present.
+find_package(nlohmann_json CONFIG QUIET)
+if(NOT nlohmann_json_FOUND)
+    FetchContent_Declare(
+        nlohmann_json
+        URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
 endif()
+
+# GoogleTest — only when PLATEMAKER_BUILD_TESTS is enabled (declared below with option())
+# The actual FetchContent_Declare lives in tests/lib-unit-tests/CMakeLists.txt so that
+# gtest is only fetched/built when the tests subdirectory is actually added.
+
 
 # ---------------------------------------------------------------------------
 # Compiler warnings — sensible cross-platform baseline
@@ -89,17 +130,42 @@ add_subdirectory(lib)
 # CLI binary — links libplatemaker, no Qt
 add_subdirectory(cli)
 
-# Qt GUI binary — links libplatemaker + Qt 6
-if(PLATEMAKER_BUILD_GUI)
-    add_subdirectory(gui)
-endif()
-
 # Unit tests
 option(PLATEMAKER_BUILD_TESTS "Build unit tests" ON)
 if(PLATEMAKER_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# ---------------------------------------------------------------------------
+# CPack — produces versioned dev-package archives
+#
+# Run after building:  cpack --preset windows-msvc
+# Produces:  platemaker-dev-0.1.1-windows-msvc.zip  (or .tar.gz on Linux)
+#
+# CPack reuses the cmake --install rules defined in lib/CMakeLists.txt.
+# The CPACK_INSTALL_CMAKE_PROJECTS list selects only the library targets
+# (no tests, no CLI) — adjust if the CLI should ship in the same package.
+# ---------------------------------------------------------------------------
+set(CPACK_PACKAGE_NAME              "platemaker-dev")
+set(CPACK_PACKAGE_VERSION           "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_VENDOR            "ShadobaDev")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
+set(CPACK_RESOURCE_FILE_LICENSE     "${CMAKE_SOURCE_DIR}/LICENSE.LGPL")
+
+# Archive names:  platemaker-dev-0.1.1-<platform>.<ext>
+set(CPACK_PACKAGE_FILE_NAME
+    "${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+
+set(CPACK_GENERATOR "ZIP")              # ZIP on all platforms; override per-preset if needed
+set(CPACK_STRIP_FILES ON)               # strip debug symbols from release packages
+
+# Install only the library target (not CLI, not tests)
+set(CPACK_INSTALL_CMAKE_PROJECTS
+    "${CMAKE_BINARY_DIR}" "${PROJECT_NAME}" "platemaker-lib" "/"
+)
+
+include(CPack)
 
 # ---------------------------------------------------------------------------
 # Summary printout (visible during cmake configure step)
@@ -110,7 +176,6 @@ message(STATUS "  Platemaker ${PROJECT_VERSION}")
 message(STATUS "──────────────────────────────────────────")
 message(STATUS "  C++ standard  : ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Build type    : ${CMAKE_BUILD_TYPE}")
-message(STATUS "  Build GUI     : ${PLATEMAKER_BUILD_GUI}")
 message(STATUS "  Build tests   : ${PLATEMAKER_BUILD_TESTS}")
 message(STATUS "  Install prefix: ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "══════════════════════════════════════════")

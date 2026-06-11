@@ -19,6 +19,8 @@
 #ifndef PLATEMAKER_CORE_PIXEL_BUFFER_HPP
 #define PLATEMAKER_CORE_PIXEL_BUFFER_HPP
 
+#include "platemaker/platemaker_export.h"
+
 // Forward-declare VipsImage to avoid pulling in all of <vips/vips.h> in every
 // translation unit that uses PixelBuffer.  The actual VipsImage operations are
 // confined to pixel_buffer.cpp and other implementation files.
@@ -50,7 +52,7 @@ namespace Platemaker::Core {
  * \note An empty (default-constructed) PixelBuffer represents the absence of an
  *       image.  Always test with \c isValid() before accessing pixel data.
  */
-class PixelBuffer {
+class PLATEMAKER_EXPORT PixelBuffer {
 public:
     // ---------------------------------------------------------------------------
     // Construction and destruction

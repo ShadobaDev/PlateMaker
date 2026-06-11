@@ -1,5 +1,6 @@
 # build artifacts
 build
+install
 
 # OS-generated files
 *.pyc
@@ -8,6 +9,7 @@ build
 
 # Vibe-coding decimation
 *\.clinerules
+*\.claude
 
 # Temporary files from editors
 /temp

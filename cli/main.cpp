@@ -80,7 +80,7 @@
 // ---------------------------------------------------------------------------
 // Version constant (kept in sync with CMakeLists.txt project VERSION)
 // ---------------------------------------------------------------------------
-static constexpr const char* k_version = "0.1.0";
+static constexpr const char* k_version = "0.1.1";
 
 namespace fs = std::filesystem;
 using namespace Platemaker::Models;

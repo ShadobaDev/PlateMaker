@@ -9,20 +9,20 @@
 #  ifndef PLATEMAKER_EXPORT
 #    ifdef platemaker_lib_EXPORTS
         /* We are building this library */
-#      define PLATEMAKER_EXPORT __attribute__((visibility("default")))
+#      define PLATEMAKER_EXPORT __declspec(dllexport)
 #    else
         /* We are using this library */
-#      define PLATEMAKER_EXPORT __attribute__((visibility("default")))
+#      define PLATEMAKER_EXPORT __declspec(dllimport)
 #    endif
 #  endif
 
 #  ifndef PLATEMAKER_NO_EXPORT
-#    define PLATEMAKER_NO_EXPORT __attribute__((visibility("hidden")))
+#    define PLATEMAKER_NO_EXPORT 
 #  endif
 #endif
 
 #ifndef PLATEMAKER_DEPRECATED
-#  define PLATEMAKER_DEPRECATED __attribute__ ((__deprecated__))
+#  define PLATEMAKER_DEPRECATED __declspec(deprecated)
 #endif
 
 #ifndef PLATEMAKER_DEPRECATED_EXPORT
@@ -33,6 +33,7 @@
 #  define PLATEMAKER_DEPRECATED_NO_EXPORT PLATEMAKER_NO_EXPORT PLATEMAKER_DEPRECATED
 #endif
 
+/* NOLINTNEXTLINE(readability-avoid-unconditional-preprocessor-if) */
 #if 0 /* DEFINE_NO_DEPRECATED */
 #  ifndef PLATEMAKER_NO_DEPRECATED
 #    define PLATEMAKER_NO_DEPRECATED

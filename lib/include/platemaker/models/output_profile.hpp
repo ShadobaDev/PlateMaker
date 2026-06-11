@@ -15,7 +15,6 @@
 #define PLATEMAKER_MODELS_OUTPUT_PROFILE_HPP
 
 #include <string>
-
 #include <platemaker/models/common_types.hpp>
 
 namespace Platemaker::Models {

@@ -19,7 +19,7 @@ The name draws from the printing trade: a *platemaker* crafts the printing plate
 
 **Future scope (not in current requirements):** Template generation and margin-aware processing for traditional comic formats — American (6.625" × 10.25"), European (various), manga (B4/A4). The architecture is designed to support multiple `CanvasProfile` presets without code changes.
 
-The project is **open-source** (license TBD, likely MIT or GPL). Monetization via donations may be added in the future — this is why Qt's LGPL terms were chosen deliberately (LGPL permits monetization as long as Qt itself remains dynamically linked and unmodified).
+The project is **open-source** (LGPL 3.0). Monetization via donations may be added in the future — LGPL 3.0 permits this as long as `libplatemaker` remains dynamically linked and unmodified by the end user.
 
 ---
 
@@ -97,7 +97,7 @@ The margin crop step is deterministic and driven entirely by the saved `CanvasPr
 
 ```
 ┌──────────────────────────────────────────────┐
-│              Qt 6 GUI (optional)             │  Tabs/panels, preview, drag&drop
+│        Qt 6 GUI (separate repository)        │  Tabs/panels, preview, drag&drop
 ├──────────────────────────────────────────────┤
 │        CLI binary  (`platemaker`)            │  Standalone tool; future web backend
 ├──────────────────────────────────────────────┤
@@ -115,12 +115,12 @@ The margin crop step is deterministic and driven entirely by the saved `CanvasPr
 | Decision | Choice | Rationale |
 |---|---|---|
 | Language | C++ 17/20 | Developer is expert; best performance for image processing |
-| GUI framework | Qt 6 (LGPL) | Cross-platform, mature, GPU-backed rendering |
 | Image processing | libvips | Multi-threaded, lazy/streaming pipeline, Lanczos3 resampling, low RAM |
 | JSON serialisation | nlohmann/json | Header-only, MIT licence, clean API |
 | Build system | CMake + CMakePresets.json | Standard for C++ cross-platform; preset per platform |
 | Package manager | vcpkg (manifest mode) | vcpkg.json in repo; reproducible on every machine |
 | File integrity | SHA-256 | Per-input-file hashing for incremental processing |
+| Library distribution | LGPL 3.0 shared library | End users can relink; GUI repo links `.dll`/`.so` via `find_package` |
 
 ### 4.3 Critical Design Rules
 
@@ -137,9 +137,9 @@ This keeps the Core testable without a display, usable from CLI without Qt, and 
 CLI is not a wrapper added after the fact — it is a primary interface and the intended backend for a future web application. A web server can call `platemaker process --json` as a subprocess and parse its stdout. The layer hierarchy is:
 
 ```
-libplatemaker  (static library, pure C++)
-  ├── platemaker      (CLI binary — links libplatemaker, no Qt)
-  └── platemaker-gui  (Qt GUI binary — links libplatemaker + Qt)
+libplatemaker  (shared library, pure C++)
+  ├── platemaker      (CLI binary — links libplatemaker)
+  └── platemaker-gui  (Qt GUI binary — separate repo, links libplatemaker .dll/.so)
 ```
 
 ---
@@ -287,52 +287,9 @@ Use `list-profiles` to discover profile names.
 
 Human-readable progress always goes to **stderr**.
 
-### 5.4 Qt GUI — `platemaker-gui`
+### 5.4 Qt GUI — `platemaker-gui` *(separate repository)*
 
-#### Tab Structure
-```
-[📁 Project]  [🖼 Canvas Profiles]  [⚙ Output Settings]  [▶ Process]
-```
-
-**Project tab**
-- File list with thumbnails (`QListWidget`, drag & drop reordering)
-- "Open folder" / "Add files" / "Remove" buttons
-- Thumbnails generated asynchronously (no UI block on large directories)
-- **Sort options** (from Clip2l prototype): by filename, by modified date, by created date
-- **Reverse order** button
-- Files loaded lazily — adding a directory enqueues paths immediately; thumbnails generate in background
-
-**Canvas Profiles tab**
-- List of saved `CanvasProfile` entries
-- Create / Edit / Delete form (canvas size, margins, safe area preview, colour picker)
-- "Generate Template PNG" button
-
-**Output Settings tab**
-- Active canvas profile selector
-- Active output profile selector (target width, slice height, output format)
-- JPEG options sub-panel (visible only when format = jpg): quality, subsampling, optimize, progressive
-- Output directory picker
-- Last-slice policy selector (Crop / Pad white / Keep)
-- Start index spinner (default 1)
-
-**Process tab**
-- Summary: file count, expected output slice count
-- "Run" button → `QThread` running `libplatemaker` pipeline
-- "Cancel" button — properly implemented via `std::atomic<bool>` cancellation token passed to pipeline (unlike the Clip2l prototype where cancel was a stub)
-- `QProgressBar` + log (`QPlainTextEdit`)
-- On completion: output file count, skipped file count, "Open folder" button
-
-#### Extensibility Pattern
-
-```cpp
-class ToolPanel : public QWidget {
-public:
-    virtual bool isReady() const = 0;
-    virtual void onWorkspaceChanged(const Workspace&) = 0;
-};
-```
-
-`MainWindow` holds a `QTabWidget` and a registry of `ToolPanel*`. Adding a new feature = new `ToolPanel` subclass registered in `MainWindow::initPanels()`. No other changes required.
+The Qt GUI is developed in a separate repository. It consumes `libplatemaker` as a shared library via `find_package(platemaker CONFIG REQUIRED)`. See that repository for GUI-specific documentation.
 
 ---
 
@@ -469,9 +426,8 @@ Processing is cancellable at any point via a `std::atomic<bool>` token. The pipe
 | Per-file RAM usage | libvips sequential access — source image pixels loaded on demand, not upfront |
 | Strip RAM footprint | `ScaledStrip` retains only the minimum scaled images needed for the current output slice; typically ≤ 2 images in memory at any time (e.g. when a slice boundary falls mid-file) |
 | Scaling | `vips_thumbnail()` Lanczos3 — multi-threaded, no intermediate full-size buffers |
-| Batch processing | `QtConcurrent::map` (GUI) or `std::async` pool (CLI) — saturates all CPU cores |
-| Thumbnail generation | Async via `QtConcurrent::run`, cached to disk |
-| UI responsiveness | `QThread` worker + signal/slot progress updates |
+| Batch processing | `std::async` pool (CLI) — saturates all CPU cores |
+| Thumbnail generation | Synchronous, blocking (`ThumbnailCache`); GUI wraps in background thread |
 | Incremental reprocessing | SHA-256 + sourceMap — skip unchanged outputs entirely |
 
 **Expected gain vs Clip2l prototype (Python/Pillow):** 10–20× on a multi-core machine (e.g. Intel i9-14900 with 24 threads).
@@ -533,19 +489,11 @@ This makes the web frontend entirely independent of the C++ codebase. iPad / mob
 - [x] Implement `TemplateGenerator` in Core
 - [x] Verify template PNG imports correctly into Procreate
 
-### Stage 4 — Qt GUI (MVP)
-- [ ] `MainWindow` + `ToolPanel` base class + tab registry
-- [ ] Project tab: file list, lazy thumbnails, drag & drop reordering, sort/reverse
-- [ ] Output Settings tab: profiles, format options, start index
-- [ ] Process tab: progress bar, log, Run + Cancel buttons (Cancel properly implemented)
-- [ ] Workspace save/load from GUI
+### Stage 4 — Qt GUI *(separate repository — `platemaker-qt`)*
 
-### Stage 5 — Canvas Profiles in GUI
-- [ ] Canvas Profiles tab
-- [ ] Visual safe-area preview in profile editor
-- [ ] "Generate Template" button wired to `TemplateGenerator`
+See the `platemaker-qt` repository for the GUI roadmap.
 
-### Stage 6 — Polish & Future
+### Stage 5 — Polish & Future
 - [ ] Lightbox / full-page strip preview
 - [ ] Batch processing of multiple chapters
 - [ ] Web backend integration testing (subprocess JSON protocol)
@@ -556,9 +504,8 @@ This makes the web frontend entirely independent of the C++ codebase. iPad / mob
 ## 12. Development Environment
 
 - **IDE:** VS Code with CMake Tools, C/C++, Remote-WSL extensions
-- **AI assistant:** Cline (VS Code extension) with Anthropic API key (BYOK, pay-per-token)
-- **Model:** claude-sonnet-4-6 (best price/quality ratio for coding tasks)
-- **Windows build:** MSVC toolchain, CMake preset `windows-msvc`
+- **AI assistant:** Claude Code (VS Code extension) with Anthropic API key
+- **Windows build:** MSVC toolchain, CMake preset `windows-msvc`; MinGW via `windows-mingw`
 - **Linux build:** GCC in WSL2, CMake preset `linux-gcc` (same source tree, same `C:\` path)
 - **Source location:** Windows filesystem (`C:\`), NOT inside WSL `/home/` — required for Remote-WSL to share files correctly
 
@@ -569,15 +516,13 @@ This makes the web frontend entirely independent of the C++ codebase. iPad / mob
 ```
 platemaker/
 ├── CMakeLists.txt
-├── CMakePresets.json              # windows-msvc, linux-gcc, windows-debug presets
-├── vcpkg.json                     # manifest: vips, nlohmann-json, qtbase
+├── CMakePresets.json              # windows-msvc, linux-gcc, windows-mingw presets
+├── vcpkg.json                     # manifest: vips, nlohmann-json, gtest
 ├── lib/                           # libplatemaker — Core + Infrastructure (zero Qt)
+│   ├── cmake/                     # CMake package config template
 │   ├── include/platemaker/
 │   └── src/
 ├── cli/                           # platemaker binary
-├── gui/                           # platemaker-gui binary (Qt)
-│   ├── panels/                    # ToolPanel subclasses (one file per tab)
-│   └── main.cpp
 ├── tests/                         # Unit tests (mock ImageIO)
 └── docs/
     └── SPECIFICATION.md
@@ -600,29 +545,40 @@ Cache: `.platemaker-cache/` sibling to `.platemaker.json` (auto-created, safe to
 
 | Library | Version | Licence | Purpose |
 |---|---|---|---|
-| Qt 6 | 6.x latest stable | LGPL v3 | GUI, threading, platform abstraction |
 | libvips | 8.x | LGPL v2.1 | Image loading, scaling (Lanczos3), saving |
 | nlohmann/json | 3.x | MIT | Workspace JSON serialisation |
 | CMake | 3.21+ | BSD | Build system |
 | vcpkg | latest | MIT | Package management |
 
-**Qt LGPL note:** Dynamic linking required. Distribute Qt DLLs/SOs alongside the binary. Never statically link Qt in release builds. LGPL permits monetisation (donations, ads) — no commercial licence needed as long as Qt itself is unmodified and dynamically linked.
+**libplatemaker LGPL note:** `libplatemaker` itself is LGPL 3.0. Dynamic linking required — end users must be able to relink against a modified version. Distribute as `platemaker.dll` / `libplatemaker.so`. LGPL permits monetisation (donations) as long as the library remains dynamically linked and unmodified.
 
 ---
 
 ## 15. Distribution
 
-| Platform | Format | Tool |
-|---|---|---|
-| Windows | ZIP (folder + DLLs) or NSIS installer | `windeployqt.exe` |
-| Linux | AppImage (single file, no install needed) | `linuxdeploy --plugin qt` |
+### CLI binary
 
-**GitHub Releases** hosts the binary artefacts. **GitHub Actions** builds them automatically on every version tag push (`v*`). Public repository = Actions is free.
+| Platform | Format | Notes |
+|---|---|---|
+| Windows | ZIP (exe + DLLs) | Bundle `platemaker.exe` + `libvips*.dll` |
+| Linux | tarball or AppImage | `libplatemaker.so` + `platemaker` binary |
+
+### libplatemaker dev package
+
+Published as a GitHub Release asset alongside the CLI. The Qt GUI project fetches and unpacks it to consume `find_package(platemaker CONFIG REQUIRED)`.
+
+| Platform | Format | Contents |
+|---|---|---|
+| Windows (MSVC) | ZIP | `bin/platemaker.dll`, `lib/platemaker.lib`, `lib/cmake/platemaker/`, `include/` |
+| Windows (MinGW) | ZIP | `bin/platemaker.dll`, `lib/libplatemaker.dll.a`, `lib/cmake/platemaker/`, `include/` |
+| Linux | tarball | `lib/libplatemaker.so`, `lib/cmake/platemaker/`, `include/` |
+
+**GitHub Actions** builds all artefacts automatically on every version tag push (`v*`):
 
 ```
 git tag v1.0.0 && git push --tags
-  → GitHub Actions builds Windows + Linux in parallel
-  → Attaches platemaker-windows-x64.zip and platemaker-linux-x86_64.AppImage to the Release
+  → GitHub Actions builds Windows (MSVC + MinGW) + Linux in parallel
+  → Attaches CLI ZIPs and dev package archives to the Release
 ```
 
 ---
