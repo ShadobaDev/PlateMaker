@@ -40,8 +40,11 @@ add_library(platemaker-lib SHARED ${PLATEMAKER_SOURCES})
 
 set_target_properties(platemaker-lib PROPERTIES
     OUTPUT_NAME platemaker
+    # EXPORT_NAME controls the target name in the installed cmake package:
+    # Platemaker:: + platemaker = Platemaker::platemaker (matches the build-tree alias).
+    EXPORT_NAME platemaker
     # Linux/macOS: creates libplatemaker.so.1 symlink (SOVERSION) and
-    # libplatemaker.so.1.0.1 (VERSION).  Windows ignores VERSION for the DLL
+    # libplatemaker.so.0.1.1 (VERSION).  Windows ignores VERSION for the DLL
     # filename but embeds it in the PE import-lib metadata.
     VERSION   ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
@@ -171,15 +174,24 @@ install(FILES
 # ---------------------------------------------------------------------------
 # Windows: bundle runtime DLLs (libvips + transitive deps) into bin/.
 #
-# Two paths:
-#   MSVC  — VIPS_ROOT_DIR is set by FetchContent; copy the whole vips bin/.
-#   MinGW — use file(GET_RUNTIME_DEPENDENCIES) against the built DLL; cmake
-#            walks the import table recursively and copies every non-system DLL.
-#            DIRECTORIES tells it where to search (MSYS2 bin/, derived from the
-#            pkg-config library dir that was found at configure time).
+# MSVC  — VIPS_ROOT_DIR is set by FetchContent; copy the whole vips bin/.
+# MinGW — vips DLLs live in MSYS2 bin/ alongside all other runtime DLLs;
+#         derive the directory from the pkg-config library dir and copy everything.
+#
+# The POST_BUILD copy puts the DLLs next to the built library so that the
+# binary can be run directly from the build tree (without cmake --install)
+# and Windows loads the FetchContent vips instead of any system/MinGW vips
+# that might be on PATH.
 # ---------------------------------------------------------------------------
 if(WIN32)
     if(MSVC AND DEFINED VIPS_ROOT_DIR)
+        add_custom_command(TARGET platemaker-lib POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${VIPS_ROOT_DIR}/bin"
+                "$<TARGET_FILE_DIR:platemaker-lib>"
+            COMMENT "Copying vips runtime DLLs to build output"
+            VERBATIM
+        )
         install(
             DIRECTORY "${VIPS_ROOT_DIR}/bin/"
             DESTINATION ${CMAKE_INSTALL_BINDIR}
