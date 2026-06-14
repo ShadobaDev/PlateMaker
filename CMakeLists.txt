@@ -130,7 +130,26 @@ add_subdirectory(lib)
 # CLI binary — links libplatemaker, no Qt
 add_subdirectory(cli)
 
-# Unit tests
+# ---------------------------------------------------------------------------
+# Tests
+#
+# Unit tests (GoogleTest — C++):
+#   cmake --preset windows-msvc          # configure
+#   cmake --build --preset windows-msvc # build everything incl. tests
+#   ctest --preset windows-msvc          # run all tests
+#   ctest --preset windows-msvc -R WorkspaceSerializer  # run one suite by name regex
+#   ctest --preset windows-msvc -V       # verbose output
+#
+# CLI tests (pytest — Python):
+#   Requires: pip install -r tests/cli-tests/requirements.txt
+#   CTest runs them automatically as the "cli-tests" test entry.
+#   Run manually (faster iteration):
+#     python -m pytest tests/cli-tests/ -v \
+#       --platemaker-bin=build/windows-msvc/bin/Release/platemaker-cli.exe
+#
+# Both test types are discovered and run together by CTest.
+# Control with cmake option:  -DPLATEMAKER_BUILD_TESTS=OFF  to skip entirely.
+# ---------------------------------------------------------------------------
 option(PLATEMAKER_BUILD_TESTS "Build unit tests" ON)
 if(PLATEMAKER_BUILD_TESTS)
     enable_testing()

@@ -31,6 +31,7 @@ namespace {
 Models::Workspace makeMinimalWorkspace()
 {
     Models::CanvasProfile canvas;
+    canvas.id           = "cp-test-001";
     canvas.name         = "Webtoon Standard";
     canvas.canvasSize   = {1600, 10240};
     canvas.margins      = {100, 100, 100, 100};
@@ -155,6 +156,61 @@ TEST(WorkspaceSerializerTest, LoadMissingVersionFieldThrowsRuntimeError)
 
     const WorkspaceSerializer ser;
     EXPECT_THROW((void)ser.load(tmp.string()), std::runtime_error);
+
+    std::filesystem::remove(tmp);
+}
+
+// ---------------------------------------------------------------------------
+// CanvasProfile::id round-trip and back-compat
+// ---------------------------------------------------------------------------
+
+TEST(WorkspaceSerializerTest, RoundTripPreservesCanvasProfileId)
+{
+    const WorkspaceSerializer ser;
+    const Models::Workspace   original = makeMinimalWorkspace();
+
+    const std::filesystem::path tmp =
+        std::filesystem::temp_directory_path() / "pm_test_cp_id.platemaker.json";
+
+    ser.save(original, tmp.string());
+    const auto loaded = ser.load(tmp.string());
+
+    ASSERT_EQ(loaded.canvasProfiles.size(), 1u);
+    EXPECT_EQ(loaded.canvasProfiles[0].id, "cp-test-001");
+
+    std::filesystem::remove(tmp);
+}
+
+TEST(WorkspaceSerializerTest, BackCompatLoadWithoutIdDerivedFromName)
+{
+    // Workspace JSON that predates the 'id' field on CanvasProfile.
+    // The serializer should derive 'id' from 'name' so the object is usable.
+    const std::filesystem::path tmp =
+        std::filesystem::temp_directory_path() / "pm_test_backcompat_id.json";
+
+    {
+        std::ofstream f(tmp);
+        f << R"({
+            "version": 1,
+            "canvasProfiles": [{
+                "name": "Webtoon Standard",
+                "canvasSize": {"width": 1600, "height": 10240},
+                "margins": {"top": 0, "right": 0, "bottom": 0, "left": 0}
+            }],
+            "outputProfiles": [],
+            "activeCanvasProfileName": "Webtoon Standard",
+            "activeOutputProfileName": "",
+            "outputDirectory": ""
+        })";
+    }
+
+    const WorkspaceSerializer ser;
+    Models::Workspace loaded;
+    ASSERT_NO_THROW(loaded = ser.load(tmp.string()));
+
+    ASSERT_EQ(loaded.canvasProfiles.size(), 1u);
+    // Back-compat: id derived as "cp-" + name
+    EXPECT_EQ(loaded.canvasProfiles[0].id, "cp-Webtoon Standard");
 
     std::filesystem::remove(tmp);
 }
