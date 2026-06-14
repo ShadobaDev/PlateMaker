@@ -212,135 +212,83 @@ install/<preset>/
 
 ## Consuming libplatemaker in your CMake project
 
-Two integration paths are available: automatic download via FetchContent, or pointing CMake at a locally extracted archive.
-
----
-
-### Windows
-
-#### Option A — FetchContent (automatic download)
-
-CMake downloads and extracts the release archive during configure — no manual step required.
+The recommended pattern tries a local dev package first, then falls back to an automatic download from GitHub Releases.  Add the block below to your `CMakeLists.txt`, then point CMake at your local install via the `PLATEMAKER_DIR` cache variable — no paths hardcoded in source.
 
 ```cmake
-cmake_minimum_required(VERSION 3.21)
-project(my-app)
+# ─── platemaker ────────────────────────────────────────────────────────────────
+# Discovery order:
+#   1. PLATEMAKER_DIR cache variable  — explicit local dev package (set once, cached)
+#   2. find_package                   — system install or CMAKE_PREFIX_PATH
+#   3. FetchContent                   — downloads pre-built package from GitHub Releases
+# ───────────────────────────────────────────────────────────────────────────────
+set(PLATEMAKER_VERSION "0.1.1")
+set(PLATEMAKER_DIR "" CACHE PATH "Path to a local platemaker dev package")
 
-include(FetchContent)
+if(PLATEMAKER_DIR)
+    list(PREPEND CMAKE_PREFIX_PATH "${PLATEMAKER_DIR}")
+endif()
 
-set(PLATEMAKER_VERSION "0.1.1")   # ← set to the desired release version
+find_package(platemaker CONFIG QUIET)
 
-FetchContent_Declare(
-    platemaker
-    URL "https://github.com/ShadobaDev/Platemaker/releases/download/v${PLATEMAKER_VERSION}/platemaker-dev-${PLATEMAKER_VERSION}-Windows-AMD64.zip"
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
-FetchContent_MakeAvailable(platemaker)
+if(NOT platemaker_FOUND)
+    include(FetchContent)
 
-# Locate the versioned subdirectory that the archive unpacks into
-FetchContent_GetProperties(platemaker SOURCE_DIR _pm_src)
-file(GLOB _pm_dir LIST_DIRECTORIES true "${_pm_src}/platemaker-dev-*")
-list(GET _pm_dir 0 _pm_dir)
-list(APPEND CMAKE_PREFIX_PATH "${_pm_dir}")
+    if(WIN32)
+        set(_pm_archive "platemaker-dev-${PLATEMAKER_VERSION}-Windows-AMD64.zip")
+    else()
+        set(_pm_archive "platemaker-dev-${PLATEMAKER_VERSION}-Linux-x86_64.tar.gz")
+    endif()
 
-find_package(platemaker CONFIG REQUIRED)
-```
+    FetchContent_Declare(
+        platemaker_pkg
+        URL "https://github.com/ShadobaDev/PlateMaker/releases/download/v${PLATEMAKER_VERSION}/${_pm_archive}"
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    FetchContent_MakeAvailable(platemaker_pkg)
+    FetchContent_GetProperties(platemaker_pkg SOURCE_DIR _pm_src)
+    file(GLOB _pm_dir LIST_DIRECTORIES true "${_pm_src}/platemaker-dev-*")
+    list(GET _pm_dir 0 _pm_dir)
+    list(PREPEND CMAKE_PREFIX_PATH "${_pm_dir}")
+    find_package(platemaker CONFIG REQUIRED)
+endif()
 
-#### Option B — local dev package
+target_link_libraries(${PROJECT_NAME} PRIVATE Platemaker::platemaker)
 
-Download and extract `platemaker-dev-X.Y.Z-Windows-AMD64.zip` anywhere, then point CMake at it:
-
-```cmake
-cmake_minimum_required(VERSION 3.21)
-project(my-app)
-
-list(APPEND CMAKE_PREFIX_PATH "C:/path/to/platemaker-dev-0.1.1-Windows-AMD64")
-
-find_package(platemaker CONFIG REQUIRED)
-```
-
-Or pass it on the command line without touching `CMakeLists.txt`:
-
-```powershell
-cmake -B build -DCMAKE_PREFIX_PATH="C:/path/to/platemaker-dev-0.1.1-Windows-AMD64"
-```
-
----
-
-### Linux
-
-#### Option A — FetchContent (automatic download)
-
-```cmake
-cmake_minimum_required(VERSION 3.21)
-project(my-app)
-
-include(FetchContent)
-
-set(PLATEMAKER_VERSION "0.1.1")   # ← set to the desired release version
-
-FetchContent_Declare(
-    platemaker
-    URL "https://github.com/ShadobaDev/Platemaker/releases/download/v${PLATEMAKER_VERSION}/platemaker-dev-${PLATEMAKER_VERSION}-Linux-x86_64.tar.gz"
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
-FetchContent_MakeAvailable(platemaker)
-
-FetchContent_GetProperties(platemaker SOURCE_DIR _pm_src)
-file(GLOB _pm_dir LIST_DIRECTORIES true "${_pm_src}/platemaker-dev-*")
-list(GET _pm_dir 0 _pm_dir)
-list(APPEND CMAKE_PREFIX_PATH "${_pm_dir}")
-
-find_package(platemaker CONFIG REQUIRED)
-```
-
-#### Option B — local dev package
-
-```cmake
-cmake_minimum_required(VERSION 3.21)
-project(my-app)
-
-list(APPEND CMAKE_PREFIX_PATH "/path/to/platemaker-dev-0.1.1-Linux-x86_64")
-
-find_package(platemaker CONFIG REQUIRED)
-```
-
-Or on the command line:
-
-```bash
-cmake -B build -DCMAKE_PREFIX_PATH="/path/to/platemaker-dev-0.1.1-Linux-x86_64"
-```
-
----
-
-### Linking
-
-Once `find_package` succeeds, link against the namespaced target — identical on all platforms:
-
-```cmake
-add_executable(my-app main.cpp)
-
-target_link_libraries(my-app PRIVATE Platemaker::platemaker)
-```
-
----
-
-### Windows: copying runtime DLLs
-
-`platemaker.dll` and its libvips dependencies must sit next to your executable at runtime.  The snippet below copies them automatically after each build:
-
-```cmake
+# Windows: copy platemaker.dll and all libvips runtime DLLs next to the executable
 if(WIN32)
-    # $<TARGET_FILE_DIR:Platemaker::platemaker> resolves to the package bin/ directory,
-    # which contains platemaker.dll and all libvips runtime DLLs.
-    add_custom_command(TARGET my-app POST_BUILD
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "$<TARGET_FILE_DIR:Platemaker::platemaker>"
-            "$<TARGET_FILE_DIR:my-app>"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
         COMMENT "Copying platemaker runtime DLLs"
         VERBATIM
     )
 endif()
+```
+
+### Pointing to a local dev package
+
+Set `PLATEMAKER_DIR` once on the command line — CMake caches it for subsequent configures:
+
+```powershell
+# Windows
+cmake -B build -DPLATEMAKER_DIR="C:/path/to/platemaker-dev-0.1.1-Windows-AMD64"
+```
+
+```bash
+# Linux
+cmake -B build -DPLATEMAKER_DIR="/path/to/platemaker-dev-0.1.1-Linux-x86_64"
+```
+
+If `PLATEMAKER_DIR` is not set and platemaker is not found on the system, CMake automatically downloads the correct release archive from GitHub Releases during configure.
+
+### Linux: runtime library path
+
+On Linux the library uses an RPATH of `$ORIGIN/../lib`, so installed executables find `libplatemaker.so` automatically.  When running directly from the build tree during development, set `LD_LIBRARY_PATH`:
+
+```bash
+export LD_LIBRARY_PATH="/path/to/platemaker-dev-0.1.1-Linux-x86_64/lib:$LD_LIBRARY_PATH"
+./my-app
 ```
 
 ---

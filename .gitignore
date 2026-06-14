@@ -12,4 +12,4 @@ install
 *\.claude
 
 # Temporary files from editors
-/temp
+temp

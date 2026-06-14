@@ -244,19 +244,23 @@ Standalone binary. All commands operate on a workspace JSON file.
 platemaker [--help | -h | help]
 platemaker --version
 
-platemaker workspace create      [--output FILE] [--target-width N] [--slice-height N]
-platemaker workspace add-profile  --workspace FILE --name NAME --canvas WxH --margins T,R,B,L
-platemaker workspace mod-profile  --workspace FILE --name NAME [--canvas WxH] [--margins T,R,B,L]
-platemaker workspace rm-profile   --workspace FILE --name NAME
-platemaker workspace list-profiles --workspace FILE
-
-platemaker process  --workspace FILE
-                    [--input DIR] [--output DIR]
-                    [--format png|jpg|webp] [--start-index N]
-                    [--target-width N] [--slice-height N]
-                    [--json]
-
-platemaker template  --workspace FILE --profile NAME --output FILE
+platemaker workspace create         [--output FILE] [--target-width N] [--slice-height N]
+platemaker workspace add-profile    --workspace FILE --name NAME --canvas WxH --margins T,R,B,L
+platemaker workspace mod-profile    --workspace FILE --name NAME [--canvas WxH] [--margins T,R,B,L]
+platemaker workspace rm-profile     --workspace FILE --name NAME
+platemaker workspace list-profiles  --workspace FILE
+platemaker workspace list-projects  --workspace FILE
+platemaker project create  --workspace FILE --name NAME [--input DIR] [--output DIR]
+platemaker project mod     --workspace FILE --name NAME [--new-name N] [--input DIR] [--output DIR]
+platemaker project rm      --workspace FILE --name NAME
+platemaker project status  --workspace FILE --name NAME
+platemaker process --workspace FILE
+                      { --input DIR | --project NAME }
+                      [--output DIR] [--format png|jpg|webp] [--start-index N]
+                      [--target-width N] [--slice-height N]
+                      [--no-profile] [--json]
+platemaker template --workspace FILE --profile NAME --output FILE
+                      [--margins-tpl-color R,G,B[,A]] [--background-tpl-color R,G,B[,A]]
 ```
 
 **workspace create** — Creates an empty workspace with a default "Webtoon Standard"
