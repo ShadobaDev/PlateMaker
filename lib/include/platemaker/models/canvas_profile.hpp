@@ -52,6 +52,17 @@ public:
     Margins margins;      //!< Margin widths on each side, in pixels.
 
     /**
+     * \brief GUI hint: the user entered dimensions as safe-area (content zone) rather
+     *        than as absolute canvas size.
+     *
+     * The stored \c canvasSize is always the absolute canvas (safe area + all margins),
+     * regardless of this flag.  The GUI uses this hint to restore the radio-button
+     * state when re-opening the profile editor, so the user sees their data in the
+     * same form they entered it.  The library itself never reads this field.
+     */
+    bool hintUserSafeAreaSelect = false;
+
+    /**
      * \brief Overlay colour used by TemplateGenerator to highlight margin zones.
      *
      * Typically a semi-transparent pink/magenta, e.g. {255, 105, 180, 128}.

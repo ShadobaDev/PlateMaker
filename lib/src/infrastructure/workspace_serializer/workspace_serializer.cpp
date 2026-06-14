@@ -116,12 +116,13 @@ void from_json(const nlohmann::json& j, JpegOptions& v) {
 // --- CanvasProfile ---
 void to_json(nlohmann::json& j, const CanvasProfile& v) {
     j = nlohmann::json{
-        {"id",               v.id},
-        {"name",             v.name},
-        {"canvasSize",       v.canvasSize},
-        {"margins",          v.margins},
-        {"visualColour",     v.visualColour},
-        {"backgroundColour", v.backgroundColour}
+        {"id",                     v.id},
+        {"name",                   v.name},
+        {"canvasSize",             v.canvasSize},
+        {"margins",                v.margins},
+        {"visualColour",           v.visualColour},
+        {"backgroundColour",       v.backgroundColour},
+        {"hintUserSafeAreaSelect", v.hintUserSafeAreaSelect}
     };
 }
 void from_json(const nlohmann::json& j, CanvasProfile& v) {
@@ -136,6 +137,8 @@ void from_json(const nlohmann::json& j, CanvasProfile& v) {
         j.at("visualColour").get_to(v.visualColour);
     if (j.contains("backgroundColour"))
         j.at("backgroundColour").get_to(v.backgroundColour);
+    if (j.contains("hintUserSafeAreaSelect"))
+        j.at("hintUserSafeAreaSelect").get_to(v.hintUserSafeAreaSelect);
 }
 
 // --- OutputProfile ---
