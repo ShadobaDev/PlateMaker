@@ -65,9 +65,6 @@ public:
     std::vector<CanvasProfile> canvasProfiles;  //!< All defined canvas profiles.
     std::vector<OutputProfile> outputProfiles;  //!< All defined output profiles.
 
-    std::string activeCanvasProfileName; //!< Name of the currently selected CanvasProfile.
-    std::string activeOutputProfileName; //!< Name of the currently selected OutputProfile.
-
     std::string outputDirectory; //!< Absolute path to the directory where output slices are written.
 
     /**

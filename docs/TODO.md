@@ -68,19 +68,12 @@ helper that calls `vips_init()`/`vips_shutdown()` in a `SetUpTestSuite` /
 
 ## Library
 
-### Wire `ProjectItem::canvasProfileIds` into `CanvasProfileMatcher`
+### ~~Wire `ProjectItem::canvasProfileIds` into `CanvasProfileMatcher`~~ ✅
 
-`CanvasProfileMatcher` is implemented in `libplatemaker` and the CLI already uses it
-(static helper `findCanvasProfile` removed).  The class currently receives an empty
-`projectProfileIds` list so all workspace profiles land in subA — preserving previous
-behaviour.
-
-The remaining work is the data model step:
-- Add `std::string id` to `OutputProfile` (same pattern as `CanvasProfile`, done).
-- Add `std::vector<std::string> canvasProfileIds` to `ProjectItem`.
-- Add `std::string outputProfileId` to `ProjectItem`.
-- Remove `Workspace::activeCanvasProfileName` and `Workspace::activeOutputProfileName`.
-- Update `WorkspaceSerializer` to read/write the new fields.
-- Update CLI `project create` / `project add-profile` / `process` to pass
-  `project.canvasProfileIds` to `CanvasProfileMatcher(ws.canvasProfiles, project.canvasProfileIds)`.
-- Implement `addCanvasProfileToProject()` with conflict guard (see SPECIFICATION.md §7.5.2).
+All items completed (schema v2):
+- `OutputProfile::id` added.
+- `ProjectItem::canvasProfileIds` and `outputProfileId` added.
+- `Workspace::activeCanvasProfileName` and `activeOutputProfileName` removed (UI state moved to `MainWindow`).
+- `WorkspaceSerializer` updated; v1→v2 migration assigns IDs to legacy OutputProfiles.
+- CLI: `project mod --add-canvas-profile / --rm-canvas-profile / --output-profile`; `process` passes `project.canvasProfileIds` to `CanvasProfileMatcher`.
+- `ProjectItem::addCanvasProfile()` implemented with conflict guard.

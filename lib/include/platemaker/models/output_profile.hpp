@@ -38,11 +38,13 @@ struct JpegOptions {
  *        scaled, sliced, and saved.
  *
  * Multiple profiles can coexist inside a workspace (e.g. "Webtoon Standard",
- * "Webtoon HD", "Instagram Square").  The active profile is referenced by name
- * via \c Workspace::activeOutputProfileName.
+ * "Webtoon HD", "Instagram Square").  Per-project assignment is done via
+ * \c ProjectItem::outputProfileId.
  */
 class OutputProfile {
 public:
+    std::string id;   //!< Stable unique identifier — never changes after creation.
+
     /**
      * \brief Human-readable profile name shown in the GUI and used for workspace lookup.
      *

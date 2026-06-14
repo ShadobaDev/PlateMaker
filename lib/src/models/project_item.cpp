@@ -334,4 +334,38 @@ ScanMergeResult ProjectItem::mergeFileScan(
     return result;
 }
 
+// ---------------------------------------------------------------------------
+// addCanvasProfile
+// ---------------------------------------------------------------------------
+
+bool ProjectItem::addCanvasProfile(
+    const std::vector<CanvasProfile>& workspaceProfiles,
+    const std::string&                profileId)
+{
+    // Idempotent: already linked.
+    if (std::find(canvasProfileIds.begin(), canvasProfileIds.end(), profileId)
+            != canvasProfileIds.end())
+        return true;
+
+    // Locate the profile in the workspace palette.
+    const CanvasProfile* adding = nullptr;
+    for (const auto& p : workspaceProfiles)
+        if (p.id == profileId) { adding = &p; break; }
+    if (!adding) return false; // unknown ID
+
+    // Conflict guard (SPECIFICATION.md §7.5.2):
+    // Reject if any already-linked profile shares the same canvas dimensions.
+    for (const auto& existingId : canvasProfileIds) {
+        for (const auto& p : workspaceProfiles) {
+            if (p.id == existingId &&
+                p.canvasSize.width  == adding->canvasSize.width &&
+                p.canvasSize.height == adding->canvasSize.height)
+                return false;
+        }
+    }
+
+    canvasProfileIds.push_back(profileId);
+    return true;
+}
+
 } // namespace Platemaker::Models

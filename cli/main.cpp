@@ -286,12 +286,12 @@ static int getImageHeight(const std::string& filePath)
     return h;
 }
 
-/// Returns the active OutputProfile, or a default Webtoon profile if none set.
-static OutputProfile activeOutputProfile(const Workspace& ws)
+/// Returns the OutputProfile for \p project, falling back to the workspace default.
+static OutputProfile resolveOutputProfile(const Workspace& ws, const ProjectItem& project)
 {
-    if (!ws.activeOutputProfileName.empty()) {
+    if (!project.outputProfileId.empty()) {
         for (const auto& op : ws.outputProfiles)
-            if (op.name == ws.activeOutputProfileName) return op;
+            if (op.id == project.outputProfileId) return op;
     }
     if (!ws.outputProfiles.empty()) return ws.outputProfiles.front();
     OutputProfile def;
@@ -393,8 +393,11 @@ static int cmdHelp(const std::string& prog)
         << "\n"
         << " platemaker project create  --workspace FILE --name NAME\n"
         << "           [--input DIR] [--output DIR]\n"
-        << " platemaker project mod     --workspace FILE --name NAME \n"
+        << " platemaker project mod     --workspace FILE --name NAME\n"
         << "           [--new-name N] [--input DIR] [--output DIR]\n"
+        << "           [--add-canvas-profile NAME]  link canvas profile to project\n"
+        << "           [--rm-canvas-profile  NAME]  unlink canvas profile from project\n"
+        << "           [--output-profile     NAME]  assign output profile to project\n"
         << " platemaker project rm      --workspace FILE --name NAME\n"
         << " platemaker project status  --workspace FILE --name NAME\n"
         << "      Manage named projects (input directories) within a workspace.\n"
@@ -415,6 +418,7 @@ static int cmdWorkspaceCreate(const Opts& opts)
 
     // Build a default "Webtoon Standard" output profile.
     OutputProfile op;
+    op.id              = "op-" + nowIso8601();
     op.name            = "Webtoon Standard";
     op.targetWidth     = targetWidth;
     op.sliceHeight     = sliceHeight;
@@ -424,9 +428,8 @@ static int cmdWorkspaceCreate(const Opts& opts)
 
     // Assemble an empty workspace (no canvas profiles yet).
     Workspace ws;
-    ws.version                 = 1;
-    ws.outputProfiles          = {op};
-    ws.activeOutputProfileName = op.name;
+    ws.version        = 2;
+    ws.outputProfiles = {op};
 
     try {
         const auto dir = fs::path(outputFile).parent_path();
@@ -538,8 +541,6 @@ static int cmdWorkspaceAddProfile(const Opts& opts)
     }
 
     ws.canvasProfiles.push_back(cp);
-    if (ws.activeCanvasProfileName.empty())
-        ws.activeCanvasProfileName = name;
 
     try {
         WorkspaceSerializer{}.save(ws, wsFile);
@@ -687,11 +688,6 @@ static int cmdWorkspaceRmProfile(const Opts& opts)
         std::cerr << "Error: profile '" << name << "' not found\n"; return 1;
     }
 
-    if (ws.activeCanvasProfileName == name) {
-        ws.activeCanvasProfileName = ws.canvasProfiles.empty()
-            ? std::string{} : ws.canvasProfiles.front().name;
-    }
-
     try {
         WorkspaceSerializer{}.save(ws, wsFile);
     } catch (const std::exception& e) {
@@ -733,15 +729,15 @@ static int cmdWorkspaceListProfiles(const Opts& opts)
             const int safeH = cp.canvasSize.height
                               - cp.margins.top  - cp.margins.bottom;
             std::cout << "  " << cp.name
+                      << "  id=" << cp.id
                       << "  canvas=" << cp.canvasSize.width << 'x'
                                      << cp.canvasSize.height
                       << "  margins=" << cp.margins.top    << ','
                                       << cp.margins.right  << ','
                                       << cp.margins.bottom << ','
                                       << cp.margins.left
-                      << "  safe-area=" << safeW << 'x' << safeH;
-            if (cp.name == ws.activeCanvasProfileName) std::cout << "  [active]";
-            std::cout << '\n';
+                      << "  safe-area=" << safeW << 'x' << safeH
+                      << '\n';
         }
     }
 
@@ -751,10 +747,10 @@ static int cmdWorkspaceListProfiles(const Opts& opts)
     } else {
         for (const auto& op : ws.outputProfiles) {
             std::cout << "  " << op.name
+                      << "  id=" << op.id
                       << "  target=" << op.targetWidth << "px"
-                      << "  slice=" << op.sliceHeight << "px";
-            if (op.name == ws.activeOutputProfileName) std::cout << "  [active]";
-            std::cout << '\n';
+                      << "  slice=" << op.sliceHeight << "px"
+                      << '\n';
         }
     }
 
@@ -791,8 +787,9 @@ static int cmdProcess(const Opts& opts)
     //   3. Neither         → error
     // -----------------------------------------------------------------------
 
-    // Resolve output profile now (before we might return early).
-    OutputProfile outProfile = activeOutputProfile(ws);
+    // Output profile is resolved after we know the project (see below).
+    // Placeholder: use workspace default; updated once projectIdx is resolved.
+    OutputProfile outProfile;
     if (opts.has("format"))       outProfile.outputFormat = parseFormat(opts.get("format"));
     if (opts.has("start-index"))  outProfile.startIndex   = opts.getInt("start-index", 1);
     if (opts.has("target-width")) outProfile.targetWidth  = opts.getInt("target-width", 800);
@@ -856,6 +853,9 @@ static int cmdProcess(const Opts& opts)
 
     ProjectItem& project = ws.projectItems[static_cast<std::size_t>(projectIdx)];
 
+    // Resolve output profile now that we know which project we're processing.
+    outProfile = resolveOutputProfile(ws, project);
+
     if (project.getInputImages().empty()) {
         std::cerr << "Error: project '" << project.name
                   << "' has no input files.\n";
@@ -917,10 +917,9 @@ static int cmdProcess(const Opts& opts)
     ImageIO       imageIO;
     ScaledStrip   strip;
 
-    // Constructed once: partitions workspace profiles into project-linked (subA)
-    // and workspace-only (subB).  With no per-project canvasProfileIds yet,
-    // all profiles go into subA and every hit returns Status::Matched.
-    CanvasProfileMatcher matcher(ws.canvasProfiles);
+    // Partition workspace profiles into project-linked (subA) and workspace-only (subB).
+    // When canvasProfileIds is empty, all profiles go into subA (pre-assignment behaviour).
+    CanvasProfileMatcher matcher(ws.canvasProfiles, project.canvasProfileIds);
 
     std::vector<std::string> skippedPages;
 
@@ -1248,6 +1247,57 @@ static int cmdProjectMod(const Opts& opts)
     if (opts.has("output"))
         pi->getOutputDirectory() = opts.get("output");
 
+    if (opts.has("add-canvas-profile")) {
+        const std::string profName = opts.get("add-canvas-profile");
+        // Resolve name → ID
+        const CanvasProfile* cp = nullptr;
+        for (const auto& p : ws.canvasProfiles)
+            if (p.name == profName) { cp = &p; break; }
+        if (!cp) {
+            std::cerr << "Error: canvas profile '" << profName
+                      << "' not found in workspace.\n"; return 1;
+        }
+        if (!pi->addCanvasProfile(ws.canvasProfiles, cp->id)) {
+            std::cerr << "Error: cannot link canvas profile '" << profName
+                      << "' — conflict: another linked profile has the same canvas dimensions.\n";
+            return 1;
+        }
+        std::cerr << "Canvas profile '" << profName << "' linked to project '" << pi->name << "'.\n";
+    }
+
+    if (opts.has("rm-canvas-profile")) {
+        const std::string profName = opts.get("rm-canvas-profile");
+        const CanvasProfile* cp = nullptr;
+        for (const auto& p : ws.canvasProfiles)
+            if (p.name == profName) { cp = &p; break; }
+        if (!cp) {
+            std::cerr << "Error: canvas profile '" << profName
+                      << "' not found in workspace.\n"; return 1;
+        }
+        const auto before = pi->canvasProfileIds.size();
+        pi->canvasProfileIds.erase(
+            std::remove(pi->canvasProfileIds.begin(), pi->canvasProfileIds.end(), cp->id),
+            pi->canvasProfileIds.end());
+        if (pi->canvasProfileIds.size() == before)
+            std::cerr << "Warning: profile '" << profName
+                      << "' was not linked to project '" << pi->name << "'.\n";
+        else
+            std::cerr << "Canvas profile '" << profName << "' unlinked from project '" << pi->name << "'.\n";
+    }
+
+    if (opts.has("output-profile")) {
+        const std::string profName = opts.get("output-profile");
+        const OutputProfile* op = nullptr;
+        for (const auto& p : ws.outputProfiles)
+            if (p.name == profName) { op = &p; break; }
+        if (!op) {
+            std::cerr << "Error: output profile '" << profName
+                      << "' not found in workspace.\n"; return 1;
+        }
+        pi->outputProfileId = op->id;
+        std::cerr << "Output profile '" << profName << "' assigned to project '" << pi->name << "'.\n";
+    }
+
     try {
         WorkspaceSerializer{}.save(ws, wsFile);
     } catch (const std::exception& e) {
@@ -1358,14 +1408,41 @@ static int cmdProjectStatus(const Opts& opts)
         return "UNKNOWN";
     };
 
+    // Resolve profile names for display.
+    std::string canvasProfilesSummary;
+    if (pi->canvasProfileIds.empty()) {
+        canvasProfilesSummary = "(all workspace profiles)";
+    } else {
+        for (const auto& id : pi->canvasProfileIds) {
+            if (!canvasProfilesSummary.empty()) canvasProfilesSummary += ", ";
+            bool found = false;
+            for (const auto& cp : ws.canvasProfiles)
+                if (cp.id == id) { canvasProfilesSummary += cp.name; found = true; break; }
+            if (!found) canvasProfilesSummary += id + " (missing)";
+        }
+    }
+    std::string outputProfileSummary;
+    if (pi->outputProfileId.empty()) {
+        outputProfileSummary = ws.outputProfiles.empty()
+            ? "(none — using built-in default)"
+            : ws.outputProfiles.front().name + " (workspace default)";
+    } else {
+        for (const auto& op : ws.outputProfiles)
+            if (op.id == pi->outputProfileId) { outputProfileSummary = op.name; break; }
+        if (outputProfileSummary.empty())
+            outputProfileSummary = pi->outputProfileId + " (missing)";
+    }
+
     std::cout << "Project: " << pi->name << '\n'
-              << "  uuid        : " << pi->uuid << '\n'
-              << "  input dir   : "
+              << "  uuid           : " << pi->uuid << '\n'
+              << "  input dir      : "
               << (pi->inputDirectory.empty() ? "(not set)" : pi->inputDirectory) << '\n'
-              << "  output dir  : "
+              << "  output dir     : "
               << (pi->getOutputDirectory().empty() ? "(not set)"
                                                    : pi->getOutputDirectory()) << '\n'
-              << "  up-to-date  : " << (upToDate ? "yes" : "no") << '\n'
+              << "  canvas profiles: " << canvasProfilesSummary << '\n'
+              << "  output profile : " << outputProfileSummary << '\n'
+              << "  up-to-date     : " << (upToDate ? "yes" : "no") << '\n'
               << '\n'
               << "  Input files (" << pi->getInputImages().size() << "):\n";
 
@@ -1455,7 +1532,8 @@ static int cmdTemplate(const Opts& opts)
     }
 
     // --- Resolve output profile (for slice guide positions) ---
-    const OutputProfile outProfile = activeOutputProfile(ws);
+    const OutputProfile outProfile = ws.outputProfiles.empty()
+        ? OutputProfile{} : ws.outputProfiles.front();
 
     // --- Apply optional CLI colour overrides (priority: CLI > profile > default) ---
     // We copy the profile so we can modify colours without touching the workspace.

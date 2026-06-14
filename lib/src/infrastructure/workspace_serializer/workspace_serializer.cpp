@@ -141,6 +141,7 @@ void from_json(const nlohmann::json& j, CanvasProfile& v) {
 // --- OutputProfile ---
 void to_json(nlohmann::json& j, const OutputProfile& v) {
     j = nlohmann::json{
+        {"id",              v.id},
         {"name",            v.name},
         {"targetWidth",     v.targetWidth},
         {"sliceHeight",     v.sliceHeight},
@@ -151,6 +152,7 @@ void to_json(nlohmann::json& j, const OutputProfile& v) {
     };
 }
 void from_json(const nlohmann::json& j, OutputProfile& v) {
+    if (j.contains("id")) j.at("id").get_to(v.id); // back-compat: missing in v1
     j.at("name").get_to(v.name);
     j.at("targetWidth").get_to(v.targetWidth);
     j.at("sliceHeight").get_to(v.sliceHeight);
@@ -223,18 +225,22 @@ void from_json(const nlohmann::json& j, OutputFile& v) {
 // --- ProjectItem ---
 void to_json(nlohmann::json& j, const ProjectItem& v) {
     j = nlohmann::json{
-        {"name",            v.name},
-        {"uuid",            v.uuid},
-        {"inputDirectory",  v.inputDirectory},
-        {"inputFiles",      v.getInputImages()},
-        {"outputFiles",     v.getOutputImages()},
-        {"outputDirectory", v.getOutputDirectory()}
+        {"name",             v.name},
+        {"uuid",             v.uuid},
+        {"inputDirectory",   v.inputDirectory},
+        {"canvasProfileIds", v.canvasProfileIds},
+        {"outputProfileId",  v.outputProfileId},
+        {"inputFiles",       v.getInputImages()},
+        {"outputFiles",      v.getOutputImages()},
+        {"outputDirectory",  v.getOutputDirectory()}
     };
 }
 void from_json(const nlohmann::json& j, ProjectItem& v) {
-    if (j.contains("name"))           j.at("name").get_to(v.name);
-    if (j.contains("uuid"))           j.at("uuid").get_to(v.uuid);
-    if (j.contains("inputDirectory")) j.at("inputDirectory").get_to(v.inputDirectory);
+    if (j.contains("name"))             j.at("name").get_to(v.name);
+    if (j.contains("uuid"))             j.at("uuid").get_to(v.uuid);
+    if (j.contains("inputDirectory"))   j.at("inputDirectory").get_to(v.inputDirectory);
+    if (j.contains("canvasProfileIds")) j.at("canvasProfileIds").get_to(v.canvasProfileIds);
+    if (j.contains("outputProfileId"))  j.at("outputProfileId").get_to(v.outputProfileId);
     j.at("inputFiles").get_to(v.getInputImages());
     j.at("outputFiles").get_to(v.getOutputImages());
     j.at("outputDirectory").get_to(v.getOutputDirectory());
@@ -243,14 +249,12 @@ void from_json(const nlohmann::json& j, ProjectItem& v) {
 // --- Workspace ---
 void to_json(nlohmann::json& j, const Workspace& v) {
     j = nlohmann::json{
-        {"version",                 v.version},
-        {"canvasProfiles",          v.canvasProfiles},
-        {"outputProfiles",          v.outputProfiles},
-        {"activeCanvasProfileName", v.activeCanvasProfileName},
-        {"activeOutputProfileName", v.activeOutputProfileName},
-        {"projectItems",            v.projectItems},
-        {"outputDirectory",         v.outputDirectory},
-        {"stripDirty",              v.stripDirty}
+        {"version",         v.version},
+        {"canvasProfiles",  v.canvasProfiles},
+        {"outputProfiles",  v.outputProfiles},
+        {"projectItems",    v.projectItems},
+        {"outputDirectory", v.outputDirectory},
+        {"stripDirty",      v.stripDirty}
     };
 }
 
@@ -268,11 +272,10 @@ void from_json(const nlohmann::json& j, Workspace& v) {
     j.at("version").get_to(v.version);
     j.at("canvasProfiles").get_to(v.canvasProfiles);
     j.at("outputProfiles").get_to(v.outputProfiles);
-    j.at("activeCanvasProfileName").get_to(v.activeCanvasProfileName);
-    j.at("activeOutputProfileName").get_to(v.activeOutputProfileName);
-    if (j.contains("projectItems")) j.at("projectItems").get_to(v.projectItems);
+    // activeCanvasProfileName / activeOutputProfileName removed in schema v2 — silently ignored.
+    if (j.contains("projectItems"))    j.at("projectItems").get_to(v.projectItems);
     if (j.contains("outputDirectory")) j.at("outputDirectory").get_to(v.outputDirectory);
-    if (j.contains("stripDirty")) j.at("stripDirty").get_to(v.stripDirty);
+    if (j.contains("stripDirty"))      j.at("stripDirty").get_to(v.stripDirty);
 }
 
 } // namespace Platemaker::Models
@@ -284,7 +287,7 @@ namespace Platemaker::Infrastructure {
 
 namespace {
     /// Current on-disk schema version.  Increment on every breaking schema change.
-    constexpr int k_currentVersion = 1;
+    constexpr int k_currentVersion = 2;
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
@@ -391,17 +394,21 @@ void WorkspaceSerializer::save(
 // ---------------------------------------------------------------------------
 
 void WorkspaceSerializer::migrate(
-    Models::Workspace& /*workspace*/,
+    Models::Workspace& workspace,
     int                fromVersion) const
 {
-    // Migration chain.  Add a new block for each future schema version bump:
-    //
-    //   if (fromVersion < 2) {
-    //       // apply changes to bring a v1 workspace to v2 in-place
-    //   }
-    //
-    // For now version 1 is the only version, so nothing to do.
-    (void)fromVersion;
+    // v1 → v2: removed activeCanvasProfileName / activeOutputProfileName from Workspace;
+    //           added OutputProfile::id (back-compat: empty string for profiles missing it);
+    //           added ProjectItem::canvasProfileIds and outputProfileId (default: empty).
+    //           All handled in from_json with j.contains() guards — no in-place fixup needed.
+    if (fromVersion < 2) {
+        workspace.version = k_currentVersion;
+        // Assign stable IDs to OutputProfiles that were deserialized without one.
+        for (auto& op : workspace.outputProfiles) {
+            if (op.id.empty())
+                op.id = "op-" + op.name;
+        }
+    }
 }
 
 } // namespace Platemaker::Infrastructure

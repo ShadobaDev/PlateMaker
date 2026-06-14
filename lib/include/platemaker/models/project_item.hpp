@@ -49,6 +49,7 @@
 #include <unordered_map>
 #include <vector>
 #include "platemaker/platemaker_export.h"
+#include "platemaker/models/canvas_profile.hpp"
 namespace Platemaker::Models {
 
 // ---------------------------------------------------------------------------
@@ -180,6 +181,12 @@ public:
     std::string name;           //!< Human-readable chapter name (e.g. "Chapter 01").
     std::string uuid;           //!< Auto-generated unique identifier.
     std::string inputDirectory; //!< Absolute path to the source image directory.
+
+    /// IDs of canvas profiles linked to this project (empty = all workspace profiles accepted).
+    std::vector<std::string> canvasProfileIds;
+
+    /// ID of the output profile linked to this project (empty = workspace default).
+    std::string outputProfileId;
 
     // -----------------------------------------------------------------------
     // Construction
@@ -335,6 +342,23 @@ public:
      * \return A \c ScanMergeResult describing what changed.
      */
     ScanMergeResult mergeFileScan(const std::vector<std::string>& newFilePaths);
+
+    /**
+     * \brief Links a canvas profile to this project, with a conflict guard.
+     *
+     * Adds \p profileId to \c canvasProfileIds if:
+     *  - The ID exists in \p workspaceProfiles.
+     *  - No already-linked profile shares the same canvas W×H (SPECIFICATION.md §7.5.2).
+     *
+     * Calling with an already-linked ID is a no-op (idempotent, returns true).
+     *
+     * \param workspaceProfiles  The complete palette from \c Workspace::canvasProfiles.
+     * \param profileId          \c CanvasProfile::id to link.
+     * \return \c true on success, \c false if the ID was not found or caused a conflict.
+     */
+    bool addCanvasProfile(
+        const std::vector<CanvasProfile>& workspaceProfiles,
+        const std::string& profileId);
 
 private:
     std::vector<InputFile>  m_input_images;     //!< Ordered input image list.

@@ -38,6 +38,7 @@ Models::Workspace makeMinimalWorkspace()
     canvas.visualColour = {255, 105, 180, 128}; // hot pink @ 50 % alpha
 
     Models::OutputProfile output;
+    output.id              = "op-test-001";
     output.name            = "Webtoon Export";
     output.targetWidth     = 800;
     output.sliceHeight     = 1280;
@@ -46,13 +47,11 @@ Models::Workspace makeMinimalWorkspace()
     output.startIndex      = 1;
 
     Models::Workspace ws;
-    ws.version                 = 1;
-    ws.canvasProfiles          = {canvas};
-    ws.outputProfiles          = {output};
-    ws.activeCanvasProfileName = canvas.name;
-    ws.activeOutputProfileName = output.name;
-    ws.outputDirectory         = "/tmp/out";
-    ws.stripDirty              = true;
+    ws.version         = 2;
+    ws.canvasProfiles  = {canvas};
+    ws.outputProfiles  = {output};
+    ws.outputDirectory = "/tmp/out";
+    ws.stripDirty      = true;
     return ws;
 }
 
