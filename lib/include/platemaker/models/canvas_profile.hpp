@@ -39,6 +39,8 @@ public:
     // Data members
     // ---------------------------------------------------------------------------
 
+    std::string id;   //!< Stable unique identifier — never changes after creation.
+
     /**
      * \brief Human-readable profile name shown in the GUI and used for workspace lookup.
      *

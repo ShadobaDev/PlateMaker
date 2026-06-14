@@ -68,39 +68,19 @@ helper that calls `vips_init()`/`vips_shutdown()` in a `SetUpTestSuite` /
 
 ## Library
 
-### Extract `CanvasProfileMatcher` into `libplatemaker` core
+### Wire `ProjectItem::canvasProfileIds` into `CanvasProfileMatcher`
 
-`findCanvasProfile` is currently a private static helper in `cli/main.cpp`.
-The Qt GUI will need the same logic, so it should live in the library as a
-proper class under `Platemaker::Core`.
+`CanvasProfileMatcher` is implemented in `libplatemaker` and the CLI already uses it
+(static helper `findCanvasProfile` removed).  The class currently receives an empty
+`projectProfileIds` list so all workspace profiles land in subA — preserving previous
+behaviour.
 
-**Proposed API** (`lib/include/platemaker/core/canvas_profile_matcher/canvas_profile_matcher.hpp`):
-```cpp
-namespace Platemaker::Core {
-
-class PLATEMAKER_EXPORT CanvasProfileMatcher {
-public:
-    /// Returns the first profile whose canvasSize matches \p width × \p height,
-    /// or \c nullptr if none match.
-    static const CanvasProfile* findBySize(
-        const std::vector<CanvasProfile>& profiles, int width, int height);
-};
-
-} // namespace Platemaker::Core
-```
-
-**Implementation** (`lib/src/core/canvas_profile_matcher/canvas_profile_matcher.cpp`):
-```cpp
-const CanvasProfile* CanvasProfileMatcher::findBySize(
-    const std::vector<CanvasProfile>& profiles, int width, int height)
-{
-    for (const auto& cp : profiles)
-        if (cp.canvasSize.width == width && cp.canvasSize.height == height)
-            return &cp;
-    return nullptr;
-}
-```
-
-After extraction, replace the static helper in `cli/main.cpp` with a call to
-`CanvasProfileMatcher::findBySize(...)` and add the new `.cpp` to
-`PLATEMAKER_SOURCES` in `lib/CMakeLists.txt`.
+The remaining work is the data model step:
+- Add `std::string id` to `OutputProfile` (same pattern as `CanvasProfile`, done).
+- Add `std::vector<std::string> canvasProfileIds` to `ProjectItem`.
+- Add `std::string outputProfileId` to `ProjectItem`.
+- Remove `Workspace::activeCanvasProfileName` and `Workspace::activeOutputProfileName`.
+- Update `WorkspaceSerializer` to read/write the new fields.
+- Update CLI `project create` / `project add-profile` / `process` to pass
+  `project.canvasProfileIds` to `CanvasProfileMatcher(ws.canvasProfiles, project.canvasProfileIds)`.
+- Implement `addCanvasProfileToProject()` with conflict guard (see SPECIFICATION.md §7.5.2).

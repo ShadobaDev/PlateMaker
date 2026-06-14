@@ -116,6 +116,7 @@ void from_json(const nlohmann::json& j, JpegOptions& v) {
 // --- CanvasProfile ---
 void to_json(nlohmann::json& j, const CanvasProfile& v) {
     j = nlohmann::json{
+        {"id",               v.id},
         {"name",             v.name},
         {"canvasSize",       v.canvasSize},
         {"margins",          v.margins},
@@ -124,11 +125,13 @@ void to_json(nlohmann::json& j, const CanvasProfile& v) {
     };
 }
 void from_json(const nlohmann::json& j, CanvasProfile& v) {
+    if (j.contains("id"))
+        j.at("id").get_to(v.id);
+    else
+        v.id = "cp-" + j.at("name").get<std::string>(); // back-compat: derive from name
     j.at("name").get_to(v.name);
     j.at("canvasSize").get_to(v.canvasSize);
     j.at("margins").get_to(v.margins);
-    // Use contains() for colour fields so older workspace files without these
-    // keys load gracefully with the struct's default values.
     if (j.contains("visualColour"))
         j.at("visualColour").get_to(v.visualColour);
     if (j.contains("backgroundColour"))

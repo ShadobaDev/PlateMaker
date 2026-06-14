@@ -46,6 +46,7 @@
 
 #include <vips/vips.h>
 
+#include <platemaker/core/canvas_profile_matcher/canvas_profile_matcher.hpp>
 #include <platemaker/core/margin_cropper/margin_cropper.hpp>
 #include <platemaker/core/scaled_strip/scaled_strip.hpp>
 #include <platemaker/core/scaler/scaler.hpp>
@@ -298,16 +299,6 @@ static OutputProfile activeOutputProfile(const Workspace& ws)
     return def;
 }
 
-/// Finds the first canvas profile whose canvasSize.width matches \p fileWidth.
-static const CanvasProfile* findCanvasProfile(
-    const std::vector<CanvasProfile>& profiles, int fileWidth, int fileHeight)
-{
-    for (const auto& cp : profiles)
-        if (cp.canvasSize.width  == fileWidth &&
-            cp.canvasSize.height == fileHeight)
-            return &cp;
-    return nullptr;
-}
 
 /**
  * \brief Returns the current UTC time as an ISO 8601 string (e.g. "2026-06-02T14:30:00Z").
@@ -523,6 +514,7 @@ static int cmdWorkspaceAddProfile(const Opts& opts)
     }
 
     CanvasProfile cp;
+    cp.id           = "cp-" + nowIso8601();
     cp.name         = name;
     cp.canvasSize   = canvasSize;
     cp.margins      = margins;
@@ -925,6 +917,11 @@ static int cmdProcess(const Opts& opts)
     ImageIO       imageIO;
     ScaledStrip   strip;
 
+    // Constructed once: partitions workspace profiles into project-linked (subA)
+    // and workspace-only (subB).  With no per-project canvasProfileIds yet,
+    // all profiles go into subA and every hit returns Status::Matched.
+    CanvasProfileMatcher matcher(ws.canvasProfiles);
+
     std::vector<std::string> skippedPages;
 
     for (const auto& file : project.getInputImages()) {
@@ -942,8 +939,8 @@ static int cmdProcess(const Opts& opts)
                 const int fileHeight = getImageHeight(file.filePath);
                 if (fileWidth <= 0 || fileHeight <= 0)
                     throw std::runtime_error("cannot determine image dimensions");
-                matchedProfile = findCanvasProfile(ws.canvasProfiles, fileWidth, fileHeight);
-                if (!matchedProfile) {
+                const auto result = matcher.resolve(fileWidth, fileHeight);
+                if (result.status != ProfileMatchResult::Status::Matched) {
                     if (!jsonMode)
                         std::cerr << "Warning: skipping '" << file.filePath
                                   << "': " << fileWidth << 'x' << fileHeight
@@ -951,6 +948,7 @@ static int cmdProcess(const Opts& opts)
                     skippedPages.push_back(file.filePath);
                     continue;
                 }
+                matchedProfile = result.profile;
             }
 
             const bool doMarginCrop =

@@ -275,13 +275,13 @@ their pixel width.
 **workspace mod-profile / rm-profile** — Modify or remove a named canvas profile.
 Use `list-profiles` to discover profile names.
 
-**Canvas profile matching during `process`:**
-- If the workspace has canvas profiles, each input file's width (from PNG/JPEG header,
-  no pixel decode) is compared to every profile's `canvasSize.width`.
-- Matching profile's margins are applied automatically (margin-aware pipeline).
-- Files whose width matches **no** profile are reported as incompatible and skipped.
-- If the workspace has **no** canvas profiles, all files are processed with the standard
-  pipeline (no margin cropping).
+**Canvas profile matching during `process`:**  
+See §7.5 for the full algorithm.  In summary: for each input image the library searches
+the project's `canvasProfileIds` list first, then falls back to the workspace-wide
+`canvasProfiles` palette.  The library never silently selects a profile that is not
+listed in the project — it always reports an actionable error with a suggested CLI
+command.  If `canvasProfileIds` is empty, all files are processed without margin
+cropping (standard pipeline).
 
 **Exit codes:** `0` success · `1` usage error · `2` IO error · `3` processing error
 
@@ -301,6 +301,7 @@ The Qt GUI is developed in a separate repository. It consumes `libplatemaker` as
 
 ### `CanvasProfile`
 ```
+id            : uuid      // stable identifier — never changes after creation
 name          : string    // e.g. "Webtoon 4-page" or "Marvel Standard" (future)
 canvasSize    : Size      // full canvas including margins, e.g. 1600×10240
 margins       : Margins   // top/right/bottom/left in px
@@ -310,6 +311,7 @@ visualColour  : RGBA      // template overlay colour, e.g. #FF69B4 at 50% alpha
 
 ### `OutputProfile`
 ```
+id              : uuid        // stable identifier — never changes after creation
 name            : string      // e.g. "Webtoon Standard"
 targetWidth     : int         // e.g. 800
 sliceHeight     : int         // e.g. 1280
@@ -340,6 +342,39 @@ errorMessage : string    // empty unless status == ERROR or SKIPPED
 > `ThumbnailCache::thumbnailPath(page.filePath)` — the path is deterministic and
 > does not need to be stored in the workspace JSON.
 
+### `ProjectItem`
+
+A **project** is an ordered set of source images that are processed together as a
+single virtual strip, sharing one output profile and a curated list of canvas profiles.
+
+```
+id                : uuid        // stable identifier
+name              : string      // user-facing label, e.g. "Chapter 01"
+inputDirectory    : string      // directory scanned for source images
+outputDirectory   : string      // where output slices are written
+outputProfileId   : uuid        // references OutputProfile.id in the parent Workspace
+                                // exactly one output profile per project
+canvasProfileIds  : uuid[]      // ordered list of CanvasProfile.id values
+                                // order = priority (first match wins)
+                                // invariant: no two entries may refer to profiles
+                                // whose canvasSize is identical (conflict guard)
+pages             : PageItem[]  // ordered input images
+processedFiles    : ProcessedFileRecord[]
+stripDirty        : bool
+```
+
+**Why a list, not a single id?**  
+An artist may work with multiple canvas heights within one chapter (e.g. a normal
+page at 10 240 px and a splash at 20 480 px, both 1 600 px wide).  The list lets
+the project accept both, while the order encodes which profile takes precedence when
+two profiles match the same width but could theoretically both match.  The conflict
+guard (§7.5) prevents two profiles with identical dimensions from being registered,
+so priority only matters for width-only ambiguity during the search (see §7.5).
+
+**`outputProfileId`** is a direct, stable reference.  If the referenced profile is
+deleted from the workspace the project is considered misconfigured and the CLI / GUI
+must report an error before processing begins.
+
 ### `ProcessedFileRecord`
 ```
 inputFilePath : string    // absolute path
@@ -350,20 +385,25 @@ contributesTo : string[]  // output filenames that contain pixels from this inpu
 
 ### `Workspace`
 ```
-version                 : int                   // schema version, start at 1
-canvasProfiles          : CanvasProfile[]
-outputProfiles          : OutputProfile[]
-activeCanvasProfileName : string
-activeOutputProfileName : string
-pages                   : PageItem[]
-outputDirectory         : string
-processedFiles          : ProcessedFileRecord[]  // incremental processing cache
-stripDirty              : bool                   // true = full reprocess required
+version        : int              // schema version, start at 1
+canvasProfiles : CanvasProfile[]  // global palette — all defined profiles
+outputProfiles : OutputProfile[]  // global palette — all defined profiles
+projects       : ProjectItem[]    // each project has its own profile selection
+outputDirectory: string           // workspace-level default (overridden per project)
 ```
 
 **Workspace file format:** UTF-8 JSON, saved as `<project-name>.platemaker.json`.
 
-`stripDirty` is set to `true` whenever: page order changes, a page is added/removed, or OutputProfile changes. When `true`, the entire strip is reprocessed regardless of individual file hashes.
+> **Migration note (schema v1 → v2):** Earlier builds stored `activeCanvasProfileName`
+> and `activeOutputProfileName` at workspace level, plus a flat `pages: PageItem[]` list
+> and a top-level `stripDirty`/`processedFiles`.  These fields are replaced by
+> `ProjectItem` in schema v2.  The `WorkspaceSerializer` migration chain must convert
+> old documents by wrapping the flat page list into a single `ProjectItem` and resolving
+> the active profile names to UUIDs.
+
+`ProjectItem.stripDirty` is set to `true` whenever: page order changes, a page is
+added/removed, or the project's `outputProfileId` changes.  When `true`, the entire
+strip for that project is reprocessed regardless of individual file hashes.
 
 ---
 
@@ -403,9 +443,9 @@ createBlank(canvasProfile.canvasSize, white)
 
 ### Incremental processing logic
 ```
-On run:
-  if workspace.stripDirty:
-    → full reprocess, rebuild processedFiles map
+On run (per project):
+  if project.stripDirty:
+    → full reprocess, rebuild project.processedFiles map
   else:
     for each PageItem:
       currentHash = sha256(filePath)
@@ -416,6 +456,180 @@ On run:
       rebuild sourceMap for changed outputs
       update processedFiles records
 ```
+
+### Canvas Profile Matching Algorithm (§7.5)
+
+**Goal: maximum determinism.**  The workspace may hold many profiles, but an image
+must resolve to exactly one profile (or an unambiguous error) before processing
+begins.  The algorithm is deterministic given the same project state — it never makes
+silent guesses.
+
+#### 7.5.1 Per-image resolution
+
+**Pre-run (once per project), inside `CanvasProfileMatcher` constructor:**
+```
+Partition workspace.canvasProfiles into:
+  subA = profiles whose id ∈ project.canvasProfileIds   (preserves priority order)
+  subB = all remaining workspace profiles               (fallback pool)
+```
+
+The conflict guard (§7.5.2) guarantees subA contains at most one profile per
+W×H pair, so the first match in subA is always final — no tie-breaking needed.
+
+**Per image (called for each `PageItem` in the project):**
+```
+1. Read image width W from the file header (no full pixel decode).
+
+2. Read image height H from the file header.
+
+3. Search subA for first cp where cp.canvasSize.width == W
+                                and cp.canvasSize.height == H
+   → if found: Matched — use cp (margin-aware pipeline). Done.
+
+4. Search subB for first cp where cp.canvasSize.width == W
+                                and cp.canvasSize.height == H
+
+   4a. If not found in subB either:
+         → NotFoundAnywhere
+         → CLI ERROR: "no canvas profile matches <W>×<H>"
+         → CLI hint: "run `platemaker workspace add-profile
+                       --canvas <W>x<H> --margins 0,0,0,0`
+                       then `platemaker project add-profile
+                       --project <NAME> --profile <ID>`"
+         → page is skipped; reported in final summary.
+
+   4b. If found in subB:
+         → FoundInWorkspaceOnly
+         → CLI ERROR: "canvas profile '<name>' (<W>×<H>) exists in workspace
+                       but is not linked to project '<project-name>'"
+         → CLI hint: list all subB profiles matching W×H with their IDs,
+                     then "run `platemaker project add-profile
+                     --project <NAME> --profile <ID>` to link it"
+         → page is skipped; reported in final summary.
+```
+
+> **Design rationale:** Step 6b is an explicit error rather than a silent fallback.
+> Without it, adding a new profile to the workspace could silently change the
+> behaviour of every existing project that has a page with matching dimensions —
+> the opposite of determinism.  The user must consciously opt a project into a profile.
+
+#### 7.5.2 Conflict guard (ProjectItem invariant)
+
+Within a single project, `canvasProfileIds` must never contain two profiles whose
+`canvasSize` (width × height) is identical.  If it did, the algorithm above would
+always select the first one and the second would be unreachable — a silently wasted
+entry.
+
+The conflict is detected **at the moment a profile is added to a project**, not
+deferred to serialisation.  The library exposes a dedicated mutation method that
+checks for a collision and returns a structured error identifying the conflicting
+profile — so the CLI can suggest a removal command and the GUI can highlight the
+offending entry.
+
+**Planned API:**
+```cpp
+struct AddCanvasProfileResult {
+    enum class Status { Ok, Conflict };
+    Status status;
+    // Non-null only when status == Conflict.
+    // Points into the allWorkspaceProfiles vector passed to the call.
+    const CanvasProfile* conflictingProfile = nullptr;
+};
+
+// Free function (or method on a future WorkspaceEditor / ProjectEditor type).
+// Appends profileId to project.canvasProfileIds only when there is no dimension
+// collision with any already-linked profile.
+AddCanvasProfileResult addCanvasProfileToProject(
+    ProjectItem&                          project,
+    const std::string&                    profileId,     // UUID to link
+    const std::vector<CanvasProfile>&     allWorkspaceProfiles);
+```
+
+**CLI response on `Conflict`:**
+```
+Error: canvas profile '<new-name>' (WxH) conflicts with already-linked
+       profile '<existing-name>' (WxH) [id: <existing-uuid>].
+Hint:  to replace it, run:
+         platemaker project rm-profile --project <NAME> --profile <existing-uuid>
+       then re-run the add command.
+```
+
+**GUI response on `Conflict`:** display an error and highlight the conflicting
+profile entry in the project's canvas-profile list.
+
+`WorkspaceSerializer::save()` may additionally assert the invariant as a safety
+net (debug builds), but the primary enforcement is at add-time — save must never
+be the *first* place a conflict is discovered.
+
+Profiles at **workspace** level are allowed to share dimensions — the workspace is
+a palette, not a processing list.  The invariant only applies inside
+`ProjectItem.canvasProfileIds`.
+
+#### 7.5.3 Library API (planned — `Core::CanvasProfileMatcher`)
+
+`CanvasProfileMatcher` is an **object**, not a bag of static functions.  The
+constructor performs the workspace partition once per project run; `resolve()` is
+then called once per input image in O(N_project_ids) with no further allocation.
+
+```cpp
+namespace Platemaker::Core {
+
+struct ProfileMatchResult {
+    enum class Status {
+        Matched,              // profile found in project list — use it
+        NotFoundAnywhere,     // no matching profile in project or workspace
+        FoundInWorkspaceOnly, // found in workspace but not linked to project
+    };
+    Status status;
+    const CanvasProfile* profile = nullptr;             // non-null only when Matched
+    std::vector<const CanvasProfile*> workspaceCandidates; // non-empty for FoundInWorkspaceOnly
+};
+
+class PLATEMAKER_EXPORT CanvasProfileMatcher {
+public:
+    /// Partitions allWorkspaceProfiles into two ordered subsets once:
+    ///   m_projectProfiles      — profiles whose id ∈ projectProfileIds (priority order)
+    ///   m_workspaceOnlyProfiles — the remainder
+    /// Construction is O(N_workspace × N_project_ids).
+    CanvasProfileMatcher(
+        const std::vector<CanvasProfile>& allWorkspaceProfiles,
+        const std::vector<std::string>&   projectProfileIds); // ordered UUIDs
+
+    /// Resolves the canvas profile for one input image of size \p w × \p h.
+    ///
+    /// Search order:
+    ///   1. m_projectProfiles      — O(N_project_ids); conflict guard guarantees
+    ///                               at most one match, so the first hit is final.
+    ///   2. m_workspaceOnlyProfiles — O(N_workspace - N_project_ids); only reached
+    ///                               when step 1 finds nothing.
+    ///
+    /// Returns Matched / FoundInWorkspaceOnly / NotFoundAnywhere.
+    [[nodiscard]] ProfileMatchResult resolve(int w, int h) const;
+
+private:
+    std::vector<const CanvasProfile*> m_projectProfiles;        // subA — priority order
+    std::vector<const CanvasProfile*> m_workspaceOnlyProfiles;  // subB — fallback
+};
+
+} // namespace Platemaker::Core
+```
+
+**Typical usage per processing run:**
+```cpp
+// Constructed once per project, before the page loop.
+CanvasProfileMatcher matcher(workspace.canvasProfiles, project.canvasProfileIds);
+
+for (const auto& page : project.pages) {
+    auto [w, h] = readImageDimensions(page.filePath);
+    auto result = matcher.resolve(w, h);
+    // translate result.status into error / pipeline selection
+}
+```
+
+The CLI and GUI translate `ProfileMatchResult::status` into the user-facing messages
+and suggested commands described in §7.5.1.
+
+---
 
 ### Cancellation
 Processing is cancellable at any point via a `std::atomic<bool>` token. The pipeline checks the token between slices. On cancellation: already-written output files are kept (partial output), the workspace is not updated, and the log reports how many slices were completed before cancellation.
