@@ -348,14 +348,20 @@ Models::Workspace WorkspaceSerializer::load(const std::string& filePath) const
 // save (atomic write: temp file → rename)
 // ---------------------------------------------------------------------------
 
+std::string WorkspaceSerializer::serialize(
+    const Models::Workspace& workspace) const
+{
+    const nlohmann::json j = workspace;
+    return j.dump(4); // pretty-print, 4-space indent
+}
+
 void WorkspaceSerializer::save(
     const Models::Workspace& workspace,
     const std::string&       filePath) const
 {
     namespace fs = std::filesystem;
 
-    const nlohmann::json j  = workspace;
-    const std::string  text = j.dump(4); // pretty-print, 4-space indent
+    const std::string text = serialize(workspace);
 
     // Write to a sibling temp file then rename for near-atomic replacement.
     const fs::path finalPath{filePath};

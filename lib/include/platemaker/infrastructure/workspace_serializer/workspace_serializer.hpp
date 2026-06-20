@@ -70,6 +70,18 @@ public:
         const Models::Workspace& workspace,
         const std::string&       filePath) const;
 
+    /**
+     * \brief Serialises a Workspace to its canonical JSON string form.
+     *
+     * Produces exactly the text that \c save() would write to disk.  Useful for
+     * change detection (compare against a saved snapshot) without touching the
+     * filesystem.
+     *
+     * \param workspace The Workspace object to serialise.
+     * \return The pretty-printed JSON representation.
+     */
+    [[nodiscard]] std::string serialize(const Models::Workspace& workspace) const;
+
 private:
     /**
      * \brief Runs the migration chain to bring an old workspace up to the current version.
