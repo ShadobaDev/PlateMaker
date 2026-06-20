@@ -48,9 +48,11 @@
 
 #include <platemaker/core/canvas_profile_matcher/canvas_profile_matcher.hpp>
 #include <platemaker/core/margin_cropper/margin_cropper.hpp>
+#include <platemaker/core/processing_pipeline/processing_pipeline.hpp>
 #include <platemaker/core/scaled_strip/scaled_strip.hpp>
 #include <platemaker/core/scaler/scaler.hpp>
 #include <platemaker/core/template_generator/template_generator.hpp>
+#include <platemaker/infrastructure/control/cancellation_token.hpp>
 #include <platemaker/infrastructure/image_io/image_io.hpp>
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
@@ -143,22 +145,6 @@ static Opts parseOpts(int argc, char** argv, int start)
 // Helpers
 // ===========================================================================
 
-static std::string zeroPad(int n, int width)
-{
-    std::ostringstream oss;
-    oss << std::setfill('0') << std::setw(width) << n;
-    return oss.str();
-}
-
-static std::string fmtExt(OutputFormat fmt)
-{
-    switch (fmt) {
-        case OutputFormat::PNG:  return ".png";
-        case OutputFormat::JPEG: return ".jpg";
-        case OutputFormat::WebP: return ".webp";
-    }
-    return ".png";
-}
 
 static OutputFormat parseFormat(const std::string& s)
 {
@@ -246,44 +232,6 @@ static std::vector<fs::path> scanImageDir(const fs::path& dir)
     }
     std::sort(files.begin(), files.end());
     return files;
-}
-
-/**
- * \brief Reads the pixel width of an image file from its header only (fast).
- *
- * Uses VIPS_ACCESS_SEQUENTIAL so no pixels are decoded; only the image
- * metadata (IHDR for PNG, SOF for JPEG) is read.  Returns -1 on error.
- */
-static int getImageWidth(const std::string& filePath)
-{
-    VipsImage* img = vips_image_new_from_file(
-        filePath.c_str(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr);
-    if (!img) {
-        vips_error_clear();
-        return -1;
-    }
-    const int w = img->Xsize;
-    g_object_unref(img);
-    return w;
-}
-
-/**
- * \brief Reads the pixel height of an image file from its header only (fast).
- *
- * Uses VIPS_ACCESS_SEQUENTIAL so no pixels are decoded; only the image
- * metadata (IHDR for PNG, SOF for JPEG) is read.  Returns -1 on error.
- */
-static int getImageHeight(const std::string& filePath)
-{
-    VipsImage* img = vips_image_new_from_file(
-        filePath.c_str(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr);
-    if (!img) {
-        vips_error_clear();
-        return -1;
-    }
-    const int h = img->Ysize;
-    g_object_unref(img);
-    return h;
 }
 
 /// Returns the OutputProfile for \p project, falling back to the workspace default.
@@ -787,13 +735,9 @@ static int cmdProcess(const Opts& opts)
     //   3. Neither         → error
     // -----------------------------------------------------------------------
 
-    // Output profile is resolved after we know the project (see below).
-    // Placeholder: use workspace default; updated once projectIdx is resolved.
+    // Output profile is resolved once we know the project (see below), then CLI
+    // flags override individual fields on top of the resolved profile.
     OutputProfile outProfile;
-    if (opts.has("format"))       outProfile.outputFormat = parseFormat(opts.get("format"));
-    if (opts.has("start-index"))  outProfile.startIndex   = opts.getInt("start-index", 1);
-    if (opts.has("target-width")) outProfile.targetWidth  = opts.getInt("target-width", 800);
-    if (opts.has("slice-height")) outProfile.sliceHeight  = opts.getInt("slice-height", 1280);
 
     const bool jsonMode    = opts.has("json");
     const bool noProfile   = opts.has("no-profile");
@@ -853,8 +797,13 @@ static int cmdProcess(const Opts& opts)
 
     ProjectItem& project = ws.projectItems[static_cast<std::size_t>(projectIdx)];
 
-    // Resolve output profile now that we know which project we're processing.
+    // Resolve output profile now that we know which project we're processing,
+    // then let explicit CLI flags override individual fields.
     outProfile = resolveOutputProfile(ws, project);
+    if (opts.has("format"))       outProfile.outputFormat = parseFormat(opts.get("format"));
+    if (opts.has("start-index"))  outProfile.startIndex   = opts.getInt("start-index", 1);
+    if (opts.has("target-width")) outProfile.targetWidth  = opts.getInt("target-width", 800);
+    if (opts.has("slice-height")) outProfile.sliceHeight  = opts.getInt("slice-height", 1280);
 
     if (project.getInputImages().empty()) {
         std::cerr << "Error: project '" << project.name
@@ -912,138 +861,58 @@ static int cmdProcess(const Opts& opts)
         std::cerr << " ...\n";
     }
 
-    Scaler        scaler;
-    MarginCropper cropper;
-    ImageIO       imageIO;
-    ScaledStrip   strip;
+    // Run the shared pipeline. --no-profile is honoured by passing an empty
+    // canvas-profile palette (no margin matching). The CLI never cancels, so it
+    // uses a token that stays unset.
+    const std::vector<CanvasProfile> noProfiles;
+    Platemaker::Infrastructure::CancellationToken cancelToken;
 
-    // Partition workspace profiles into project-linked (subA) and workspace-only (subB).
-    // When canvasProfileIds is empty, all profiles go into subA (pre-assignment behaviour).
-    CanvasProfileMatcher matcher(ws.canvasProfiles, project.canvasProfileIds);
-
-    std::vector<std::string> skippedPages;
-
-    for (const auto& file : project.getInputImages()) {
-        if (file.status == FileStatus::Missing) {
-            if (!jsonMode)
-                std::cerr << "Warning: skipping missing file '"
-                          << file.filePath << "'\n";
-            skippedPages.push_back(file.filePath);
-            continue;
-        }
-        try {
-            const CanvasProfile* matchedProfile = nullptr;
-            if (hasProfiles) {
-                const int fileWidth  = getImageWidth(file.filePath);
-                const int fileHeight = getImageHeight(file.filePath);
-                if (fileWidth <= 0 || fileHeight <= 0)
-                    throw std::runtime_error("cannot determine image dimensions");
-                const auto result = matcher.resolve(fileWidth, fileHeight);
-                if (result.status != ProfileMatchResult::Status::Matched) {
-                    if (!jsonMode)
-                        std::cerr << "Warning: skipping '" << file.filePath
-                                  << "': " << fileWidth << 'x' << fileHeight
-                                  << " does not match any canvas profile\n";
-                    skippedPages.push_back(file.filePath);
-                    continue;
-                }
-                matchedProfile = result.profile;
-            }
-
-            const bool doMarginCrop =
-                matchedProfile != nullptr &&
-                (matchedProfile->margins.top    > 0 ||
-                 matchedProfile->margins.bottom > 0 ||
-                 matchedProfile->margins.left   > 0 ||
-                 matchedProfile->margins.right  > 0);
-
-            if (doMarginCrop) {
-                auto buf     = imageIO.load(file.filePath);
-                auto cropped = cropper.crop(buf, matchedProfile->margins);
-                auto scaled  = scaler.scale(std::move(cropped), file.filePath,
-                                            outProfile.targetWidth);
-                strip.append(std::move(scaled));
+    const auto outcome = Platemaker::Core::ProcessingPipeline{}.run(
+        project.getInputImages(),
+        outProfile,
+        noProfile ? noProfiles : ws.canvasProfiles,
+        project.canvasProfileIds,
+        outputDir,
+        cancelToken,
+        /*onProgress*/ {},
+        /*onLog*/ [&](Platemaker::Core::ProcessingLogLevel level, const std::string& msg) {
+            using L = Platemaker::Core::ProcessingLogLevel;
+            if (level == L::Info) {
+                if (!jsonMode) std::cerr << "  " << msg << '\n';
             } else {
-                auto scaled = scaler.scale(file.filePath, outProfile.targetWidth);
-                strip.append(std::move(scaled));
+                std::cerr << (level == L::Error ? "Error: " : "Warning: ")
+                          << msg << '\n';
             }
-        } catch (const std::exception& e) {
-            std::cerr << "Warning: skipping '" << file.filePath
-                      << "': " << e.what() << '\n';
-            skippedPages.push_back(file.filePath);
-        }
-    }
+        },
+        /*onSliceSaved*/ {});
 
-    if (strip.totalHeight() == 0) {
-        std::cerr << "Error: no pages were loaded successfully\n";
+    if (outcome.failed)
         return 3;
-    }
-
-    // --- Slice ---
-    std::vector<SliceResult> slices;
-    try {
-        slices = strip.sliceAll(outProfile.sliceHeight, outProfile.lastSlicePolicy);
-    } catch (const std::exception& e) {
-        std::cerr << "Error: slicing failed: " << e.what() << '\n';
-        return 3;
-    }
-
-    // --- Save slices ---
-    const std::string ext = fmtExt(outProfile.outputFormat);
-    std::vector<std::string> outputFiles;
-
-    for (auto& slice : slices) {
-        const int fileNum = outProfile.startIndex + slice.index;
-        const std::string outName = "output_" + zeroPad(fileNum, 3) + ext;
-        const std::string outPath = outputDir + "/" + outName;
-        try {
-            imageIO.save(slice.image, outPath, outProfile.outputFormat,
-                         outProfile.jpegOptions);
-            outputFiles.push_back(outName);
-            if (!jsonMode) std::cerr << "  Saved " << outName << '\n';
-        } catch (const std::exception& e) {
-            std::cerr << "Error: failed to save '" << outPath
-                      << "': " << e.what() << '\n';
-            return 3;
-        }
-    }
 
     // --- Update ProjectItem via library API, then save workspace ---
-    {
-        // Build ProcessingSliceRecord list (Models layer — no pixel data).
-        std::vector<ProcessingSliceRecord> records;
-        records.reserve(slices.size());
-        for (std::size_t si = 0; si < slices.size(); ++si) {
-            ProcessingSliceRecord rec;
-            rec.fileName     = outputFiles[si];
-            rec.outputSha256 = FileMetaData::computeFileSha256(
-                                   outputDir + "/" + outputFiles[si]);
-            rec.sourceMap    = slices[si].sourceMap;
-            records.push_back(std::move(rec));
-        }
+    project.applyProcessingResults(outcome.records, outputDir, nowIso8601());
 
-        // applyProcessingResults() updates sha256 hashes, contributesTo,
-        // OutputFile list and rebuilds runtime lookup tables — all in the
-        // library layer rather than scattered across CLI code.
-        project.applyProcessingResults(records, outputDir, nowIso8601());
-
-        try {
-            WorkspaceSerializer{}.save(ws, wsFile);
-            if (!jsonMode)
-                std::cerr << "Incremental cache saved to " << wsFile << '\n';
-        } catch (const std::exception& e) {
-            std::cerr << "Warning: could not update workspace: "
-                      << e.what() << '\n';
-        }
+    try {
+        WorkspaceSerializer{}.save(ws, wsFile);
+        if (!jsonMode)
+            std::cerr << "Incremental cache saved to " << wsFile << '\n';
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: could not update workspace: "
+                  << e.what() << '\n';
     }
 
     // --- Summary ---
+    std::vector<std::string> outputFiles;
+    outputFiles.reserve(outcome.records.size());
+    for (const auto& rec : outcome.records)
+        outputFiles.push_back(rec.fileName);
+
     if (jsonMode) {
         nlohmann::json j;
         j["sliceCount"]   = static_cast<int>(outputFiles.size());
         j["outputFiles"]  = outputFiles;
-        j["skippedPages"] = skippedPages;
-        j["cancelled"]    = false;
+        j["skippedPages"] = outcome.skippedPages;
+        j["cancelled"]    = outcome.cancelled;
         j["incremental"]  = false;
         j["upToDate"]     = false;
         std::cout << j.dump() << '\n';

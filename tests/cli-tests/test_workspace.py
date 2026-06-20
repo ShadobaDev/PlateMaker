@@ -41,7 +41,7 @@ def test_workspace_create_produces_json_file(
     with out.open() as fh:
         data = json.load(fh)
 
-    assert data.get("version") == 1, f"Expected version=1, got {data.get('version')}"
+    assert data.get("version") == 2, f"Expected version=2, got {data.get('version')}"
     assert len(data.get("outputProfiles", [])) >= 1, \
         "Expected at least one outputProfile in a fresh workspace"
 

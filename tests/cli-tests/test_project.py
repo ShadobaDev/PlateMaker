@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import pathlib
+import re
 import subprocess
 
 import pytest
@@ -221,7 +222,7 @@ def test_project_status_pending(tmp_path, platemaker_bin):
              "--workspace", str(ws), "--name", "Ch01")
     assert r.returncode == 0
     assert "PENDING" in r.stdout
-    assert "up-to-date  : no" in r.stdout
+    assert re.search(r"up-to-date\s*:\s*no", r.stdout)
 
 
 def test_project_status_processed(tmp_path, platemaker_bin):
@@ -248,7 +249,7 @@ def test_project_status_processed(tmp_path, platemaker_bin):
              "--workspace", str(ws), "--name", "Ch01")
     assert r.returncode == 0
     assert "PROCESSED" in r.stdout
-    assert "up-to-date  : yes" in r.stdout
+    assert re.search(r"up-to-date\s*:\s*yes", r.stdout)
 
 
 def test_project_status_not_found(tmp_path, platemaker_bin):

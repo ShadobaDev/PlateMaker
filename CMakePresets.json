@@ -166,6 +166,13 @@
       "configurePreset": "windows-msvc-debug",
       "configuration": "Debug",
       "output": { "outputOnFailure": true }
+    },
+
+    {
+      "name": "windows-mingw",
+      "displayName": "Test · Windows MinGW",
+      "configurePreset": "windows-mingw",
+      "output": { "outputOnFailure": true }
     }
 
   ],

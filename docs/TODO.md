@@ -68,6 +68,29 @@ helper that calls `vips_init()`/`vips_shutdown()` in a `SetUpTestSuite` /
 
 ## Library
 
+### Structured error system
+
+The pipeline currently reports failures as ad-hoc strings via the
+`ProcessingPipeline` log/`errorMessage` callbacks (the GUI shows them verbatim).
+Replace with structured error codes/categories (load / profile-match / slice /
+encode / io) carrying a stable code + message, so the GUI can localise, group and
+react (e.g. offer "open output folder", "re-scan inputs"). `ProcessingOutcome`
+would carry typed errors instead of a plain string.
+
+### Dynamic thread spawning for processing
+
+`ProcessingPipeline` runs single-threaded because the virtual strip is built
+incrementally and a single slice may span more than one input. A future
+pre-process could split the strip at input boundaries into segments that each
+yield a whole number of slices; independent segments could then be scaled/sliced
+on separate threads and the slice files numbered deterministically afterwards.
+
+### Persist last render log
+
+The GUI render log is in-memory only (cleared on exit). Optionally persist the
+last run's log (and the slice/skip summary) next to the workspace so a user can
+review what the previous render did.
+
 ### Per-format output options (`PngOptions` / `WebpOptions`)
 
 `OutputProfile` only models `JpegOptions`. Add `PngOptions` (compression 0–9,
