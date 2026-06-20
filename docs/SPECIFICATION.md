@@ -329,6 +329,44 @@ optimize      : bool  // default true
 progressive   : bool  // default false
 ```
 
+### Per-format options (proposed — only `JpegOptions` exists today)
+
+The GUI Output tab exposes per-format option groups (PNG / JPEG / WebP). Only the
+JPEG options are modelled; PNG and WebP options need lib structs before the GUI can
+bind to them. Format and its options belong to the **`OutputProfile`** (the reusable,
+per-project-selected output config referenced by `ProjectItem.outputProfileId`) —
+not a separate per-project field.
+
+Proposed additions to `OutputProfile`:
+```
+pngOptions    : PngOptions    // used when outputFormat == PNG
+webpOptions   : WebpOptions   // used when outputFormat == WEBP
+```
+```
+PngOptions
+  compression  : int   // 0–9 zlib level, default 6
+  interlaced   : bool  // Adam7 interlacing, default false
+
+WebpOptions
+  quality      : int   // 0–100, default 80 (ignored when lossless)
+  lossless     : bool  // default false
+  effort       : int   // 0–6 compression/method effort, default 4
+```
+Open design item: decide whether format/options are edited in-place on the selected
+`OutputProfile`, or overridable per project. Recommendation: keep them on
+`OutputProfile`; the Output-tab format groups act as an editor of the selected
+profile. Tracked in `docs/TODO.md`.
+
+### Output size estimation / platform limits (proposed)
+
+Distribution platforms cap output size — e.g. Webtoon: **≤ 2 MB per slice**,
+**≤ 25 MB per chapter**. The pipeline should be able to **estimate** average and
+maximum slice size and total batch size *before* a run (from canvas/scaling/slice
+geometry and the chosen encoder settings) and/or **report** actual sizes *after*.
+The lib is the natural owner of the estimate (it knows geometry + encoding); the
+GUI surfaces it and warns when a cap would be exceeded. Tracked in both
+`docs/TODO.md` files.
+
 ### `PageItem`
 ```
 id           : uuid (string)

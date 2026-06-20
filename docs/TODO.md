@@ -68,6 +68,25 @@ helper that calls `vips_init()`/`vips_shutdown()` in a `SetUpTestSuite` /
 
 ## Library
 
+### Per-format output options (`PngOptions` / `WebpOptions`)
+
+`OutputProfile` only models `JpegOptions`. Add `PngOptions` (compression 0–9,
+interlaced) and `WebpOptions` (quality 0–100, lossless, effort 0–6) structs and
+fields on `OutputProfile`, mirroring `JpegOptions`; serialize additively (guarded,
+no schema bump). The pipeline/encoder must honour them per `outputFormat`. The GUI
+Output tab already has the option groups (`groupBoxPNG`/`groupBoxJPG`/`groupBoxWebP`)
+waiting to bind. **Design decision to settle:** format + options stay on
+`OutputProfile` (selected per project via `outputProfileId`) vs a per-project
+override — recommended: keep on `OutputProfile`. See SPECIFICATION.md §6.
+
+### Output size estimation / platform limits
+
+Estimate average & max slice size and total batch size **before** a render (from
+canvas/scaling/slice geometry + encoder settings), and/or report actual sizes
+**after**. Surface platform caps (Webtoon: ≤ 2 MB per slice, ≤ 25 MB per chapter).
+Lib computes the estimate; GUI displays/warns. (Mirrored in the GUI TODO — owner
+component TBD, but the estimate logic belongs here.)
+
 ### ~~Wire `ProjectItem::canvasProfileIds` into `CanvasProfileMatcher`~~ ✅
 
 All items completed (schema v2):
