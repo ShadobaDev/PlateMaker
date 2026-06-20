@@ -31,6 +31,8 @@ ProjectItem::ProjectItem(ProjectItem&& other) noexcept
     : name(std::move(other.name))
     , uuid(std::move(other.uuid))
     , inputDirectory(std::move(other.inputDirectory))
+    , canvasProfileIds(std::move(other.canvasProfileIds))
+    , outputProfileId(std::move(other.outputProfileId))
     , m_input_images(std::move(other.m_input_images))
     , m_output_images(std::move(other.m_output_images))
     , m_output_directory(std::move(other.m_output_directory))
@@ -45,6 +47,8 @@ ProjectItem& ProjectItem::operator=(ProjectItem&& other) noexcept
         name                  = std::move(other.name);
         uuid                  = std::move(other.uuid);
         inputDirectory        = std::move(other.inputDirectory);
+        canvasProfileIds      = std::move(other.canvasProfileIds);
+        outputProfileId       = std::move(other.outputProfileId);
         m_input_images        = std::move(other.m_input_images);
         m_output_images       = std::move(other.m_output_images);
         m_output_directory    = std::move(other.m_output_directory);
