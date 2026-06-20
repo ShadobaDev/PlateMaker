@@ -199,4 +199,31 @@ void TemplateGenerator::generate(
     g_object_unref(canvas);
 }
 
+// ---------------------------------------------------------------------------
+// signature — canvas-only template identity
+// ---------------------------------------------------------------------------
+
+std::string TemplateGenerator::signature(const Models::CanvasProfile& cp)
+{
+    // Deterministic, human-inspectable concatenation of the fields that define
+    // the rendered template. Field tags guard against ambiguous concatenations.
+    std::string s;
+    s.reserve(96);
+    s += "cw=" + std::to_string(cp.canvasSize.width);
+    s += ";ch=" + std::to_string(cp.canvasSize.height);
+    s += ";mt=" + std::to_string(cp.margins.top);
+    s += ";mr=" + std::to_string(cp.margins.right);
+    s += ";mb=" + std::to_string(cp.margins.bottom);
+    s += ";ml=" + std::to_string(cp.margins.left);
+    s += ";vc=" + std::to_string(cp.visualColour.r) + ',' +
+                  std::to_string(cp.visualColour.g) + ',' +
+                  std::to_string(cp.visualColour.b) + ',' +
+                  std::to_string(cp.visualColour.a);
+    s += ";bg=" + std::to_string(cp.backgroundColour.r) + ',' +
+                  std::to_string(cp.backgroundColour.g) + ',' +
+                  std::to_string(cp.backgroundColour.b) + ',' +
+                  std::to_string(cp.backgroundColour.a);
+    return s;
+}
+
 } // namespace Platemaker::Core

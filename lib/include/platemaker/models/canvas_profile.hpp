@@ -21,6 +21,26 @@
 namespace Platemaker::Models {
 
 /**
+ * \struct CanvasTemplateInfo
+ * \brief Bookkeeping for the PNG template last generated from a CanvasProfile.
+ *
+ * Stored inside the workspace (per canvas profile) so a workspace tracks only its
+ * own templates.  \c path is kept **relative to the workspace directory** so the
+ * workspace folder stays portable.  An empty \c path means "no template generated
+ * yet".
+ *
+ * \c fingerprint is a canvas-only signature (see TemplateGenerator::signature())
+ * captured at generation time.  Comparing it against the current profile's
+ * signature tells the GUI whether the template is still up to date — the output
+ * profile is deliberately not part of a template's identity.
+ */
+struct CanvasTemplateInfo {
+    std::string path;        //!< Template PNG path, relative to the workspace dir (empty = none).
+    std::string fingerprint; //!< Canvas-only signature at generation time.
+    std::string generatedAt; //!< ISO 8601 timestamp of the last generation.
+};
+
+/**
  * \class CanvasProfile
  * \brief A named canvas configuration that captures the full canvas size, margin
  *        offsets, and the visual colour used for template overlay rendering.
@@ -77,6 +97,14 @@ public:
      * (\c {255,255,255,255}) when the template should stand alone.
      */
     RGBA backgroundColour = {0, 0, 0, 0};
+
+    /**
+     * \brief Bookkeeping for the template PNG generated from this profile.
+     *
+     * An empty \c templateInfo.path means no template has been generated yet.
+     * Not used by the library itself — maintained by the GUI/CLI layer.
+     */
+    CanvasTemplateInfo templateInfo;
 
     // ---------------------------------------------------------------------------
     // Computed properties

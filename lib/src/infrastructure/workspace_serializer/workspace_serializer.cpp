@@ -113,6 +113,20 @@ void from_json(const nlohmann::json& j, JpegOptions& v) {
     j.at("progressive").get_to(v.progressive);
 }
 
+// --- CanvasTemplateInfo ---
+void to_json(nlohmann::json& j, const CanvasTemplateInfo& v) {
+    j = nlohmann::json{
+        {"path",        v.path},
+        {"fingerprint", v.fingerprint},
+        {"generatedAt", v.generatedAt}
+    };
+}
+void from_json(const nlohmann::json& j, CanvasTemplateInfo& v) {
+    if (j.contains("path"))        j.at("path").get_to(v.path);
+    if (j.contains("fingerprint")) j.at("fingerprint").get_to(v.fingerprint);
+    if (j.contains("generatedAt")) j.at("generatedAt").get_to(v.generatedAt);
+}
+
 // --- CanvasProfile ---
 void to_json(nlohmann::json& j, const CanvasProfile& v) {
     j = nlohmann::json{
@@ -122,7 +136,8 @@ void to_json(nlohmann::json& j, const CanvasProfile& v) {
         {"margins",                v.margins},
         {"visualColour",           v.visualColour},
         {"backgroundColour",       v.backgroundColour},
-        {"hintUserSafeAreaSelect", v.hintUserSafeAreaSelect}
+        {"hintUserSafeAreaSelect", v.hintUserSafeAreaSelect},
+        {"templateInfo",           v.templateInfo}
     };
 }
 void from_json(const nlohmann::json& j, CanvasProfile& v) {
@@ -139,6 +154,8 @@ void from_json(const nlohmann::json& j, CanvasProfile& v) {
         j.at("backgroundColour").get_to(v.backgroundColour);
     if (j.contains("hintUserSafeAreaSelect"))
         j.at("hintUserSafeAreaSelect").get_to(v.hintUserSafeAreaSelect);
+    if (j.contains("templateInfo"))
+        j.at("templateInfo").get_to(v.templateInfo);
 }
 
 // --- OutputProfile ---

@@ -68,6 +68,23 @@ public:
         const Models::CanvasProfile& canvasProfile,
         const Models::OutputProfile& outputProfile,
         const std::string&           outputPath) const;
+
+    /**
+     * \brief Computes a canvas-only signature identifying a template's content.
+     *
+     * The signature is a deterministic string built from exactly the fields that
+     * define a template's appearance: canvas size, margins, and the visual and
+     * background colours.  The output profile is intentionally excluded — slice
+     * guide lines are a cosmetic aid, not part of a template's identity.
+     *
+     * Comparing a stored signature against a freshly computed one tells a caller
+     * whether a previously generated template is still up to date.
+     *
+     * \param canvasProfile The profile whose template identity is hashed.
+     * \return A stable, comparable signature string.
+     */
+    [[nodiscard]] static std::string signature(
+        const Models::CanvasProfile& canvasProfile);
 };
 
 } // namespace Platemaker::Core
