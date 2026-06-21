@@ -33,6 +33,7 @@ ProjectItem::ProjectItem(ProjectItem&& other) noexcept
     , inputDirectory(std::move(other.inputDirectory))
     , canvasProfileIds(std::move(other.canvasProfileIds))
     , outputProfileId(std::move(other.outputProfileId))
+    , outputSignature(std::move(other.outputSignature))
     , m_input_images(std::move(other.m_input_images))
     , m_output_images(std::move(other.m_output_images))
     , m_output_directory(std::move(other.m_output_directory))
@@ -49,6 +50,7 @@ ProjectItem& ProjectItem::operator=(ProjectItem&& other) noexcept
         inputDirectory        = std::move(other.inputDirectory);
         canvasProfileIds      = std::move(other.canvasProfileIds);
         outputProfileId       = std::move(other.outputProfileId);
+        outputSignature       = std::move(other.outputSignature);
         m_input_images        = std::move(other.m_input_images);
         m_output_images       = std::move(other.m_output_images);
         m_output_directory    = std::move(other.m_output_directory);

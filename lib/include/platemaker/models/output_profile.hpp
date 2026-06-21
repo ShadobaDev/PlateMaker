@@ -79,6 +79,51 @@ public:
     int              startIndex      = 1;                         //!< First output file number, e.g. 1 → output_001.png, 5 → output_005.png.
 };
 
+/**
+ * \brief Returns the lowercase file extension (including the dot) that \p fmt
+ *        produces, e.g. ".png", ".jpg", ".webp".
+ */
+[[nodiscard]] inline std::string outputFormatExtension(OutputFormat fmt)
+{
+    switch (fmt) {
+        case OutputFormat::PNG:  return ".png";
+        case OutputFormat::JPEG: return ".jpg";
+        case OutputFormat::WebP: return ".webp";
+    }
+    return ".png";
+}
+
+/**
+ * \brief Returns a string that uniquely fingerprints every \c OutputProfile field
+ *        that affects the produced slice files (names *and* bytes).
+ *
+ * Used to detect output-invalidating configuration changes: if the signature
+ * stored on a \c ProjectItem at render time differs from the current profile's
+ * signature, the existing outputs are stale and a full re-render is required
+ * (e.g. switching PNG→JPEG, changing target width / slice height / quality).
+ *
+ * \note Does not yet include linked canvas-profile margins (separate follow-up).
+ */
+[[nodiscard]] inline std::string outputProfileSignature(const OutputProfile& p)
+{
+    using std::to_string;
+    return "w" + to_string(p.targetWidth) +
+           "h" + to_string(p.sliceHeight) +
+           "p" + to_string(static_cast<int>(p.lastSlicePolicy)) +
+           "f" + to_string(static_cast<int>(p.outputFormat)) +
+           "i" + to_string(p.startIndex) +
+           // All format options are folded in so toggling back and forth is detected.
+           ";jpeg" + to_string(p.jpegOptions.quality) +
+           "," + to_string(static_cast<int>(p.jpegOptions.subsampling)) +
+           "," + to_string(p.jpegOptions.optimize) +
+           "," + to_string(p.jpegOptions.progressive) +
+           ";png" + to_string(p.pngOptions.compression) +
+           "," + to_string(p.pngOptions.interlaced) +
+           ";webp" + to_string(p.webpOptions.quality) +
+           "," + to_string(p.webpOptions.lossless) +
+           "," + to_string(p.webpOptions.effort);
+}
+
 } // namespace Platemaker::Models
 
 #endif // PLATEMAKER_MODELS_OUTPUT_PROFILE_HPP

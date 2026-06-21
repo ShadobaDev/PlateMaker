@@ -280,6 +280,7 @@ void to_json(nlohmann::json& j, const ProjectItem& v) {
         {"inputDirectory",   v.inputDirectory},
         {"canvasProfileIds", v.canvasProfileIds},
         {"outputProfileId",  v.outputProfileId},
+        {"outputSignature",  v.outputSignature},
         {"inputFiles",       v.getInputImages()},
         {"outputFiles",      v.getOutputImages()},
         {"outputDirectory",  v.getOutputDirectory()}
@@ -291,6 +292,7 @@ void from_json(const nlohmann::json& j, ProjectItem& v) {
     if (j.contains("inputDirectory"))   j.at("inputDirectory").get_to(v.inputDirectory);
     if (j.contains("canvasProfileIds")) j.at("canvasProfileIds").get_to(v.canvasProfileIds);
     if (j.contains("outputProfileId"))  j.at("outputProfileId").get_to(v.outputProfileId);
+    if (j.contains("outputSignature"))  j.at("outputSignature").get_to(v.outputSignature);
     j.at("inputFiles").get_to(v.getInputImages());
     j.at("outputFiles").get_to(v.getOutputImages());
     j.at("outputDirectory").get_to(v.getOutputDirectory());

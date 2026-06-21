@@ -815,7 +815,30 @@ static int cmdProcess(const Opts& opts)
     // --- Sanitize — update file statuses and check if reprocess is needed ---
     project.sanitize();
 
-    if (project.isUpToDate()) {
+    // Detect an output-invalidating configuration change (format / slice size /
+    // quality / …) by comparing the current profile signature against the one
+    // stored at the last render. A mismatch makes every existing slice stale.
+    const std::string curSig = Platemaker::Models::outputProfileSignature(outProfile);
+    const bool hasOutputs    = !project.getOutputImages().empty();
+    const bool sigMismatch =
+        !project.outputSignature.empty() && project.outputSignature != curSig;
+
+    // Format change is detectable even without a stored signature (project rendered
+    // before signatures existed): the recorded slice extension won't match.
+    bool formatMismatch = false;
+    if (hasOutputs) {
+        const std::string wantExt =
+            Platemaker::Models::outputFormatExtension(outProfile.outputFormat);
+        const std::string& firstName = project.getOutputImages().front().fileName;
+        const auto dot = firstName.find_last_of('.');
+        const std::string haveExt =
+            (dot == std::string::npos) ? std::string{} : firstName.substr(dot);
+        formatMismatch = !haveExt.empty() && haveExt != wantExt;
+    }
+
+    const bool configChanged = hasOutputs && (sigMismatch || formatMismatch);
+
+    if (project.isUpToDate() && !configChanged) {
         if (!jsonMode)
             std::cerr << "Nothing to do: all "
                       << project.getInputImages().size()
@@ -837,13 +860,22 @@ static int cmdProcess(const Opts& opts)
 
     // --- Decide full vs partial re-render -------------------------------------
     // When every input is Processed but some outputs are Missing/Modified, only
-    // those slices need regenerating (partial). Otherwise a full render runs.
-    const bool partial = project.inputsAllProcessed();
+    // those slices need regenerating (partial). A config change invalidates every
+    // slice, so it always forces a full render.
+    const bool partial = !configChanged && project.inputsAllProcessed();
     std::unordered_set<std::string> dirtySlices;
     if (partial) {
         const auto names = project.dirtyOutputNames();
         dirtySlices.insert(names.begin(), names.end());
     }
+
+    // Capture the existing output files so the ones the new configuration no
+    // longer produces (e.g. old-format files) can be removed after a full render.
+    std::vector<std::string> oldOutputNames;
+    const std::string oldOutputDir = project.getOutputDirectory();
+    if (configChanged)
+        for (const auto& of : project.getOutputImages())
+            oldOutputNames.push_back(of.fileName);
 
     // --- Resolve output directory ---
     // A partial re-render must target the directory the existing outputs live in
@@ -909,10 +941,37 @@ static int cmdProcess(const Opts& opts)
         return 3;
 
     // --- Update ProjectItem via library API, then save workspace ---
-    if (partial)
+    if (partial) {
         project.applyPartialResults(outcome.records);
-    else
+    } else {
         project.applyProcessingResults(outcome.records, outputDir, nowIso8601());
+
+        // Remove outputs the new configuration no longer produces (e.g. old-format
+        // files after a PNG→JPEG switch). The CLI is non-interactive, so it cleans
+        // up automatically and reports what it removed.
+        if (configChanged && !oldOutputNames.empty()) {
+            std::unordered_set<std::string> produced;
+            for (const auto& rec : outcome.records) produced.insert(rec.fileName);
+
+            int removed = 0;
+            for (const auto& fileName : oldOutputNames) {
+                if (produced.count(fileName)) continue;
+                std::error_code ec;
+                if (fs::remove(fs::path(oldOutputDir) / fileName, ec) && !ec) {
+                    ++removed;
+                    if (!jsonMode)
+                        std::cerr << "  Removed stale output: " << fileName << '\n';
+                }
+            }
+            if (removed > 0 && !jsonMode)
+                std::cerr << "Cleaned up " << removed
+                          << " stale output file(s) from the previous configuration.\n";
+        }
+    }
+
+    // Record the configuration that produced these outputs so a later
+    // format/size/quality change is detected as stale.
+    project.outputSignature = curSig;
 
     try {
         WorkspaceSerializer{}.save(ws, wsFile);

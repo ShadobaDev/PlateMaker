@@ -188,6 +188,12 @@ public:
     /// ID of the output profile linked to this project (empty = workspace default).
     std::string outputProfileId;
 
+    /// Signature of the output-profile configuration that produced the current
+    /// outputs (see \c outputProfileSignature()).  Empty until the first render.
+    /// A mismatch against the current profile means the outputs are stale and a
+    /// full re-render is required (e.g. the output format or slice height changed).
+    std::string outputSignature;
+
     // -----------------------------------------------------------------------
     // Construction
     // -----------------------------------------------------------------------
