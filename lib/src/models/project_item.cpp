@@ -141,7 +141,56 @@ bool ProjectItem::sanitize()
         }
     }
 
+    // Validate output slices against disk: a deleted or externally-edited
+    // output makes the project out-of-date even when every input is unchanged.
+    for (auto& out : m_output_images) {
+        const std::string path = m_output_directory + "/" + out.fileName;
+
+        if (!fs::exists(path)) {
+            out.status   = FileStatus::Missing;
+            m_isUpToDate = false;
+            continue;
+        }
+
+        // No stored hash to compare against (legacy record) — trust existence.
+        if (out.sha256.empty()) {
+            out.status = FileStatus::Done;
+            continue;
+        }
+
+        const std::string currentHash =
+            Infrastructure::FileMetaData::computeFileSha256(path);
+
+        if (currentHash != out.sha256) {
+            out.status   = FileStatus::Modified;
+            m_isUpToDate = false;
+        } else {
+            out.status = FileStatus::Done;
+        }
+    }
+
     return m_isUpToDate;
+}
+
+// ---------------------------------------------------------------------------
+// dirtyOutputNames / inputsAllProcessed
+// ---------------------------------------------------------------------------
+
+std::vector<std::string> ProjectItem::dirtyOutputNames() const
+{
+    std::vector<std::string> names;
+    for (const auto& out : m_output_images)
+        if (out.status != FileStatus::Done)
+            names.push_back(out.fileName);
+    return names;
+}
+
+bool ProjectItem::inputsAllProcessed() const noexcept
+{
+    for (const auto& inf : m_input_images)
+        if (inf.status != FileStatus::Processed)
+            return false;
+    return !m_input_images.empty();
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +259,38 @@ void ProjectItem::applyProcessingResults(
     m_isUpToDate       = true;
 
     rebuildLookupTables();
+}
+
+// ---------------------------------------------------------------------------
+// applyPartialResults
+// ---------------------------------------------------------------------------
+
+void ProjectItem::applyPartialResults(
+    const std::vector<ProcessingSliceRecord>& records)
+{
+    // Partial re-render: only the dirty output slices were regenerated. Inputs
+    // are unchanged, so their hashes / provenance / contributesTo stay as-is —
+    // we just refresh the hash and clear the dirty status of the rewritten
+    // outputs. (Unlike applyProcessingResults, which rebuilds everything.)
+    for (const auto& rec : records) {
+        for (auto& out : m_output_images) {
+            if (out.fileName == rec.fileName) {
+                out.sha256    = rec.outputSha256;
+                out.sourceMap = rec.sourceMap;
+                out.status    = FileStatus::Done;
+                break;
+            }
+        }
+    }
+
+    // Up-to-date only if no output remains dirty (and inputs were already clean).
+    m_isUpToDate = true;
+    for (const auto& out : m_output_images) {
+        if (out.status != FileStatus::Done) {
+            m_isUpToDate = false;
+            break;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -77,7 +77,8 @@ ProcessingOutcome ProcessingPipeline::run(
     const Infrastructure::CancellationToken&  cancel,
     const ProgressFn&                         onProgress,
     const LogFn&                              onLog,
-    const SliceSavedFn&                       onSliceSaved) const
+    const SliceSavedFn&                       onSliceSaved,
+    const std::unordered_set<std::string>*    onlySlices) const
 {
     using namespace Platemaker::Models;
     using Platemaker::Infrastructure::FileMetaData;
@@ -185,12 +186,30 @@ ProcessingOutcome ProcessingPipeline::run(
     const std::string ext = fmtExt(outProfile.outputFormat);
     outcome.records.reserve(slices.size());
 
+    const auto sliceName = [&](const SliceResult& s) {
+        return "output_" + zeroPad(outProfile.startIndex + s.index, 3) + ext;
+    };
+
+    // Partial render: progress denominator is the number of slices we will
+    // actually save (those whose name is in the filter), not the full count.
+    int renderTotal = expectedTotal;
+    if (onlySlices) {
+        renderTotal = 0;
+        for (const auto& s : slices)
+            if (onlySlices->count(sliceName(s))) ++renderTotal;
+    }
+
+    int savedCount = 0;
     for (std::size_t i = 0; i < slices.size(); ++i) {
         if (cancel.isCancelled()) { outcome.cancelled = true; break; }
 
         const auto& slice = slices[i];
-        const int fileNum = outProfile.startIndex + slice.index;
-        const std::string outName = "output_" + zeroPad(fileNum, 3) + ext;
+        const std::string outName = sliceName(slice);
+
+        // Skip clean slices when a partial-render filter is supplied.
+        if (onlySlices && onlySlices->count(outName) == 0)
+            continue;
+
         const std::string outPath = outputDir + "/" + outName;
 
         try {
@@ -208,9 +227,10 @@ ProcessingOutcome ProcessingPipeline::run(
         rec.sourceMap    = slice.sourceMap;
         outcome.records.push_back(std::move(rec));
 
+        ++savedCount;
         emitLog(onLog, ProcessingLogLevel::Info, "Saved " + outName);
         if (onProgress)
-            onProgress({static_cast<int>(i + 1), expectedTotal, outName});
+            onProgress({savedCount, renderTotal, outName});
         if (onSliceSaved)
             onSliceSaved(outName, outPath);
     }

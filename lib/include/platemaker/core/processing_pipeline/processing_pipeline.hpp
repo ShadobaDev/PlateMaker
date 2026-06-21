@@ -22,6 +22,7 @@
 
 #include <functional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "platemaker/platemaker_export.h"
@@ -83,6 +84,10 @@ public:
      * \param onProgress       Invoked after each slice is saved (may be empty).
      * \param onLog            Invoked for informational / warning / error lines (may be empty).
      * \param onSliceSaved     Invoked with (filename, full path) after each save (may be empty).
+     * \param onlySlices       Optional partial-render filter.  When non-null, only slices whose
+     *                         output file name is in the set are encoded, hashed, saved and
+     *                         recorded; all others are skipped (the strip is still assembled and
+     *                         sliced once).  Null → render every slice (full render).
      * \return A \c ProcessingOutcome with per-slice records, skipped pages and flags.
      */
     [[nodiscard]] ProcessingOutcome run(
@@ -94,7 +99,8 @@ public:
         const Infrastructure::CancellationToken&   cancel,
         const ProgressFn&                          onProgress   = {},
         const LogFn&                               onLog        = {},
-        const SliceSavedFn&                        onSliceSaved = {}) const;
+        const SliceSavedFn&                        onSliceSaved = {},
+        const std::unordered_set<std::string>*     onlySlices   = nullptr) const;
 };
 
 } // namespace Platemaker::Core

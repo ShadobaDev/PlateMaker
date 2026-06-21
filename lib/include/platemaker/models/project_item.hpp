@@ -262,6 +262,23 @@ public:
     [[nodiscard]] const std::vector<std::string>& outputsForInput(
         const std::string& filePath) const noexcept;
 
+    /**
+     * \brief Returns the file names of output slices that are not \c Done.
+     *
+     * Valid after \c sanitize().  These are the slices a partial re-render must
+     * regenerate (status \c Missing or \c Modified).
+     */
+    [[nodiscard]] std::vector<std::string> dirtyOutputNames() const;
+
+    /**
+     * \brief Returns \c true if there is at least one input and every input is
+     *        \c Processed (i.e. no input is Pending/Modified/Missing).
+     *
+     * Valid after \c sanitize().  When this is true but \c isUpToDate() is
+     * false, only outputs are dirty — a partial re-render suffices.
+     */
+    [[nodiscard]] bool inputsAllProcessed() const noexcept;
+
     // -----------------------------------------------------------------------
     // Operations
     // -----------------------------------------------------------------------
@@ -275,10 +292,15 @@ public:
      * - \c Processed — file exists and its SHA-256 matches.
      * - \c Pending   — file exists but has never been hashed (empty sha256).
      *
-     * Sets the internal up-to-date flag to \c false if any file is not
-     * \c Processed.
+     * For each \c OutputFile (relative to \c m_output_directory):
+     * - \c Missing   — slice file no longer exists on disk.
+     * - \c Modified  — slice exists but its SHA-256 differs from the stored hash.
+     * - \c Done      — slice exists and (if hashed) matches.
      *
-     * \return \c true if every input file is \c Processed and unmodified.
+     * Sets the internal up-to-date flag to \c false if any input is not
+     * \c Processed or any output is not \c Done.
+     *
+     * \return \c true if every input is \c Processed and every output is \c Done.
      */
     bool sanitize();
 
@@ -316,6 +338,21 @@ public:
         const std::vector<ProcessingSliceRecord>& records,
         const std::string&                        outputDirectory,
         const std::string&                        timestamp);
+
+    /**
+     * \brief Applies the results of a *partial* re-render (only the dirty
+     *        output slices were regenerated).
+     *
+     * For each record, the matching \c OutputFile (by \c fileName) has its
+     * SHA-256 and provenance refreshed and its status reset to \c Done.  Inputs
+     * are left untouched (they were unchanged), and the output list is not
+     * rebuilt.  Updates the up-to-date flag based on the remaining output
+     * statuses.
+     *
+     * \param records One record per regenerated output file.
+     */
+    void applyPartialResults(
+        const std::vector<ProcessingSliceRecord>& records);
 
     /**
      * \brief Merges a new directory scan into the current input file list.

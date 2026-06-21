@@ -78,6 +78,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -834,8 +835,22 @@ static int cmdProcess(const Opts& opts)
         return 0;
     }
 
+    // --- Decide full vs partial re-render -------------------------------------
+    // When every input is Processed but some outputs are Missing/Modified, only
+    // those slices need regenerating (partial). Otherwise a full render runs.
+    const bool partial = project.inputsAllProcessed();
+    std::unordered_set<std::string> dirtySlices;
+    if (partial) {
+        const auto names = project.dirtyOutputNames();
+        dirtySlices.insert(names.begin(), names.end());
+    }
+
     // --- Resolve output directory ---
+    // A partial re-render must target the directory the existing outputs live in
+    // (the one sanitize() validated them against), ignoring any --output override.
     std::string outputDir = opts.get("output");
+    if (partial && !project.getOutputDirectory().empty())
+        outputDir = project.getOutputDirectory();
     if (outputDir.empty()) outputDir = project.getOutputDirectory();
     if (outputDir.empty()) outputDir = ws.outputDirectory;
     if (outputDir.empty()) {
@@ -851,7 +866,10 @@ static int cmdProcess(const Opts& opts)
     }
 
     // --- Pipeline ---
-    if (!jsonMode) {
+    if (!jsonMode && partial) {
+        std::cerr << "Re-rendering " << dirtySlices.size()
+                  << " missing/modified slice(s) (inputs unchanged) ...\n";
+    } else if (!jsonMode) {
         std::cerr << "Processing " << project.getInputImages().size() << " file(s)";
         if (noProfile)
             std::cerr << " [--no-profile: canvas profiles ignored]";
@@ -884,13 +902,17 @@ static int cmdProcess(const Opts& opts)
                           << msg << '\n';
             }
         },
-        /*onSliceSaved*/ {});
+        /*onSliceSaved*/ {},
+        /*onlySlices*/ partial ? &dirtySlices : nullptr);
 
     if (outcome.failed)
         return 3;
 
     // --- Update ProjectItem via library API, then save workspace ---
-    project.applyProcessingResults(outcome.records, outputDir, nowIso8601());
+    if (partial)
+        project.applyPartialResults(outcome.records);
+    else
+        project.applyProcessingResults(outcome.records, outputDir, nowIso8601());
 
     try {
         WorkspaceSerializer{}.save(ws, wsFile);
@@ -913,7 +935,7 @@ static int cmdProcess(const Opts& opts)
         j["outputFiles"]  = outputFiles;
         j["skippedPages"] = outcome.skippedPages;
         j["cancelled"]    = outcome.cancelled;
-        j["incremental"]  = false;
+        j["incremental"]  = partial;
         j["upToDate"]     = false;
         std::cout << j.dump() << '\n';
     } else {
