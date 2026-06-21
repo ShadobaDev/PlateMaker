@@ -60,24 +60,23 @@ public:
     [[nodiscard]] Core::PixelBuffer load(const std::string& filePath) const;
 
     /**
-     * \brief Saves a PixelBuffer to disk in the specified format.
+     * \brief Saves a PixelBuffer to disk using the profile's format and options.
      *
-     * For JPEG output, all fields of \p jpegOptions are applied.  For PNG and WebP,
-     * \p jpegOptions is ignored.
+     * The container format is taken from \c profile.outputFormat and the matching
+     * per-format option struct (\c jpegOptions / \c pngOptions / \c webpOptions) is
+     * applied; the others are ignored.
      *
-     * \param buffer      The pixel data to save.  Must be valid.
-     * \param outputPath  Absolute path of the output file.  The file is created or
-     *                    overwritten.  Parent directories must exist.
-     * \param format      Output container format (PNG, JPEG, or WebP).
-     * \param jpegOptions JPEG encoding parameters.  Only used when \p format is JPEG.
+     * \param buffer     The pixel data to save.  Must be valid.
+     * \param outputPath Absolute path of the output file.  The file is created or
+     *                   overwritten.  Parent directories must exist.
+     * \param profile    Output profile supplying the format and encoding options.
      *
      * \throws std::runtime_error if the write operation fails.
      */
     void save(
-        const Core::PixelBuffer&    buffer,
-        const std::string&          outputPath,
-        Models::OutputFormat        format,
-        const Models::JpegOptions&  jpegOptions = {}) const;
+        const Core::PixelBuffer&     buffer,
+        const std::string&           outputPath,
+        const Models::OutputProfile& profile) const;
 };
 
 } // namespace Platemaker::Infrastructure

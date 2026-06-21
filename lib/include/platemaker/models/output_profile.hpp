@@ -33,6 +33,23 @@ struct JpegOptions {
 };
 
 /**
+ * \brief PNG encoding parameters used when OutputProfile::outputFormat is OutputFormat::PNG.
+ */
+struct PngOptions {
+    int  compression = 6;     //!< zlib compression level, 0–9 (higher = smaller, slower).
+    bool interlaced  = false; //!< Write an Adam7-interlaced (progressive) PNG.
+};
+
+/**
+ * \brief WebP encoding parameters used when OutputProfile::outputFormat is OutputFormat::WebP.
+ */
+struct WebpOptions {
+    int  quality  = 80;    //!< Encoding quality, 0–100 (ignored when \c lossless).
+    bool lossless = false; //!< Encode losslessly instead of lossy.
+    int  effort   = 4;     //!< Compression effort, 0–6 (higher = smaller, slower).
+};
+
+/**
  * \class OutputProfile
  * \brief A named output configuration that controls how the virtual strip is
  *        scaled, sliced, and saved.
@@ -56,7 +73,9 @@ public:
     int              sliceHeight     = 1280;                      //!< Output slice height in pixels (Webtoon default: 1280).
     LastSlicePolicy  lastSlicePolicy = LastSlicePolicy::KeepAsIs; //!< How the final (potentially shorter) tail slice is handled.
     OutputFormat     outputFormat    = OutputFormat::PNG;         //!< Container format for all output slice files.
-    JpegOptions      jpegOptions;                                 //!< JPEG-specific encoding parameters (ignored for PNG/WebP output).
+    JpegOptions      jpegOptions;                                 //!< JPEG-specific encoding parameters (used when outputFormat == JPEG).
+    PngOptions       pngOptions;                                  //!< PNG-specific encoding parameters (used when outputFormat == PNG).
+    WebpOptions      webpOptions;                                 //!< WebP-specific encoding parameters (used when outputFormat == WebP).
     int              startIndex      = 1;                         //!< First output file number, e.g. 1 → output_001.png, 5 → output_005.png.
 };
 

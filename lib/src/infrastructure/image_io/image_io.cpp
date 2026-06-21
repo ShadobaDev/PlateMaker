@@ -60,10 +60,9 @@ Core::PixelBuffer ImageIO::load(const std::string& filePath) const
 // ---------------------------------------------------------------------------
 
 void ImageIO::save(
-    const Core::PixelBuffer&   buffer,
-    const std::string&         outputPath,
-    Models::OutputFormat       format,
-    const Models::JpegOptions& jpegOptions) const
+    const Core::PixelBuffer&     buffer,
+    const std::string&           outputPath,
+    const Models::OutputProfile& profile) const
 {
     if (!buffer.isValid()) {
         throw std::runtime_error("ImageIO::save() — pixel buffer is empty");
@@ -71,11 +70,14 @@ void ImageIO::save(
 
     int result = -1;
 
-    switch (format) {
+    switch (profile.outputFormat) {
 
-        // --- PNG (lossless, default) ---
+        // --- PNG (lossless) ---
         case Models::OutputFormat::PNG:
-            result = vips_pngsave(buffer.get(), outputPath.c_str(), nullptr);
+            result = vips_pngsave(buffer.get(), outputPath.c_str(),
+                "compression", profile.pngOptions.compression,
+                "interlace",   profile.pngOptions.interlaced ? 1 : 0,
+                nullptr);
             break;
 
         // --- JPEG ---
@@ -85,16 +87,16 @@ void ImageIO::save(
             //   VIPS_FOREIGN_SUBSAMPLE_ON   (1) — always subsample (4:2:0)
             //   VIPS_FOREIGN_SUBSAMPLE_OFF  (2) — no subsampling (4:4:4)
             int subsampleMode = 0;
-            switch (jpegOptions.subsampling) {
+            switch (profile.jpegOptions.subsampling) {
                 case Models::JpegSubsampling::YUV_444: subsampleMode = 2; break;
                 case Models::JpegSubsampling::YUV_422: subsampleMode = 0; break; // best-effort
                 case Models::JpegSubsampling::YUV_420: subsampleMode = 1; break;
             }
 
             result = vips_jpegsave(buffer.get(), outputPath.c_str(),
-                "Q",               jpegOptions.quality,
-                "optimize_coding", jpegOptions.optimize   ? 1 : 0,
-                "interlace",       jpegOptions.progressive ? 1 : 0,
+                "Q",               profile.jpegOptions.quality,
+                "optimize_coding", profile.jpegOptions.optimize   ? 1 : 0,
+                "interlace",       profile.jpegOptions.progressive ? 1 : 0,
                 "subsample_mode",  subsampleMode,
                 nullptr);
             break;
@@ -102,7 +104,11 @@ void ImageIO::save(
 
         // --- WebP ---
         case Models::OutputFormat::WebP:
-            result = vips_webpsave(buffer.get(), outputPath.c_str(), nullptr);
+            result = vips_webpsave(buffer.get(), outputPath.c_str(),
+                "Q",        profile.webpOptions.quality,
+                "lossless", profile.webpOptions.lossless ? 1 : 0,
+                "effort",   profile.webpOptions.effort,
+                nullptr);
             break;
     }
 

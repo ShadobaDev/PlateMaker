@@ -329,33 +329,29 @@ optimize      : bool  // default true
 progressive   : bool  // default false
 ```
 
-### Per-format options (proposed — only `JpegOptions` exists today)
+### Per-format options
 
-The GUI Output tab exposes per-format option groups (PNG / JPEG / WebP). Only the
-JPEG options are modelled; PNG and WebP options need lib structs before the GUI can
-bind to them. Format and its options belong to the **`OutputProfile`** (the reusable,
+Format and its encoding options belong to the **`OutputProfile`** (the reusable,
 per-project-selected output config referenced by `ProjectItem.outputProfileId`) —
-not a separate per-project field.
+not a separate per-project field. `OutputProfile` carries one option struct per
+format; `ImageIO::save()` applies the one matching `outputFormat`.
 
-Proposed additions to `OutputProfile`:
+### `PngOptions`
 ```
-pngOptions    : PngOptions    // used when outputFormat == PNG
-webpOptions   : WebpOptions   // used when outputFormat == WEBP
+compression  : int   // 0–9 zlib level, default 6
+interlaced   : bool  // Adam7 interlacing, default false
 ```
-```
-PngOptions
-  compression  : int   // 0–9 zlib level, default 6
-  interlaced   : bool  // Adam7 interlacing, default false
 
-WebpOptions
-  quality      : int   // 0–100, default 80 (ignored when lossless)
-  lossless     : bool  // default false
-  effort       : int   // 0–6 compression/method effort, default 4
+### `WebpOptions`
 ```
-Open design item: decide whether format/options are edited in-place on the selected
-`OutputProfile`, or overridable per project. Recommendation: keep them on
-`OutputProfile`; the Output-tab format groups act as an editor of the selected
-profile. Tracked in `docs/TODO.md`.
+quality      : int   // 0–100, default 80 (ignored when lossless)
+lossless     : bool  // default false
+effort       : int   // 0–6 compression/method effort, default 4
+```
+
+The GUI Output tab edits these on the project's selected profile inline
+(`groupBoxPNG`/`groupBoxJPG`/`groupBoxWebP`); the same profile is also editable via
+Manage Output Profiles.
 
 ### Output size estimation / platform limits (proposed)
 

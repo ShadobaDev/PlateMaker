@@ -91,16 +91,17 @@ The GUI render log is in-memory only (cleared on exit). Optionally persist the
 last run's log (and the slice/skip summary) next to the workspace so a user can
 review what the previous render did.
 
-### Per-format output options (`PngOptions` / `WebpOptions`)
+### ~~Per-format output options (`PngOptions` / `WebpOptions`)~~ ✅
 
-`OutputProfile` only models `JpegOptions`. Add `PngOptions` (compression 0–9,
-interlaced) and `WebpOptions` (quality 0–100, lossless, effort 0–6) structs and
-fields on `OutputProfile`, mirroring `JpegOptions`; serialize additively (guarded,
-no schema bump). The pipeline/encoder must honour them per `outputFormat`. The GUI
-Output tab already has the option groups (`groupBoxPNG`/`groupBoxJPG`/`groupBoxWebP`)
-waiting to bind. **Design decision to settle:** format + options stay on
-`OutputProfile` (selected per project via `outputProfileId`) vs a per-project
-override — recommended: keep on `OutputProfile`. See SPECIFICATION.md §6.
+`OutputProfile` now models `PngOptions` (compression 0–9, interlaced) and
+`WebpOptions` (quality 0–100, lossless, effort 0–6) alongside `JpegOptions`;
+serialized additively (guarded, no schema bump). `ImageIO::save()` takes the whole
+`OutputProfile` and applies the option struct matching `outputFormat` via
+`vips_pngsave` / `vips_jpegsave` / `vips_webpsave`. Format + options live on the
+`OutputProfile` (selected per project via `outputProfileId`); the GUI Output tab
+edits the selected profile inline (`groupBoxPNG`/`groupBoxJPG`/`groupBoxWebP`).
+`OutputProfileDialog` could also be extended to edit the PNG/WebP option fields
+(currently only JPEG + format).
 
 ### Output size estimation / platform limits
 

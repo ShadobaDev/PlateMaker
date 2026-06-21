@@ -194,8 +194,7 @@ ProcessingOutcome ProcessingPipeline::run(
         const std::string outPath = outputDir + "/" + outName;
 
         try {
-            imageIO.save(slice.image, outPath, outProfile.outputFormat,
-                         outProfile.jpegOptions);
+            imageIO.save(slice.image, outPath, outProfile);
         } catch (const std::exception& e) {
             outcome.failed       = true;
             outcome.errorMessage = "Failed to save '" + outName + "': " + e.what();

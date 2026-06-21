@@ -113,6 +113,32 @@ void from_json(const nlohmann::json& j, JpegOptions& v) {
     j.at("progressive").get_to(v.progressive);
 }
 
+// --- PngOptions ---
+void to_json(nlohmann::json& j, const PngOptions& v) {
+    j = nlohmann::json{
+        {"compression", v.compression},
+        {"interlaced",  v.interlaced}
+    };
+}
+void from_json(const nlohmann::json& j, PngOptions& v) {
+    if (j.contains("compression")) j.at("compression").get_to(v.compression);
+    if (j.contains("interlaced"))  j.at("interlaced").get_to(v.interlaced);
+}
+
+// --- WebpOptions ---
+void to_json(nlohmann::json& j, const WebpOptions& v) {
+    j = nlohmann::json{
+        {"quality",  v.quality},
+        {"lossless", v.lossless},
+        {"effort",   v.effort}
+    };
+}
+void from_json(const nlohmann::json& j, WebpOptions& v) {
+    if (j.contains("quality"))  j.at("quality").get_to(v.quality);
+    if (j.contains("lossless")) j.at("lossless").get_to(v.lossless);
+    if (j.contains("effort"))   j.at("effort").get_to(v.effort);
+}
+
 // --- CanvasTemplateInfo ---
 void to_json(nlohmann::json& j, const CanvasTemplateInfo& v) {
     j = nlohmann::json{
@@ -168,6 +194,8 @@ void to_json(nlohmann::json& j, const OutputProfile& v) {
         {"lastSlicePolicy", v.lastSlicePolicy},
         {"outputFormat",    v.outputFormat},
         {"jpegOptions",     v.jpegOptions},
+        {"pngOptions",      v.pngOptions},
+        {"webpOptions",     v.webpOptions},
         {"startIndex",      v.startIndex}
     };
 }
@@ -179,6 +207,8 @@ void from_json(const nlohmann::json& j, OutputProfile& v) {
     j.at("lastSlicePolicy").get_to(v.lastSlicePolicy);
     j.at("outputFormat").get_to(v.outputFormat);
     j.at("jpegOptions").get_to(v.jpegOptions);
+    if (j.contains("pngOptions"))  j.at("pngOptions").get_to(v.pngOptions);   // additive
+    if (j.contains("webpOptions")) j.at("webpOptions").get_to(v.webpOptions); // additive
     j.at("startIndex").get_to(v.startIndex);
 }
 
