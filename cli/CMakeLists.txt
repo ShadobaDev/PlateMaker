@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 3.21)
 
+if(WIN32)
+    set(RESOURCE_FILES app.rc)
+endif()
+
 add_executable(platemaker-cli
     main.cpp
+    ${RESOURCE_FILES}
 )
 
 # CLI uses vips directly (VIPS_INIT, vips_image_new_from_file, vips_error_buffer,
