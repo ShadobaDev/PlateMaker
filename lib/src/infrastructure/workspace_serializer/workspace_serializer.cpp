@@ -384,6 +384,15 @@ Models::Workspace WorkspaceSerializer::load(const std::string& filePath) const
         migrate(workspace, fileVersion);
     }
 
+    // Safety net (runs for ANY version): a current-version file may still have
+    // OutputProfiles with an empty id — e.g. saved by a GUI that wiped the id on
+    // edit, or seeded a default profile without one. Re-assign the canonical id
+    // (same convention as the v1→v2 migration) so output-profile selection works
+    // and existing ProjectItem::outputProfileId ("op-<name>") references re-link.
+    for (auto& op : workspace.outputProfiles)
+        if (op.id.empty())
+            op.id = "op-" + op.name;
+
     // Rebuild runtime lookup tables for every project.
     // These tables are not serialised so they must always be reconstructed
     // after loading from JSON.
