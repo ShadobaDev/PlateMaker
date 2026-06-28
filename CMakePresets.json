@@ -38,7 +38,8 @@
       "description": "libvips from apt; nlohmann-json and gtest from source if not found via apt.",
       "inherits": "linux-base",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "CPACK_SYSTEM_NAME": "linux-x86_64"
       }
     },
 
@@ -69,7 +70,8 @@
         "strategy": "set"
       },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "CPACK_SYSTEM_NAME": "windows-msvc"
       }
     },
 
@@ -84,6 +86,16 @@
     },
 
     {
+      "name": "windows-msvc-release",
+      "displayName": "Windows · MSVC · Release (package)",
+      "description": "Release build without tests — used by the package preset and release workflow.",
+      "inherits": "windows-msvc",
+      "cacheVariables": {
+        "PLATEMAKER_BUILD_TESTS": "OFF"
+      }
+    },
+
+    {
       "name": "windows-mingw",
       "displayName": "Windows · MinGW · Debug",
       "description": "Windows build using MinGW GCC (MSYS2) and Ninja. Requires MSYS2 with mingw-w64-x86_64-libvips and PKG_CONFIG_PATH set.",
@@ -92,7 +104,19 @@
       "cacheVariables": {
         "CMAKE_C_COMPILER": "gcc",
         "CMAKE_CXX_COMPILER": "g++",
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CPACK_SYSTEM_NAME": "windows-mingw"
+      }
+    },
+
+    {
+      "name": "windows-mingw-release",
+      "displayName": "Windows · MinGW · Release (package)",
+      "description": "Release build without tests — used by the package preset and release workflow.",
+      "inherits": "windows-mingw",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PLATEMAKER_BUILD_TESTS": "OFF"
       }
     }
 
@@ -129,9 +153,23 @@
     },
 
     {
+      "name": "windows-msvc-release",
+      "displayName": "Build · Windows MSVC Release (package)",
+      "configurePreset": "windows-msvc-release",
+      "configuration": "Release"
+    },
+
+    {
       "name": "windows-mingw",
       "displayName": "Build · Windows MinGW Debug",
       "configurePreset": "windows-mingw"
+    },
+
+    {
+      "name": "windows-mingw-release",
+      "displayName": "Build · Windows MinGW Release (package)",
+      "configurePreset": "windows-mingw-release",
+      "jobs": 0
     }
 
   ],
@@ -182,24 +220,24 @@
     {
       "name": "windows-msvc",
       "displayName": "Package · Windows MSVC Release",
-      "description": "Produces platemaker-dev-<ver>-Windows-AMD64.zip in build/windows-msvc/",
-      "configurePreset": "windows-msvc",
+      "description": "Produces platemaker-dev-<ver>-windows-msvc.zip in dist/",
+      "configurePreset": "windows-msvc-release",
       "configurations": ["Release"],
       "generators": ["ZIP"]
     },
 
     {
       "name": "windows-mingw",
-      "displayName": "Package · Windows MinGW Debug",
-      "description": "Produces platemaker-dev-<ver>-Windows-AMD64.zip in build/windows-mingw/",
-      "configurePreset": "windows-mingw",
+      "displayName": "Package · Windows MinGW Release",
+      "description": "Produces platemaker-dev-<ver>-windows-mingw.zip in dist/",
+      "configurePreset": "windows-mingw-release",
       "generators": ["ZIP"]
     },
 
     {
       "name": "linux-system",
       "displayName": "Package · Linux Release",
-      "description": "Produces platemaker-dev-<ver>-Linux-x86_64.tar.gz in build/linux-system/",
+      "description": "Produces platemaker-dev-<ver>-linux-x86_64.tar.gz in dist/",
       "configurePreset": "linux-system",
       "generators": ["TGZ"]
     }
@@ -211,10 +249,10 @@
     {
       "name": "release-windows-msvc",
       "displayName": "Release workflow · Windows MSVC",
-      "description": "Configure → Build (Release) → Package",
+      "description": "Configure → Build (Release, no tests) → Package",
       "steps": [
-        { "type": "configure", "name": "windows-msvc" },
-        { "type": "build",     "name": "windows-msvc" },
+        { "type": "configure", "name": "windows-msvc-release" },
+        { "type": "build",     "name": "windows-msvc-release" },
         { "type": "package",   "name": "windows-msvc" }
       ]
     },
@@ -222,10 +260,10 @@
     {
       "name": "release-windows-mingw",
       "displayName": "Release workflow · Windows MinGW",
-      "description": "Configure → Build → Package",
+      "description": "Configure → Build (Release, no tests) → Package",
       "steps": [
-        { "type": "configure", "name": "windows-mingw" },
-        { "type": "build",     "name": "windows-mingw" },
+        { "type": "configure", "name": "windows-mingw-release" },
+        { "type": "build",     "name": "windows-mingw-release" },
         { "type": "package",   "name": "windows-mingw" }
       ]
     },

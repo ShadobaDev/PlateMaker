@@ -1,6 +1,7 @@
 # build artifacts
 build
 install
+dist
 
 # OS-generated files
 *.pyc
@@ -11,5 +12,5 @@ install
 *\.clinerules
 *\.claude
 
-# Temporary files from editors
+# Temporary files for editors
 temp

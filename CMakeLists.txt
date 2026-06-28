@@ -172,16 +172,22 @@ set(CPACK_PACKAGE_VENDOR            "ShadobaDev")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
 set(CPACK_RESOURCE_FILE_LICENSE     "${CMAKE_SOURCE_DIR}/LICENSE.LGPL")
 
-# Archive names:  platemaker-dev-0.1.1-<platform>.<ext>
+# Archive names use CPACK_SYSTEM_NAME set per configure preset (e.g. windows-msvc, linux-x86_64)
 set(CPACK_PACKAGE_FILE_NAME
-    "${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+    "${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-${CPACK_SYSTEM_NAME}")
 
 set(CPACK_GENERATOR "ZIP")              # ZIP on all platforms; override per-preset if needed
 set(CPACK_STRIP_FILES ON)               # strip debug symbols from release packages
+set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_SOURCE_DIR}/dist")
 
 # Install only the library target (not CLI, not tests)
 set(CPACK_INSTALL_CMAKE_PROJECTS
     "${CMAKE_BINARY_DIR}" "${PROJECT_NAME}" "ALL" "/"
+)
+
+install(FILES "${CMAKE_SOURCE_DIR}/LICENSE.LGPL"
+    DESTINATION "."
+    RENAME "LICENSE"
 )
 
 include(CPack)
