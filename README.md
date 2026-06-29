@@ -115,6 +115,88 @@ pip install -r tests/cli-tests/requirements.txt
 
 ---
 
+## Using libplatemaker from a release package
+
+Download the pre-built package for your platform from the [Releases page](https://github.com/ShadobaDev/PlateMaker/releases).
+
+### What's in each package
+
+| Package | File | Contents |
+|---|---|---|
+| Linux x86\_64 | `platemaker-dev-<ver>-linux-x86_64.tar.gz` | `libplatemaker.so` + headers + CMake config |
+| Windows MinGW | `platemaker-dev-<ver>-windows-mingw.zip` | `libplatemaker.dll` + headers + CMake config + all runtime DLLs |
+
+The Linux package contains **only** the library and headers — `libvips` and its dependencies must be installed separately (see below). The Windows MinGW package is self-contained: all required DLLs are bundled in `bin/`.
+
+### Linux — system prerequisites
+
+`libplatemaker.so` links dynamically against libvips. Install it before using the package:
+
+```bash
+# Ubuntu / Debian
+sudo apt install libvips-dev
+
+# Fedora / RHEL
+sudo dnf install vips-devel
+
+# Arch Linux
+sudo pacman -S libvips
+```
+
+`libvips` itself pulls in a chain of transitive dependencies (GLib, libjpeg, libpng, libwebp, libtiff, libheif, …). The `apt`/`dnf`/`pacman` package handles all of these automatically.
+
+No other system packages are required — `nlohmann/json` is a private dependency whose types do not appear in the public API, so consumers do not need its headers.
+
+### Windows MinGW — prerequisites
+
+None. All required DLLs are in the `bin/` directory of the ZIP.
+
+Make `bin/` visible to Windows' DLL loader by doing **one** of the following:
+- Copy the contents of `bin/` next to your `.exe`.
+- Add the `bin/` directory to your `PATH` (convenient for development).
+- Use the CMake snippet below — it copies the DLLs automatically at build time.
+
+### CMake integration
+
+Extract the archive and configure your project with `CMAKE_PREFIX_PATH`:
+
+```cmake
+find_package(platemaker CONFIG REQUIRED)
+target_link_libraries(my-app PRIVATE Platemaker::platemaker)
+
+# Windows: copy libplatemaker.dll and its runtime DLLs next to the executable
+if(WIN32)
+    add_custom_command(TARGET my-app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "$<TARGET_FILE_DIR:Platemaker::platemaker>"
+            "$<TARGET_FILE_DIR:my-app>"
+        COMMENT "Copying platemaker runtime DLLs"
+        VERBATIM
+    )
+endif()
+```
+
+At configure time, tell CMake where the extracted package lives:
+
+```bash
+# Linux
+cmake -B build -DCMAKE_PREFIX_PATH="/path/to/platemaker-dev-0.1.1-linux-x86_64"
+
+# Windows (PowerShell)
+cmake -B build -DCMAKE_PREFIX_PATH="C:/path/to/platemaker-dev-0.1.1-windows-mingw"
+```
+
+CMake caches `CMAKE_PREFIX_PATH`, so you only need to pass it once per build directory.
+
+### Runtime dependency summary
+
+| Platform | Runtime requirement | Provided by package |
+|---|---|---|
+| Linux x86\_64 | `libvips.so.42` + transitive deps | No — install via package manager |
+| Windows MinGW | vips DLLs, GLib, GCC runtime | Yes — bundled in `bin/` |
+
+---
+
 ## Build instructions
 
 ### Windows MSVC
@@ -167,17 +249,17 @@ Produces a versioned archive ready to attach to a GitHub Release.
 ```powershell
 # Windows MSVC — configure + build + package in one command
 cmake --workflow --preset release-windows-msvc
-# → build/windows-msvc/platemaker-dev-0.1.1-Windows-AMD64.zip
+# → dist/platemaker-dev-0.1.1-windows-msvc.zip
 
 # Windows MinGW
 cmake --workflow --preset release-windows-mingw
-# → build/windows-mingw/platemaker-dev-0.1.1-Windows-AMD64.zip
+# → dist/platemaker-dev-0.1.1-windows-mingw.zip
 ```
 
 ```bash
 # Linux
 cmake --workflow --preset release-linux
-# → build/linux-system/platemaker-dev-0.1.1-Linux-x86_64.tar.gz
+# → dist/platemaker-dev-0.1.1-linux-x86_64.tar.gz
 ```
 
 ### Option B — cmake --install (local development)
@@ -196,11 +278,13 @@ cmake --install build/windows-msvc --config Release
 ```
 install/<preset>/
   bin/
-    platemaker.dll            Windows runtime
-    libvips*.dll              runtime DLLs (MSVC: vips package; MinGW: MSYS2 mingw64/bin/)
+    libplatemaker.dll         Windows runtime (MinGW)
+    platemaker.dll            Windows runtime (MSVC)
+    libvips*.dll  …           runtime DLLs (MSVC: vips package; MinGW: MSYS2 mingw64/bin/)
   lib/
-    platemaker.lib            Windows import lib
-    libplatemaker.so.1        Linux (SOVERSION symlink)
+    libplatemaker.dll.a       MinGW import library
+    platemaker.lib            MSVC import library
+    libplatemaker.so          Linux shared library (+ .so.0 / .so.0.1.1 symlinks)
   lib/cmake/platemaker/
     platemaker-config.cmake
     platemaker-config-version.cmake
@@ -284,21 +368,10 @@ If `PLATEMAKER_DIR` is not set and platemaker is not found on the system, CMake 
 
 ### Linux: runtime library path
 
-On Linux the library uses an RPATH of `$ORIGIN/../lib`, so installed executables find `libplatemaker.so` automatically.  When running directly from the build tree during development, set `LD_LIBRARY_PATH`:
+The library has an embedded RPATH of `$ORIGIN/../lib`, so executables installed alongside it find `libplatemaker.so` automatically.  During development (running from the build tree without installing), point the loader at the package manually:
 
 ```bash
-export LD_LIBRARY_PATH="/path/to/platemaker-dev-0.1.1-Linux-x86_64/lib:$LD_LIBRARY_PATH"
-./my-app
-```
-
----
-
-### Linux: runtime library path
-
-On Linux the package's library has an embedded RPATH of `$ORIGIN/../lib`, so executables installed alongside it find `libplatemaker.so` automatically.  During **development** (running from the build tree without installing), point the loader at the package manually:
-
-```bash
-export LD_LIBRARY_PATH="/path/to/platemaker-dev-0.1.1-Linux-x86_64/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="/path/to/platemaker-dev-0.1.1-linux-x86_64/lib:$LD_LIBRARY_PATH"
 ./my-app
 ```
 

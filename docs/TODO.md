@@ -120,3 +120,103 @@ All items completed (schema v2):
 - `WorkspaceSerializer` updated; v1→v2 migration assigns IDs to legacy OutputProfiles.
 - CLI: `project mod --add-canvas-profile / --rm-canvas-profile / --output-profile`; `process` passes `project.canvasProfileIds` to `CanvasProfileMatcher`.
 - `ProjectItem::addCanvasProfile()` implemented with conflict guard.
+
+---
+
+## Distribution
+
+### Windows MinGW — DLL pruning
+
+**Problem:** `cmake --workflow --preset release-windows-mingw` copies the entire
+`mingw64/bin/` directory from the build machine into `bin/`, producing ~175 DLLs
+(~190 MB in the ZIP). Most of them (AWS SDK, FFTW3 Fortran, libGLESv2, ncurses, …)
+are not needed at runtime by `libplatemaker.dll`.
+
+**Fix — `file(GET_RUNTIME_DEPENDENCIES)` (CMake ≥ 3.16):**
+
+Replace the blanket `install(DIRECTORY "${_vips_bin_dir}/" ...)` in
+`lib/CMakeLists.txt` with an `install(CODE ...)` block that computes the actual
+transitive DLL closure of `libplatemaker.dll` at install time:
+
+```cmake
+# lib/CMakeLists.txt — replaces install(DIRECTORY ...) for MinGW
+install(CODE "
+    file(GET_RUNTIME_DEPENDENCIES
+        LIBRARIES \"\$<TARGET_FILE:platemaker-lib>\"
+        RESOLVED_DEPENDENCIES_VAR   _deps_resolved
+        UNRESOLVED_DEPENDENCIES_VAR _deps_unresolved
+        DIRECTORIES \"${_vips_bin_dir}\"
+        PRE_EXCLUDE_REGEXES  \"^api-ms-\" \"^ext-ms-\"
+        POST_EXCLUDE_REGEXES \".*[Ss]ystem32/.*\\\\.dll$\"
+    )
+    foreach(_dep IN LISTS _deps_resolved)
+        file(INSTALL \${_dep}
+             DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}\")
+    endforeach()
+    if(_deps_unresolved)
+        message(WARNING \"Unresolved runtime deps: \${_deps_unresolved}\")
+    endif()
+" COMPONENT Runtime)
+```
+
+Expected result: ~35–45 DLLs (libvips, format codec DLLs, GLib stack, libstdc++,
+libgcc\_s\_seh, libwinpthread). Verify on a clean Windows machine **without MSYS2
+installed** before publishing.
+
+**Also consider:**
+- Turning the non-empty `_deps_unresolved` case into a hard error to guard against
+  a forgotten new format plugin.
+- Running `ldd libplatemaker.dll` inside MSYS2 and comparing the list against what
+  ends up in the ZIP.
+
+---
+
+### Linux — install script in the tarball
+
+**Problem:** The tarball contains only `libplatemaker.so` + headers. On a fresh
+machine the developer must already know they need `libvips-dev` — nothing in the
+package tells them this.
+
+**Plan:**
+
+1. Write `cmake/install.sh.in` which CMake configures (substituting `@PROJECT_VERSION@`
+   etc.) and which is included in the package as `install.sh`:
+
+```bash
+#!/usr/bin/env bash
+# install.sh — installs libplatemaker from the extracted tarball
+set -euo pipefail
+
+PREFIX="${1:-/usr/local}"
+
+# Check for libvips
+if ! pkg-config --exists vips-cpp 2>/dev/null; then
+    echo "ERROR: libvips not found. Install it first:"
+    if   command -v apt-get &>/dev/null; then echo "  sudo apt install libvips-dev"
+    elif command -v dnf     &>/dev/null; then echo "  sudo dnf install vips-devel"
+    elif command -v pacman  &>/dev/null; then echo "  sudo pacman -S libvips"
+    else echo "  install libvips via your distribution's package manager"
+    fi
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+install -d "$PREFIX/lib" "$PREFIX/include" "$PREFIX/lib/cmake/platemaker"
+cp -a "$SCRIPT_DIR"/lib/libplatemaker.so*  "$PREFIX/lib/"
+cp -r "$SCRIPT_DIR"/include/*              "$PREFIX/include/"
+cp    "$SCRIPT_DIR"/lib/cmake/platemaker/* "$PREFIX/lib/cmake/platemaker/"
+ldconfig 2>/dev/null || true
+echo "libplatemaker installed to $PREFIX"
+```
+
+2. Add the script to CPack install rules in `CMakeLists.txt`:
+
+```cmake
+if(UNIX AND NOT APPLE)
+    install(PROGRAMS "${CMAKE_SOURCE_DIR}/cmake/install.sh"
+            DESTINATION ".")
+endif()
+```
+
+3. Consider also generating a `platemaker.pc` pkg-config file in the package so that
+   projects not using CMake can discover the library as well.

@@ -62,6 +62,8 @@ target_include_directories(platemaker-lib
     PUBLIC
         # Consumers include as: #include <platemaker/...>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        # Generated platemaker_export.h lives in the build tree (platemaker/ subdir)
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -102,7 +104,7 @@ include(GenerateExportHeader)
 generate_export_header(platemaker-lib
     BASE_NAME PLATEMAKER
     EXPORT_FILE_NAME
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/platemaker/platemaker_export.h"
+        "${CMAKE_CURRENT_BINARY_DIR}/platemaker/platemaker_export.h"
 )
 
 # Windows DLL symbol export.
@@ -147,6 +149,10 @@ install(TARGETS platemaker-lib
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/platemaker/platemaker_export.h"
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/platemaker
 )
 
 install(EXPORT platemaker-targets
