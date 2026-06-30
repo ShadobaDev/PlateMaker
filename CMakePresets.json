@@ -26,6 +26,7 @@
       "description": "Shared Linux / WSL2 GCC settings.",
       "inherits": "base",
       "generator": "Ninja",
+      "binaryDir": "$env{HOME}/build/platemaker/${presetName}",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "gcc",
         "CMAKE_CXX_COMPILER": "g++"

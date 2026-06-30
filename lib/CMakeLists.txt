@@ -207,14 +207,46 @@ if(WIN32)
         )
     elseif(NOT MSVC AND DEFINED VIPS_LIBRARY_DIRS)
         # MinGW/MSYS2: vips DLLs live alongside all other MSYS2 DLLs in the same bin/.
-        # Derive the directory from the lib path reported by pkg-config and copy
-        # everything — same simple approach as MSVC above.
+        # Derive the directory from the lib path reported by pkg-config.
         list(GET VIPS_LIBRARY_DIRS 0 _vips_lib_dir)
         get_filename_component(_vips_bin_dir "${_vips_lib_dir}/../bin" ABSOLUTE)
-        install(
-            DIRECTORY "${_vips_bin_dir}/"
-            DESTINATION ${CMAKE_INSTALL_BINDIR}
-            FILES_MATCHING PATTERN "*.dll"
-        )
+
+        # DLL pruning: instead of copying the entire mingw64/bin/ (~175 DLLs),
+        # compute the actual transitive runtime-dependency closure of
+        # platemaker.dll at install time via file(GET_RUNTIME_DEPENDENCIES).
+        # This pulls in only libvips, the GLib stack, the PNG/JPEG/WebP codecs
+        # and the libstdc++/libgcc/libwinpthread runtime — expect ~35-45 DLLs.
+        #
+        # NOTE: GET_RUNTIME_DEPENDENCIES walks the PE import table, so it will
+        # NOT catch codecs loaded dynamically as vips modules (lib/vips-modules-8.x).
+        # The formats used here (PNG/JPEG/WebP) are linked directly into libvips,
+        # so they are covered — verify with a real render after changing formats.
+        #
+        # The first install(CODE) is configure-time expanded to hand three values
+        # to the install script: the library path (genex), the vips bin/ search
+        # dir, and CMAKE_INSTALL_BINDIR (not defined inside the install script).
+        # The second uses a bracket-argument to avoid escaping $ / \.
+        install(CODE "set(_pm_lib     \"$<TARGET_FILE:platemaker-lib>\")
+set(_pm_search  \"${_vips_bin_dir}\")
+set(_pm_bindir  \"${CMAKE_INSTALL_BINDIR}\")")
+
+        install(CODE [==[
+            file(GET_RUNTIME_DEPENDENCIES
+                LIBRARIES                   "${_pm_lib}"
+                RESOLVED_DEPENDENCIES_VAR   _res
+                UNRESOLVED_DEPENDENCIES_VAR _unres
+                DIRECTORIES                 "${_pm_search}"
+                PRE_EXCLUDE_REGEXES  "^api-ms-" "^ext-ms-"
+                POST_EXCLUDE_REGEXES "[Ss]ystem32"
+            )
+            foreach(_dep IN LISTS _res)
+                file(INSTALL "${_dep}"
+                     DESTINATION "${CMAKE_INSTALL_PREFIX}/${_pm_bindir}"
+                     FOLLOW_SYMLINK_CHAIN)
+            endforeach()
+            if(_unres)
+                message(FATAL_ERROR "Unresolved runtime deps: ${_unres}")
+            endif()
+        ]==])
     endif()
 endif()

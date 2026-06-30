@@ -125,7 +125,15 @@ All items completed (schema v2):
 
 ## Distribution
 
-### Windows MinGW — DLL pruning
+### ~~Windows MinGW — DLL pruning~~ ✅
+
+Implemented in `lib/CMakeLists.txt`: the MinGW branch now replaces the blanket
+`install(DIRECTORY "${_vips_bin_dir}/" ...)` with an `install(CODE ...)` block
+that computes the transitive runtime-dependency closure of `platemaker.dll` via
+`file(GET_RUNTIME_DEPENDENCIES)`. Unresolved deps are a hard `FATAL_ERROR`.
+**Still to verify on a clean Windows machine without MSYS2** (render PNG/JPEG/WebP).
+
+<details><summary>Original notes</summary>
 
 **Problem:** `cmake --workflow --preset release-windows-mingw` copies the entire
 `mingw64/bin/` directory from the build machine into `bin/`, producing ~175 DLLs
@@ -168,6 +176,8 @@ installed** before publishing.
   a forgotten new format plugin.
 - Running `ldd libplatemaker.dll` inside MSYS2 and comparing the list against what
   ends up in the ZIP.
+
+</details>
 
 ---
 

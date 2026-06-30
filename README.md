@@ -242,12 +242,25 @@ cmake --build --preset linux-system-debug
 
 The dev package contains the shared library, all public headers, CMake config files, and bundled runtime DLLs (Windows).
 
-### Option A — ZIP archive (releases)
+There are two ways to produce it. They run the **same install rules** (including the MinGW DLL pruning that bundles only libvips' actual runtime-dependency closure) — the difference is what they wrap around those rules:
 
-Produces a versioned archive ready to attach to a GitHub Release.
+| | `cmake --workflow --preset release-<platform>` | `cmake --install <build-dir>` |
+|---|---|---|
+| **Purpose** | Cut a release artifact | Install locally for GUI development |
+| **Output** | Versioned archive in `dist/` (`.zip` / `.tar.gz`) | Loose directory tree in `install/<preset>/` |
+| **Configure** | Runs its own clean configure (`*-release` preset, **tests OFF**) | Reuses your existing build tree |
+| **Build** | Builds as part of the workflow | You must `cmake --build` first |
+| **Packaging** | Yes — runs CPack | No — just copies the install output |
+| **When to use** | Publishing to GitHub Releases | Day-to-day: point the Qt GUI at `install/<preset>/` |
+
+In short: `--install` gives you a folder; `--workflow` builds from scratch (no tests) and additionally zips that same folder.
+
+### Option A — release archive (`--workflow`)
+
+Configure + build (no tests) + package, in a single command. Produces a versioned archive ready to attach to a GitHub Release.
 
 ```powershell
-# Windows MSVC — configure + build + package in one command
+# Windows MSVC
 cmake --workflow --preset release-windows-msvc
 # → dist/platemaker-dev-0.1.1-windows-msvc.zip
 
@@ -262,16 +275,41 @@ cmake --workflow --preset release-linux
 # → dist/platemaker-dev-0.1.1-linux-x86_64.tar.gz
 ```
 
-### Option B — cmake --install (local development)
+### Option B — local install (`cmake --install`)
 
-Installs to `install/<preset>/` for direct use during active development of the Qt GUI.
+Installs an already-built tree to `install/<preset>/` for direct use while developing the Qt GUI. **Configure and build first, then install** — three commands:
 
 ```powershell
+# Windows MSVC  — multi-config generator → --config Release is REQUIRED
 cmake --preset windows-msvc
 cmake --build --preset windows-msvc
 cmake --install build/windows-msvc --config Release
 # → install/windows-msvc/
+
+# Windows MinGW — single-config Ninja → no --config (the windows-mingw preset is Debug)
+cmake --preset windows-mingw
+cmake --build --preset windows-mingw
+cmake --install build/windows-mingw
+# → install/windows-mingw/
 ```
+
+```bash
+# Linux — single-config Ninja; note the build dir lives under $HOME, not ./build
+cmake --preset linux-system
+cmake --build --preset linux-system
+cmake --install ~/build/platemaker/linux-system
+# → install/linux-system/
+```
+
+> **About `--config Release`:** it matters **only for multi-config generators** (Visual Studio / MSVC), where one build tree holds both Debug and Release and you must say which to install. Single-config generators (Ninja — used by MinGW and Linux) bake the build type in at configure time, so `--config` is silently ignored there.
+>
+> The `windows-mingw` preset is **Debug** by default (`windows-msvc` and `linux-system` are already Release). For an optimised local MinGW install, configure with the release preset and install from its build dir instead:
+> ```powershell
+> cmake --preset windows-mingw-release
+> cmake --build --preset windows-mingw-release
+> cmake --install build/windows-mingw-release
+> # → install/windows-mingw-release/
+> ```
 
 ### Install layout
 
@@ -280,7 +318,7 @@ install/<preset>/
   bin/
     libplatemaker.dll         Windows runtime (MinGW)
     platemaker.dll            Windows runtime (MSVC)
-    libvips*.dll  …           runtime DLLs (MSVC: vips package; MinGW: MSYS2 mingw64/bin/)
+    libvips*.dll  …           runtime DLLs (MSVC: full vips package; MinGW: pruned to libvips' actual dependency closure)
   lib/
     libplatemaker.dll.a       MinGW import library
     platemaker.lib            MSVC import library
