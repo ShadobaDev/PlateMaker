@@ -29,218 +29,162 @@
       "binaryDir": "$env{HOME}/build/platemaker/${presetName}",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "gcc",
-        "CMAKE_CXX_COMPILER": "g++"
-      }
-    },
-
-    {
-      "name": "linux-system",
-      "displayName": "Linux · GCC · Release",
-      "description": "libvips from apt; nlohmann-json and gtest from source if not found via apt.",
-      "inherits": "linux-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "g++",
         "CPACK_SYSTEM_NAME": "linux-x86_64"
       }
     },
 
     {
-      "name": "linux-system-debug",
-      "displayName": "Linux · GCC · Debug + ASan",
-      "description": "Debug build with AddressSanitizer + UBSan.",
-      "inherits": "linux-system",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_C_FLAGS_DEBUG": "-fsanitize=address,undefined -fno-omit-frame-pointer",
-        "CMAKE_CXX_FLAGS_DEBUG": "-fsanitize=address,undefined -fno-omit-frame-pointer"
-      }
-    },
-
-    {
-      "name": "windows-msvc",
-      "displayName": "Windows · MSVC · Release",
-      "description": "Primary Windows build — MSVC toolchain via VS 2022. libvips auto-fetched; nlohmann-json and gtest from source.",
-      "inherits": "base",
-      "generator": "Visual Studio 17 2022",
-      "architecture": {
-        "value": "x64",
-        "strategy": "set"
-      },
-      "toolset": {
-        "value": "host=x64",
-        "strategy": "set"
-      },
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CPACK_SYSTEM_NAME": "windows-msvc"
-      }
-    },
-
-    {
-      "name": "windows-msvc-debug",
-      "displayName": "Windows · MSVC · Debug",
-      "description": "Windows debug build — full symbols, no optimisation.",
-      "inherits": "windows-msvc",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-
-    {
-      "name": "windows-msvc-release",
-      "displayName": "Windows · MSVC · Release (package)",
-      "description": "Release build without tests — used by the package preset and release workflow.",
-      "inherits": "windows-msvc",
-      "cacheVariables": {
-        "PLATEMAKER_BUILD_TESTS": "OFF"
-      }
-    },
-
-    {
-      "name": "windows-mingw",
-      "displayName": "Windows · MinGW · Debug",
-      "description": "Windows build using MinGW GCC (MSYS2) and Ninja. Requires MSYS2 with mingw-w64-x86_64-libvips and PKG_CONFIG_PATH set.",
+      "name": "mingw-base",
+      "hidden": true,
+      "description": "Shared Windows MinGW (MSYS2) GCC + Ninja settings. Requires MSYS2 with mingw-w64-x86_64-libvips and PKG_CONFIG_PATH set.",
       "inherits": "base",
       "generator": "Ninja",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "gcc",
         "CMAKE_CXX_COMPILER": "g++",
-        "CMAKE_BUILD_TYPE": "Debug",
         "CPACK_SYSTEM_NAME": "windows-mingw"
       }
     },
 
     {
-      "name": "windows-mingw-release",
-      "displayName": "Windows · MinGW · Release (package)",
-      "description": "Release build without tests — used by the package preset and release workflow.",
-      "inherits": "windows-mingw",
+      "name": "msvc-base",
+      "hidden": true,
+      "description": "Shared Windows MSVC (VS 2022) settings. libvips auto-fetched.",
+      "inherits": "base",
+      "generator": "Visual Studio 17 2022",
+      "architecture": { "value": "x64", "strategy": "set" },
+      "toolset": { "value": "host=x64", "strategy": "set" },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "PLATEMAKER_BUILD_TESTS": "OFF"
+        "CPACK_SYSTEM_NAME": "windows-msvc"
       }
+    },
+
+    {
+      "name": "linux-release",
+      "displayName": "Linux · GCC · Release",
+      "description": "libvips from apt; nlohmann-json and gtest from source if not found.",
+      "inherits": "linux-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+
+    {
+      "name": "linux-debug",
+      "displayName": "Linux · GCC · Debug",
+      "description": "Plain Debug build (full symbols, no sanitizer) — packageable.",
+      "inherits": "linux-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+
+    {
+      "name": "linux-asan",
+      "displayName": "Linux · GCC · Debug + ASan/UBSan (local only)",
+      "description": "Local sanitizer build — NOT for packaging (requires libasan at runtime).",
+      "inherits": "linux-debug",
+      "cacheVariables": {
+        "CMAKE_C_FLAGS_DEBUG": "-fsanitize=address,undefined -fno-omit-frame-pointer -g",
+        "CMAKE_CXX_FLAGS_DEBUG": "-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+      }
+    },
+
+    {
+      "name": "mingw-release",
+      "displayName": "Windows · MinGW · Release",
+      "description": "MinGW GCC (MSYS2) + Ninja, Release.",
+      "inherits": "mingw-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+
+    {
+      "name": "mingw-debug",
+      "displayName": "Windows · MinGW · Debug",
+      "description": "MinGW GCC (MSYS2) + Ninja, Debug (full symbols).",
+      "inherits": "mingw-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+
+    {
+      "name": "msvc-release",
+      "displayName": "Windows · MSVC · Release",
+      "description": "MSVC toolchain via VS 2022, Release. (Secondary — GUI links with MinGW.)",
+      "inherits": "msvc-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+
+    {
+      "name": "msvc-debug",
+      "displayName": "Windows · MSVC · Debug",
+      "description": "MSVC toolchain via VS 2022, Debug.",
+      "inherits": "msvc-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
     }
 
   ],
 
   "buildPresets": [
 
-    {
-      "name": "linux-system",
-      "displayName": "Build · Linux Release",
-      "configurePreset": "linux-system",
-      "jobs": 0
-    },
+    { "name": "linux-release", "displayName": "Build · Linux Release", "configurePreset": "linux-release", "jobs": 0 },
+    { "name": "linux-debug",   "displayName": "Build · Linux Debug",   "configurePreset": "linux-debug",   "jobs": 0 },
+    { "name": "linux-asan",    "displayName": "Build · Linux Debug+ASan", "configurePreset": "linux-asan", "jobs": 0 },
 
-    {
-      "name": "linux-system-debug",
-      "displayName": "Build · Linux Debug",
-      "configurePreset": "linux-system-debug",
-      "jobs": 0
-    },
+    { "name": "mingw-release", "displayName": "Build · MinGW Release", "configurePreset": "mingw-release", "jobs": 0 },
+    { "name": "mingw-debug",   "displayName": "Build · MinGW Debug",   "configurePreset": "mingw-debug",   "jobs": 0 },
 
-    {
-      "name": "windows-msvc",
-      "displayName": "Build · Windows MSVC Release",
-      "configurePreset": "windows-msvc",
-      "configuration": "Release"
-    },
-
-    {
-      "name": "windows-msvc-debug",
-      "displayName": "Build · Windows MSVC Debug",
-      "configurePreset": "windows-msvc-debug",
-      "configuration": "Debug"
-    },
-
-    {
-      "name": "windows-msvc-release",
-      "displayName": "Build · Windows MSVC Release (package)",
-      "configurePreset": "windows-msvc-release",
-      "configuration": "Release"
-    },
-
-    {
-      "name": "windows-mingw",
-      "displayName": "Build · Windows MinGW Debug",
-      "configurePreset": "windows-mingw"
-    },
-
-    {
-      "name": "windows-mingw-release",
-      "displayName": "Build · Windows MinGW Release (package)",
-      "configurePreset": "windows-mingw-release",
-      "jobs": 0
-    }
+    { "name": "msvc-release", "displayName": "Build · MSVC Release", "configurePreset": "msvc-release", "configuration": "Release" },
+    { "name": "msvc-debug",   "displayName": "Build · MSVC Debug",   "configurePreset": "msvc-debug",   "configuration": "Debug" }
 
   ],
 
   "testPresets": [
 
-    {
-      "name": "linux-system",
-      "displayName": "Test · Linux",
-      "configurePreset": "linux-system",
-      "output": { "outputOnFailure": true }
-    },
+    { "name": "linux-release", "displayName": "Test · Linux Release", "configurePreset": "linux-release", "output": { "outputOnFailure": true } },
+    { "name": "linux-debug",   "displayName": "Test · Linux Debug",   "configurePreset": "linux-debug",   "output": { "outputOnFailure": true } },
+    { "name": "linux-asan",    "displayName": "Test · Linux Debug+ASan", "configurePreset": "linux-asan",  "output": { "outputOnFailure": true } },
 
-    {
-      "name": "linux-system-debug",
-      "displayName": "Test · Linux Debug",
-      "configurePreset": "linux-system-debug",
-      "output": { "outputOnFailure": true }
-    },
+    { "name": "mingw-release", "displayName": "Test · MinGW Release", "configurePreset": "mingw-release", "output": { "outputOnFailure": true } },
+    { "name": "mingw-debug",   "displayName": "Test · MinGW Debug",   "configurePreset": "mingw-debug",   "output": { "outputOnFailure": true } },
 
-    {
-      "name": "windows-msvc",
-      "displayName": "Test · Windows MSVC",
-      "configurePreset": "windows-msvc",
-      "configuration": "Release",
-      "output": { "outputOnFailure": true }
-    },
-
-    {
-      "name": "windows-msvc-debug",
-      "displayName": "Test · Windows MSVC Debug",
-      "configurePreset": "windows-msvc-debug",
-      "configuration": "Debug",
-      "output": { "outputOnFailure": true }
-    },
-
-    {
-      "name": "windows-mingw",
-      "displayName": "Test · Windows MinGW",
-      "configurePreset": "windows-mingw",
-      "output": { "outputOnFailure": true }
-    }
+    { "name": "msvc-release", "displayName": "Test · MSVC Release", "configurePreset": "msvc-release", "configuration": "Release", "output": { "outputOnFailure": true } },
+    { "name": "msvc-debug",   "displayName": "Test · MSVC Debug",   "configurePreset": "msvc-debug",   "configuration": "Debug", "output": { "outputOnFailure": true } }
 
   ],
 
   "packagePresets": [
 
     {
-      "name": "windows-msvc",
-      "displayName": "Package · Windows MSVC Release",
-      "description": "Produces platemaker-dev-<ver>-windows-msvc.zip in dist/",
-      "configurePreset": "windows-msvc-release",
+      "name": "linux-release",
+      "displayName": "Package · Linux Release (dev + cli)",
+      "description": "Produces platemaker-dev-<ver>-linux-x86_64-release.tar.gz and platemaker-cli-... in dist/",
+      "configurePreset": "linux-release",
+      "generators": ["TGZ"]
+    },
+    {
+      "name": "linux-debug",
+      "displayName": "Package · Linux Debug (dev + cli)",
+      "configurePreset": "linux-debug",
+      "generators": ["TGZ"]
+    },
+
+    {
+      "name": "mingw-release",
+      "displayName": "Package · MinGW Release (dev + cli)",
+      "description": "Produces platemaker-dev-<ver>-windows-mingw-release.zip and platemaker-cli-... in dist/",
+      "configurePreset": "mingw-release",
+      "generators": ["ZIP"]
+    },
+    {
+      "name": "mingw-debug",
+      "displayName": "Package · MinGW Debug (dev + cli)",
+      "configurePreset": "mingw-debug",
+      "generators": ["ZIP"]
+    },
+
+    {
+      "name": "msvc-release",
+      "displayName": "Package · MSVC Release (dev + cli)",
+      "configurePreset": "msvc-release",
       "configurations": ["Release"],
       "generators": ["ZIP"]
-    },
-
-    {
-      "name": "windows-mingw",
-      "displayName": "Package · Windows MinGW Release",
-      "description": "Produces platemaker-dev-<ver>-windows-mingw.zip in dist/",
-      "configurePreset": "windows-mingw-release",
-      "generators": ["ZIP"]
-    },
-
-    {
-      "name": "linux-system",
-      "displayName": "Package · Linux Release",
-      "description": "Produces platemaker-dev-<ver>-linux-x86_64.tar.gz in dist/",
-      "configurePreset": "linux-system",
-      "generators": ["TGZ"]
     }
 
   ],
@@ -248,35 +192,55 @@
   "workflowPresets": [
 
     {
-      "name": "release-windows-msvc",
-      "displayName": "Release workflow · Windows MSVC",
-      "description": "Configure → Build (Release, no tests) → Package",
+      "name": "dist-linux-release",
+      "displayName": "Dist · Linux Release",
+      "description": "Configure → Build → Package (dev + cli tarballs)",
       "steps": [
-        { "type": "configure", "name": "windows-msvc-release" },
-        { "type": "build",     "name": "windows-msvc-release" },
-        { "type": "package",   "name": "windows-msvc" }
+        { "type": "configure", "name": "linux-release" },
+        { "type": "build",     "name": "linux-release" },
+        { "type": "package",   "name": "linux-release" }
+      ]
+    },
+    {
+      "name": "dist-linux-debug",
+      "displayName": "Dist · Linux Debug",
+      "description": "Configure → Build → Package (dev + cli tarballs, unstripped)",
+      "steps": [
+        { "type": "configure", "name": "linux-debug" },
+        { "type": "build",     "name": "linux-debug" },
+        { "type": "package",   "name": "linux-debug" }
       ]
     },
 
     {
-      "name": "release-windows-mingw",
-      "displayName": "Release workflow · Windows MinGW",
-      "description": "Configure → Build (Release, no tests) → Package",
+      "name": "dist-mingw-release",
+      "displayName": "Dist · MinGW Release",
+      "description": "Configure → Build → Package (dev + cli ZIPs)",
       "steps": [
-        { "type": "configure", "name": "windows-mingw-release" },
-        { "type": "build",     "name": "windows-mingw-release" },
-        { "type": "package",   "name": "windows-mingw" }
+        { "type": "configure", "name": "mingw-release" },
+        { "type": "build",     "name": "mingw-release" },
+        { "type": "package",   "name": "mingw-release" }
+      ]
+    },
+    {
+      "name": "dist-mingw-debug",
+      "displayName": "Dist · MinGW Debug",
+      "description": "Configure → Build → Package (dev + cli ZIPs, unstripped)",
+      "steps": [
+        { "type": "configure", "name": "mingw-debug" },
+        { "type": "build",     "name": "mingw-debug" },
+        { "type": "package",   "name": "mingw-debug" }
       ]
     },
 
     {
-      "name": "release-linux",
-      "displayName": "Release workflow · Linux",
-      "description": "Configure → Build (Release) → Package",
+      "name": "dist-msvc-release",
+      "displayName": "Dist · MSVC Release",
+      "description": "Configure → Build → Package (dev + cli ZIPs)",
       "steps": [
-        { "type": "configure", "name": "linux-system" },
-        { "type": "build",     "name": "linux-system" },
-        { "type": "package",   "name": "linux-system" }
+        { "type": "configure", "name": "msvc-release" },
+        { "type": "build",     "name": "msvc-release" },
+        { "type": "package",   "name": "msvc-release" }
       ]
     }
 

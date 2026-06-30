@@ -140,25 +140,40 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
+# CPack components (see root CMakeLists.txt for grouping → archives):
+#   Development → headers, cmake config, import lib   ┐ grouped into the
+#   Runtime     → shared lib (.dll/.so) + bundled DLLs ┘ platemaker-dev archive
+#   cli         → platemaker-cli + a self-contained copy of the runtime
+# The shared library lands in Runtime; the import lib (Windows ARCHIVE) in Development.
 install(TARGETS platemaker-lib
     EXPORT platemaker-targets
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}          # .dll on Windows
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}           # .so on Linux
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}           # .lib on Windows
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime      # .dll on Windows
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Runtime      # .so on Linux
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Development  # .lib / .dll.a import lib
+)
+
+# Second install of the same target into the "cli" component so the standalone
+# platemaker-cli archive is self-contained (no EXPORT here — Development owns it).
+install(TARGETS platemaker-lib
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT cli
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT cli
 )
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    COMPONENT Development
 )
 
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/platemaker/platemaker_export.h"
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/platemaker
+    COMPONENT Development
 )
 
 install(EXPORT platemaker-targets
     FILE     platemaker-targets.cmake
     NAMESPACE Platemaker::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/platemaker
+    COMPONENT Development
 )
 
 configure_package_config_file(
@@ -177,6 +192,7 @@ install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/platemaker-config.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/platemaker-config-version.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/platemaker
+    COMPONENT Development
 )
 
 # ---------------------------------------------------------------------------
@@ -191,6 +207,48 @@ install(FILES
 # and Windows loads the FetchContent vips instead of any system/MinGW vips
 # that might be on PATH.
 # ---------------------------------------------------------------------------
+# Helper: emit the MinGW DLL-closure install rules for a given CPack component.
+# Called once per component (Runtime + cli) so both archives are self-contained.
+# Reads _vips_bin_dir from the calling scope.
+#
+# DLL pruning: instead of copying the entire mingw64/bin/ (~175 DLLs), compute the
+# actual transitive runtime-dependency closure of platemaker.dll at install time
+# via file(GET_RUNTIME_DEPENDENCIES) — only libvips, the GLib stack, the codecs
+# and the libstdc++/libgcc/libwinpthread runtime.
+#
+# NOTE: GET_RUNTIME_DEPENDENCIES walks the PE import table, so it will NOT catch
+# codecs loaded dynamically as vips modules (lib/vips-modules-8.x). The formats
+# used here (PNG/JPEG/WebP) are linked directly into libvips, so they are covered
+# — verify with a real render after changing formats.
+function(_pm_install_mingw_dll_closure _component)
+    # First install(CODE) is configure-time expanded to hand three values to the
+    # install script: the library path (genex), the vips bin/ search dir, and
+    # CMAKE_INSTALL_BINDIR (not defined inside the install script). The second
+    # uses a bracket-argument to keep ${...} unexpanded until install time.
+    install(CODE "set(_pm_lib     \"$<TARGET_FILE:platemaker-lib>\")
+set(_pm_search  \"${_vips_bin_dir}\")
+set(_pm_bindir  \"${CMAKE_INSTALL_BINDIR}\")" COMPONENT ${_component})
+
+    install(CODE [==[
+        file(GET_RUNTIME_DEPENDENCIES
+            LIBRARIES                   "${_pm_lib}"
+            RESOLVED_DEPENDENCIES_VAR   _res
+            UNRESOLVED_DEPENDENCIES_VAR _unres
+            DIRECTORIES                 "${_pm_search}"
+            PRE_EXCLUDE_REGEXES  "^api-ms-" "^ext-ms-"
+            POST_EXCLUDE_REGEXES "[Ss]ystem32"
+        )
+        foreach(_dep IN LISTS _res)
+            file(INSTALL "${_dep}"
+                 DESTINATION "${CMAKE_INSTALL_PREFIX}/${_pm_bindir}"
+                 FOLLOW_SYMLINK_CHAIN)
+        endforeach()
+        if(_unres)
+            message(FATAL_ERROR "Unresolved runtime deps: ${_unres}")
+        endif()
+    ]==] COMPONENT ${_component})
+endfunction()
+
 if(WIN32)
     if(MSVC AND DEFINED VIPS_ROOT_DIR)
         add_custom_command(TARGET platemaker-lib POST_BUILD
@@ -200,53 +258,22 @@ if(WIN32)
             COMMENT "Copying vips runtime DLLs to build output"
             VERBATIM
         )
-        install(
-            DIRECTORY "${VIPS_ROOT_DIR}/bin/"
-            DESTINATION ${CMAKE_INSTALL_BINDIR}
-            FILES_MATCHING PATTERN "*.dll"
-        )
+        # MSVC keeps the full vips package; bundle it into both archives.
+        foreach(_comp Runtime cli)
+            install(
+                DIRECTORY "${VIPS_ROOT_DIR}/bin/"
+                DESTINATION ${CMAKE_INSTALL_BINDIR}
+                COMPONENT ${_comp}
+                FILES_MATCHING PATTERN "*.dll"
+            )
+        endforeach()
     elseif(NOT MSVC AND DEFINED VIPS_LIBRARY_DIRS)
         # MinGW/MSYS2: vips DLLs live alongside all other MSYS2 DLLs in the same bin/.
         # Derive the directory from the lib path reported by pkg-config.
         list(GET VIPS_LIBRARY_DIRS 0 _vips_lib_dir)
         get_filename_component(_vips_bin_dir "${_vips_lib_dir}/../bin" ABSOLUTE)
 
-        # DLL pruning: instead of copying the entire mingw64/bin/ (~175 DLLs),
-        # compute the actual transitive runtime-dependency closure of
-        # platemaker.dll at install time via file(GET_RUNTIME_DEPENDENCIES).
-        # This pulls in only libvips, the GLib stack, the PNG/JPEG/WebP codecs
-        # and the libstdc++/libgcc/libwinpthread runtime — expect ~35-45 DLLs.
-        #
-        # NOTE: GET_RUNTIME_DEPENDENCIES walks the PE import table, so it will
-        # NOT catch codecs loaded dynamically as vips modules (lib/vips-modules-8.x).
-        # The formats used here (PNG/JPEG/WebP) are linked directly into libvips,
-        # so they are covered — verify with a real render after changing formats.
-        #
-        # The first install(CODE) is configure-time expanded to hand three values
-        # to the install script: the library path (genex), the vips bin/ search
-        # dir, and CMAKE_INSTALL_BINDIR (not defined inside the install script).
-        # The second uses a bracket-argument to avoid escaping $ / \.
-        install(CODE "set(_pm_lib     \"$<TARGET_FILE:platemaker-lib>\")
-set(_pm_search  \"${_vips_bin_dir}\")
-set(_pm_bindir  \"${CMAKE_INSTALL_BINDIR}\")")
-
-        install(CODE [==[
-            file(GET_RUNTIME_DEPENDENCIES
-                LIBRARIES                   "${_pm_lib}"
-                RESOLVED_DEPENDENCIES_VAR   _res
-                UNRESOLVED_DEPENDENCIES_VAR _unres
-                DIRECTORIES                 "${_pm_search}"
-                PRE_EXCLUDE_REGEXES  "^api-ms-" "^ext-ms-"
-                POST_EXCLUDE_REGEXES "[Ss]ystem32"
-            )
-            foreach(_dep IN LISTS _res)
-                file(INSTALL "${_dep}"
-                     DESTINATION "${CMAKE_INSTALL_PREFIX}/${_pm_bindir}"
-                     FOLLOW_SYMLINK_CHAIN)
-            endforeach()
-            if(_unres)
-                message(FATAL_ERROR "Unresolved runtime deps: ${_unres}")
-            endif()
-        ]==])
+        _pm_install_mingw_dll_closure(Runtime)
+        _pm_install_mingw_dll_closure(cli)
     endif()
 endif()

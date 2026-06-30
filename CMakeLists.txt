@@ -157,38 +157,63 @@ if(PLATEMAKER_BUILD_TESTS)
 endif()
 
 # ---------------------------------------------------------------------------
-# CPack — produces versioned dev-package archives
+# CPack — produces TWO versioned archives per build, by CPack component group:
 #
-# Run after building:  cpack --preset windows-msvc
-# Produces:  platemaker-dev-0.1.1-windows-msvc.zip  (or .tar.gz on Linux)
+#   platemaker-dev-<ver>-<sys>-<type>   (group "dev": Development + Runtime)
+#       headers + cmake config + import lib + shared lib + bundled DLLs (Windows)
+#   platemaker-cli-<ver>-<sys>-<type>   (group "cli": cli)
+#       platemaker-cli + a self-contained copy of the runtime (libs + DLLs)
 #
-# CPack reuses the cmake --install rules defined in lib/CMakeLists.txt.
-# The CPACK_INSTALL_CMAKE_PROJECTS list selects only the library targets
-# (no tests, no CLI) — adjust if the CLI should ship in the same package.
+# <sys>  = CPACK_SYSTEM_NAME set per configure preset (linux-x86_64 / windows-mingw / windows-msvc)
+# <type> = lowercased CMAKE_BUILD_TYPE (release / debug) — so debug and release
+#          archives never collide and a "debug" package is genuinely debug.
+#
+# Run after building, e.g.:  cpack --preset mingw-release
+# Or the whole waterfall:    cmake --workflow --preset dist-mingw-release
 # ---------------------------------------------------------------------------
-set(CPACK_PACKAGE_NAME              "platemaker-dev")
+set(CPACK_PACKAGE_NAME              "platemaker")
 set(CPACK_PACKAGE_VERSION           "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_VENDOR            "ShadobaDev")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
 set(CPACK_RESOURCE_FILE_LICENSE     "${CMAKE_SOURCE_DIR}/LICENSE.LGPL")
 
-# Archive names use CPACK_SYSTEM_NAME set per configure preset (e.g. windows-msvc, linux-x86_64)
-set(CPACK_PACKAGE_FILE_NAME
-    "${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-${CPACK_SYSTEM_NAME}")
-
-set(CPACK_GENERATOR "ZIP")              # ZIP on all platforms; override per-preset if needed
-set(CPACK_STRIP_FILES ON)               # strip debug symbols from release packages
+set(CPACK_GENERATOR "ZIP")              # ZIP default; package presets override (TGZ on Linux)
 set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_SOURCE_DIR}/dist")
 
-# Install only the library target (not CLI, not tests)
+# Component-based packaging: one archive per group.
+set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+set(CPACK_COMPONENTS_GROUPING ONE_PER_GROUP)
+set(CPACK_COMPONENT_DEVELOPMENT_GROUP dev)
+set(CPACK_COMPONENT_RUNTIME_GROUP     dev)
+set(CPACK_COMPONENT_CLI_GROUP         cli)
+
+# Per-group archive names (encode platform + build type).
+string(TOLOWER "${CMAKE_BUILD_TYPE}" _pm_build_type)
+if(NOT _pm_build_type)
+    set(_pm_build_type "release")       # multi-config fallback
+endif()
+set(CPACK_ARCHIVE_DEV_FILE_NAME "platemaker-dev-${PROJECT_VERSION}-${CPACK_SYSTEM_NAME}-${_pm_build_type}")
+set(CPACK_ARCHIVE_CLI_FILE_NAME "platemaker-cli-${PROJECT_VERSION}-${CPACK_SYSTEM_NAME}-${_pm_build_type}")
+
+# Strip symbols for Release only — a Debug package must keep its symbols.
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CPACK_STRIP_FILES OFF)
+else()
+    set(CPACK_STRIP_FILES ON)
+endif()
+
 set(CPACK_INSTALL_CMAKE_PROJECTS
     "${CMAKE_BINARY_DIR}" "${PROJECT_NAME}" "ALL" "/"
 )
 
-install(FILES "${CMAKE_SOURCE_DIR}/LICENSE.LGPL"
-    DESTINATION "."
-    RENAME "LICENSE"
-)
+# LICENSE belongs in both archives → install under a component in each group.
+foreach(_pm_lic_comp Development cli)
+    install(FILES "${CMAKE_SOURCE_DIR}/LICENSE.LGPL"
+        DESTINATION "."
+        RENAME "LICENSE"
+        COMPONENT ${_pm_lic_comp}
+    )
+endforeach()
 
 include(CPack)
 

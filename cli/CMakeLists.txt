@@ -18,3 +18,14 @@ target_link_libraries(platemaker-cli
         VIPS::vips-cpp
         nlohmann_json::nlohmann_json
 )
+
+# ---------------------------------------------------------------------------
+# Install — the CLI ships in its own CPack component ("cli"), packaged as the
+# standalone platemaker-cli-<ver>-<sys>-<type> archive (see root CMakeLists.txt).
+# The matching runtime libraries (libplatemaker + bundled DLLs on Windows /
+# libplatemaker.so on Linux) are added to the same component from lib/.
+# ---------------------------------------------------------------------------
+include(GNUInstallDirs)
+install(TARGETS platemaker-cli
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT cli
+)

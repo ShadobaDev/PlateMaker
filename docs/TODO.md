@@ -125,6 +125,43 @@ All items completed (schema v2):
 
 ## Distribution
 
+### ~~Packaging matrix — debug/release × dev/cli~~ ✅
+
+Consistent `platform-buildtype` presets; each `dist-*` workflow runs
+configure → build → package and emits **two** archives (CPack component groups
+`dev` and `cli`). Build type is encoded in the archive name; debug archives are
+unstripped. CLI is self-contained (bundles its own runtime). See
+[CHEATSHEET.md](CHEATSHEET.md).
+
+| Command | Artifacts in `dist/` |
+|---|---|
+| `cmake --workflow --preset dist-linux-release` | `platemaker-dev-<ver>-linux-x86_64-release.tar.gz`, `platemaker-cli-…-release.tar.gz` |
+| `cmake --workflow --preset dist-linux-debug` | `…-linux-x86_64-debug.tar.gz` (dev + cli, unstripped) |
+| `cmake --workflow --preset dist-mingw-release` | `platemaker-dev-<ver>-windows-mingw-release.zip`, `platemaker-cli-…-release.zip` |
+| `cmake --workflow --preset dist-mingw-debug` | `…-windows-mingw-debug.zip` (dev + cli, unstripped) |
+| `cmake --workflow --preset dist-msvc-release` | `…-windows-msvc-release.zip` (secondary) |
+
+Target GitHub release set: linux dev (release+debug), linux cli (release+debug),
+mingw dev (release+debug), mingw cli (release+debug) — all produced by the four
+`dist-{linux,mingw}-{release,debug}` workflows above.
+
+**Layout:** dev = `include/` + `lib/` (import lib + `.so` + cmake config) + `bin/`
+(DLLs on Windows); cli = `bin/` (exe + DLLs on Windows) + `lib/` (`.so` on Linux),
+relocatable via the existing `$ORIGIN/../lib` RPATH.
+
+**Still to verify** on a clean Windows machine without MSYS2: render PNG/JPEG/WebP
+from the unpacked `platemaker-cli` ZIP; confirm debug archives keep symbols.
+
+### TODO — GUI repo FetchContent fallback (separate repo: Platemaker-qt)
+
+`Platemaker-qt/CMakeLists.txt` downloads `platemaker-dev-<ver>-Windows-AMD64.zip`
+as its fallback when no local package is found — that asset name never existed
+(real names are now `platemaker-dev-<ver>-windows-mingw-<type>.zip`). Once a release
+is published, fix the consumer to build the correct name (mirror the snippet in
+`README.md` → "Consuming libplatemaker"), and ideally auto-discover the sibling
+`../../PlateMaker/install/<preset>` so a fresh Qt Creator build dir works without
+manually setting `PLATEMAKER_DIR`.
+
 ### ~~Windows MinGW — DLL pruning~~ ✅
 
 Implemented in `lib/CMakeLists.txt`: the MinGW branch now replaces the blanket

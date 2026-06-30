@@ -15,7 +15,7 @@ For full requirements, data models, pipeline details, and the development roadma
 ```
 platemaker/
 ├── CMakeLists.txt           # Root — finds dependencies, adds sub-projects
-├── CMakePresets.json        # Presets: linux-system, linux-gcc, windows-msvc, …
+├── CMakePresets.json        # Presets: linux-release, linux-debug, mingw-release, mingw-debug, …
 ├── vcpkg.json               # vcpkg manifest — Windows C++ deps
 ├── lib/                     # libplatemaker — Core + Infrastructure
 │   ├── cmake/               # CMake package config template
@@ -121,12 +121,19 @@ Download the pre-built package for your platform from the [Releases page](https:
 
 ### What's in each package
 
+Each platform/build-type ships **two** archives — a `dev` package (to link against)
+and a `cli` package (to run the `platemaker-cli` tool). `<type>` is `release` or `debug`.
+
 | Package | File | Contents |
 |---|---|---|
-| Linux x86\_64 | `platemaker-dev-<ver>-linux-x86_64.tar.gz` | `libplatemaker.so` + headers + CMake config |
-| Windows MinGW | `platemaker-dev-<ver>-windows-mingw.zip` | `libplatemaker.dll` + headers + CMake config + all runtime DLLs |
+| Linux dev | `platemaker-dev-<ver>-linux-x86_64-<type>.tar.gz` | `libplatemaker.so` + headers + CMake config |
+| Linux cli | `platemaker-cli-<ver>-linux-x86_64-<type>.tar.gz` | `platemaker-cli` + `libplatemaker.so` |
+| Windows MinGW dev | `platemaker-dev-<ver>-windows-mingw-<type>.zip` | `libplatemaker.dll` + headers + CMake config + runtime DLLs |
+| Windows MinGW cli | `platemaker-cli-<ver>-windows-mingw-<type>.zip` | `platemaker-cli.exe` + all runtime DLLs |
 
-The Linux package contains **only** the library and headers — `libvips` and its dependencies must be installed separately (see below). The Windows MinGW package is self-contained: all required DLLs are bundled in `bin/`.
+The Linux packages contain **only** Platemaker's own binaries — `libvips` and its
+dependencies must be installed separately (see below). The Windows MinGW packages are
+self-contained: all required DLLs are bundled in `bin/`.
 
 ### Linux — system prerequisites
 
@@ -180,10 +187,10 @@ At configure time, tell CMake where the extracted package lives:
 
 ```bash
 # Linux
-cmake -B build -DCMAKE_PREFIX_PATH="/path/to/platemaker-dev-0.1.1-linux-x86_64"
+cmake -B build -DCMAKE_PREFIX_PATH="/path/to/platemaker-dev-0.1.1-linux-x86_64-release"
 
 # Windows (PowerShell)
-cmake -B build -DCMAKE_PREFIX_PATH="C:/path/to/platemaker-dev-0.1.1-windows-mingw"
+cmake -B build -DCMAKE_PREFIX_PATH="C:/path/to/platemaker-dev-0.1.1-windows-mingw-release"
 ```
 
 CMake caches `CMAKE_PREFIX_PATH`, so you only need to pass it once per build directory.
@@ -199,125 +206,137 @@ CMake caches `CMAKE_PREFIX_PATH`, so you only need to pass it once per build dir
 
 ## Build instructions
 
-### Windows MSVC
+> Preset names follow `platform-buildtype`, so the build type is explicit:
+> `linux-release`, `linux-debug`, `mingw-release`, `mingw-debug`
+> (plus `linux-asan` for local sanitizer runs, `msvc-release` / `msvc-debug`).
+> For a copy-paste command list see **[docs/CHEATSHEET.md](docs/CHEATSHEET.md)**.
 
-Open **Developer PowerShell for VS 2022**:
-
-```powershell
-cmake --preset windows-msvc
-cmake --build --preset windows-msvc
-
-# Debug build
-cmake --preset windows-msvc-debug
-cmake --build --preset windows-msvc-debug
-
-# Run tests
-ctest --preset windows-msvc
-```
-
-### Windows MinGW
+### Windows MinGW (primary — the Qt GUI links against this)
 
 Open **any PowerShell** (MSYS2 environment variables must be set — see above):
 
 ```powershell
-cmake --preset windows-mingw
-cmake --build --preset windows-mingw
+cmake --preset mingw-release
+cmake --build --preset mingw-release
+ctest --preset mingw-release
+
+# Debug build
+cmake --preset mingw-debug
+cmake --build --preset mingw-debug
 ```
 
 ### Linux
 
 ```bash
-cmake --preset linux-system
-cmake --build --preset linux-system
-ctest --preset linux-system
+cmake --preset linux-release
+cmake --build --preset linux-release
+ctest --preset linux-release
 
-# Debug + AddressSanitizer
-cmake --preset linux-system-debug
-cmake --build --preset linux-system-debug
+# Debug
+cmake --preset linux-debug
+cmake --build --preset linux-debug
+
+# Debug + AddressSanitizer (local only, not packageable)
+cmake --preset linux-asan
+cmake --build --preset linux-asan
+```
+
+### Windows MSVC (secondary)
+
+Open **Developer PowerShell for VS 2022**. The GUI links with MinGW, so MSVC is for
+standalone CLI / testing only — an MSVC-built lib mismatches MinGW name mangling.
+
+```powershell
+cmake --preset msvc-release
+cmake --build --preset msvc-release
+ctest --preset msvc-release
 ```
 
 ---
 
-## Building the dev package
+## Building the packages
 
-The dev package contains the shared library, all public headers, CMake config files, and bundled runtime DLLs (Windows).
+Each build produces **two** archives, split by CPack component group:
 
-There are two ways to produce it. They run the **same install rules** (including the MinGW DLL pruning that bundles only libvips' actual runtime-dependency closure) — the difference is what they wrap around those rules:
-
-| | `cmake --workflow --preset release-<platform>` | `cmake --install <build-dir>` |
+| Archive | Contents | For |
 |---|---|---|
-| **Purpose** | Cut a release artifact | Install locally for GUI development |
-| **Output** | Versioned archive in `dist/` (`.zip` / `.tar.gz`) | Loose directory tree in `install/<preset>/` |
-| **Configure** | Runs its own clean configure (`*-release` preset, **tests OFF**) | Reuses your existing build tree |
-| **Build** | Builds as part of the workflow | You must `cmake --build` first |
-| **Packaging** | Yes — runs CPack | No — just copies the install output |
-| **When to use** | Publishing to GitHub Releases | Day-to-day: point the Qt GUI at `install/<preset>/` |
+| `platemaker-dev-<ver>-<sys>-<type>` | headers + CMake config + import lib + shared lib + runtime DLLs (Windows) | linking against the library (e.g. the Qt GUI) |
+| `platemaker-cli-<ver>-<sys>-<type>` | `platemaker-cli` + a self-contained copy of the runtime | running the CLI |
 
-In short: `--install` gives you a folder; `--workflow` builds from scratch (no tests) and additionally zips that same folder.
+`<type>` is `release` or `debug`; debug archives keep their symbols (no strip).
 
-### Option A — release archive (`--workflow`)
+There are two ways to produce them. Both run the **same install rules** (including the
+MinGW DLL pruning that bundles only libvips' actual runtime-dependency closure):
 
-Configure + build (no tests) + package, in a single command. Produces a versioned archive ready to attach to a GitHub Release.
+| | `cmake --workflow --preset dist-<platform>-<type>` | `cmake --install <build-dir>` |
+|---|---|---|
+| **Purpose** | Cut release artifacts | Install locally for GUI development |
+| **Output** | Two versioned archives in `dist/` | Loose directory tree in `install/<preset>/` |
+| **Steps** | configure → build → package, in one command | reuses your build tree; you `cmake --build` first |
+| **When** | Publishing to GitHub Releases | Day-to-day: point the Qt GUI at `install/<preset>/` |
+
+In short: `--install` gives you a folder; `--workflow` runs the whole
+configure → build → package waterfall and zips the result.
+
+### Option A — release archives (`--workflow`)
 
 ```powershell
-# Windows MSVC
-cmake --workflow --preset release-windows-msvc
-# → dist/platemaker-dev-0.1.1-windows-msvc.zip
-
 # Windows MinGW
-cmake --workflow --preset release-windows-mingw
-# → dist/platemaker-dev-0.1.1-windows-mingw.zip
+cmake --workflow --preset dist-mingw-release
+# → dist/platemaker-dev-0.1.1-windows-mingw-release.zip
+# → dist/platemaker-cli-0.1.1-windows-mingw-release.zip
+
+# …and dist-mingw-debug for the debug variants
 ```
 
 ```bash
 # Linux
-cmake --workflow --preset release-linux
-# → dist/platemaker-dev-0.1.1-linux-x86_64.tar.gz
+cmake --workflow --preset dist-linux-release
+# → dist/platemaker-dev-0.1.1-linux-x86_64-release.tar.gz
+# → dist/platemaker-cli-0.1.1-linux-x86_64-release.tar.gz
+
+# …and dist-linux-debug for the debug variants
 ```
+
+To re-package an existing build without rebuilding: `cpack --preset <platform>-<type>`
+(e.g. `cpack --preset mingw-release`).
 
 ### Option B — local install (`cmake --install`)
 
-Installs an already-built tree to `install/<preset>/` for direct use while developing the Qt GUI. **Configure and build first, then install** — three commands:
+Installs an already-built tree to `install/<preset>/` for direct use while developing
+the Qt GUI. **Configure and build first, then install:**
 
 ```powershell
-# Windows MSVC  — multi-config generator → --config Release is REQUIRED
-cmake --preset windows-msvc
-cmake --build --preset windows-msvc
-cmake --install build/windows-msvc --config Release
-# → install/windows-msvc/
-
-# Windows MinGW — single-config Ninja → no --config (the windows-mingw preset is Debug)
-cmake --preset windows-mingw
-cmake --build --preset windows-mingw
-cmake --install build/windows-mingw
-# → install/windows-mingw/
+# Windows MinGW
+cmake --preset mingw-debug
+cmake --build --preset mingw-debug
+cmake --install build/mingw-debug
+# → install/mingw-debug/   (set PLATEMAKER_DIR to this in Qt Creator)
 ```
 
 ```bash
-# Linux — single-config Ninja; note the build dir lives under $HOME, not ./build
-cmake --preset linux-system
-cmake --build --preset linux-system
-cmake --install ~/build/platemaker/linux-system
-# → install/linux-system/
+# Linux — note the build dir lives under $HOME, not ./build
+cmake --preset linux-release
+cmake --build --preset linux-release
+cmake --install ~/build/platemaker/linux-release
+# → install/linux-release/
 ```
 
-> **About `--config Release`:** it matters **only for multi-config generators** (Visual Studio / MSVC), where one build tree holds both Debug and Release and you must say which to install. Single-config generators (Ninja — used by MinGW and Linux) bake the build type in at configure time, so `--config` is silently ignored there.
->
-> The `windows-mingw` preset is **Debug** by default (`windows-msvc` and `linux-system` are already Release). For an optimised local MinGW install, configure with the release preset and install from its build dir instead:
-> ```powershell
-> cmake --preset windows-mingw-release
-> cmake --build --preset windows-mingw-release
-> cmake --install build/windows-mingw-release
-> # → install/windows-mingw-release/
-> ```
+> **About `--config`:** it matters **only for multi-config generators** (Visual Studio /
+> MSVC), where one build tree holds both Debug and Release — e.g.
+> `cmake --install build/msvc-release --config Release`. Single-config generators
+> (Ninja — MinGW and Linux) bake the build type in at configure time, so `--config`
+> is ignored there; the preset name already pins it.
 
 ### Install layout
+
+`cmake --install` writes all components (dev + cli) into one tree:
 
 ```
 install/<preset>/
   bin/
-    libplatemaker.dll         Windows runtime (MinGW)
-    platemaker.dll            Windows runtime (MSVC)
+    platemaker.dll            Windows runtime (MinGW: libplatemaker.dll)
+    platemaker-cli[.exe]      the CLI tool
     libvips*.dll  …           runtime DLLs (MSVC: full vips package; MinGW: pruned to libvips' actual dependency closure)
   lib/
     libplatemaker.dll.a       MinGW import library
@@ -327,8 +346,10 @@ install/<preset>/
     platemaker-config.cmake
     platemaker-config-version.cmake
     platemaker-targets.cmake
+    platemaker-targets-<config>.cmake   per-config (debug/release) import info
   include/platemaker/         all public headers
 ```
+(The packaged archives split this tree: `dev` = everything except the CLI; `cli` = the CLI + a copy of the runtime libs.)
 
 ---
 
@@ -355,10 +376,14 @@ find_package(platemaker CONFIG QUIET)
 if(NOT platemaker_FOUND)
     include(FetchContent)
 
+    string(TOLOWER "${CMAKE_BUILD_TYPE}" _pm_type)
+    if(NOT _pm_type)
+        set(_pm_type "release")
+    endif()
     if(WIN32)
-        set(_pm_archive "platemaker-dev-${PLATEMAKER_VERSION}-Windows-AMD64.zip")
+        set(_pm_archive "platemaker-dev-${PLATEMAKER_VERSION}-windows-mingw-${_pm_type}.zip")
     else()
-        set(_pm_archive "platemaker-dev-${PLATEMAKER_VERSION}-Linux-x86_64.tar.gz")
+        set(_pm_archive "platemaker-dev-${PLATEMAKER_VERSION}-linux-x86_64-${_pm_type}.tar.gz")
     endif()
 
     FetchContent_Declare(
@@ -394,7 +419,7 @@ Set `PLATEMAKER_DIR` once on the command line — CMake caches it for subsequent
 
 ```powershell
 # Windows
-cmake -B build -DPLATEMAKER_DIR="C:/path/to/platemaker-dev-0.1.1-Windows-AMD64"
+cmake -B build -DPLATEMAKER_DIR="C:/path/to/platemaker-dev-0.1.1-windows-mingw-release"
 ```
 
 ```bash
@@ -409,7 +434,7 @@ If `PLATEMAKER_DIR` is not set and platemaker is not found on the system, CMake 
 The library has an embedded RPATH of `$ORIGIN/../lib`, so executables installed alongside it find `libplatemaker.so` automatically.  During development (running from the build tree without installing), point the loader at the package manually:
 
 ```bash
-export LD_LIBRARY_PATH="/path/to/platemaker-dev-0.1.1-linux-x86_64/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="/path/to/platemaker-dev-0.1.1-linux-x86_64-release/lib:$LD_LIBRARY_PATH"
 ./my-app
 ```
 
@@ -417,19 +442,25 @@ export LD_LIBRARY_PATH="/path/to/platemaker-dev-0.1.1-linux-x86_64/lib:$LD_LIBRA
 
 ## Build presets reference
 
-| Preset | Platform | Compiler | Notes |
+| Configure / build / test preset | Platform | Type | Notes |
 |---|---|---|---|
-| `linux-system` | Linux / WSL2 | GCC | libvips from apt; others auto-fetched |
-| `linux-system-debug` | Linux / WSL2 | GCC | + ASan/UBSan |
-| `windows-msvc` | Windows | MSVC | all deps auto-fetched |
-| `windows-msvc-debug` | Windows | MSVC | debug symbols |
-| `windows-mingw` | Windows | MinGW GCC | libvips from MSYS2; others auto-fetched |
+| `linux-release` | Linux / WSL2 | Release | libvips from apt; others auto-fetched |
+| `linux-debug` | Linux / WSL2 | Debug | full symbols, no sanitizer (packageable) |
+| `linux-asan` | Linux / WSL2 | Debug | + ASan/UBSan — local only, not packaged |
+| `mingw-release` | Windows MinGW | Release | libvips from MSYS2; others auto-fetched |
+| `mingw-debug` | Windows MinGW | Debug | full symbols |
+| `msvc-release` / `msvc-debug` | Windows MSVC | Release / Debug | secondary — all deps auto-fetched |
 
-| Workflow preset | Steps |
-|---|---|
-| `release-windows-msvc` | configure → build → CPack ZIP |
-| `release-windows-mingw` | configure → build → CPack ZIP |
-| `release-linux` | configure → build → CPack TGZ |
+The same names work for `cmake --preset`, `cmake --build --preset`, `ctest --preset`
+and `cpack --preset`.
+
+| Workflow preset | Steps | Produces (in `dist/`) |
+|---|---|---|
+| `dist-linux-release` | configure → build → package (TGZ) | `platemaker-{dev,cli}-…-linux-x86_64-release.tar.gz` |
+| `dist-linux-debug` | configure → build → package (TGZ) | `…-linux-x86_64-debug.tar.gz` (unstripped) |
+| `dist-mingw-release` | configure → build → package (ZIP) | `platemaker-{dev,cli}-…-windows-mingw-release.zip` |
+| `dist-mingw-debug` | configure → build → package (ZIP) | `…-windows-mingw-debug.zip` (unstripped) |
+| `dist-msvc-release` | configure → build → package (ZIP) | `…-windows-msvc-release.zip` |
 
 ---
 
