@@ -2,8 +2,11 @@
 # install.sh — installs libplatemaker @PROJECT_VERSION@ from the extracted tarball.
 #
 # Usage:
-#   ./install.sh               # installs to /usr/local (needs sudo on most systems)
-#   ./install.sh /some/prefix  # installs to a custom prefix
+#   ./install.sh               # installs to /usr/local
+#   ./install.sh /some/prefix  # installs to a custom prefix (no root needed)
+#
+# The script detects automatically whether elevated privileges are required.
+# If they are, it re-executes itself via sudo after printing a clear explanation.
 #
 # Prerequisites:
 #   libvips must be installed. If pkg-config cannot find it, the script will
@@ -11,6 +14,7 @@
 set -euo pipefail
 
 PREFIX="${1:-/usr/local}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Check for libvips ──────────────────────────────────────────────────────────
 if ! pkg-config --exists vips-cpp 2>/dev/null; then
@@ -23,18 +27,43 @@ if ! pkg-config --exists vips-cpp 2>/dev/null; then
     exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ── Privilege check ────────────────────────────────────────────────────────────
+# Walk up to the nearest existing ancestor of PREFIX to test writability.
+_writable_ancestor() {
+    local dir="$1"
+    while [[ ! -e "$dir" ]]; do dir="$(dirname "$dir")"; done
+    [[ -w "$dir" ]]
+}
+
+if ! _writable_ancestor "$PREFIX" && [[ $EUID -ne 0 ]]; then
+    if ! command -v sudo &>/dev/null; then
+        echo "ERROR: '$PREFIX' is not writable and sudo is not available."
+        echo "Either run as root or choose a writable prefix:"
+        echo "  ./install.sh \$HOME/.local"
+        exit 1
+    fi
+    echo "Installing libplatemaker @PROJECT_VERSION@ to '$PREFIX'."
+    echo "This directory requires administrator privileges."
+    echo "The following files will be written:"
+    echo "  $PREFIX/lib/libplatemaker.so*"
+    echo "  $PREFIX/lib/cmake/platemaker/"
+    echo "  $PREFIX/lib/pkgconfig/platemaker.pc"
+    echo "  $PREFIX/include/platemaker/"
+    echo ""
+    echo "You will be prompted for your password (sudo)."
+    exec sudo "$0" "$@"
+fi
 
 # ── Copy library, headers, CMake config ───────────────────────────────────────
-install -d "$PREFIX/lib/pkgconfig" \
-           "$PREFIX/include" \
-           "$PREFIX/lib/cmake/platemaker"
+mkdir -p "$PREFIX/lib/pkgconfig" \
+         "$PREFIX/include" \
+         "$PREFIX/lib/cmake/platemaker"
 
 cp -a "$SCRIPT_DIR"/lib/libplatemaker.so*  "$PREFIX/lib/"
 cp -r "$SCRIPT_DIR"/include/*              "$PREFIX/include/"
 cp    "$SCRIPT_DIR"/lib/cmake/platemaker/* "$PREFIX/lib/cmake/platemaker/"
 
-# ── Generate pkg-config file with the actual install prefix ───────────────────
+# ── Generate pkg-config file ──────────────────────────────────────────────────
 cat > "$PREFIX/lib/pkgconfig/platemaker.pc" <<PKGEOF
 prefix=$PREFIX
 libdir=\${prefix}/lib
@@ -53,5 +82,5 @@ ldconfig 2>/dev/null || true
 
 echo "libplatemaker @PROJECT_VERSION@ installed to $PREFIX"
 echo ""
-echo "CMake users:     find_package(platemaker CONFIG REQUIRED HINTS \"$PREFIX/lib/cmake/platemaker\")"
-echo "pkg-config users: PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig pkg-config --libs platemaker"
+echo "CMake:      find_package(platemaker CONFIG REQUIRED HINTS \"$PREFIX/lib/cmake/platemaker\")"
+echo "pkg-config: PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig pkg-config --libs platemaker"

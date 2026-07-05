@@ -87,6 +87,11 @@ cmake --install build/mingw-debug
 # → install/mingw-debug/   (set PLATEMAKER_DIR to this in Qt Creator)
 ```
 
+```bash
+cmake --install build/linux-system
+cmake --install build/linux-debug
+cmake --install build/linux-release
+```
 > Linux builds in `$HOME/build/platemaker/<preset>` (not `./build`), so install from there:
 > ```bash
 > cmake --install ~/build/platemaker/linux-release
