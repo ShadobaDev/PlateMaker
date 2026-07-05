@@ -215,6 +215,22 @@ foreach(_pm_lic_comp Development cli)
     )
 endforeach()
 
+# Linux tarball: ship install.sh so developers can install without CMake.
+# configure_file substitutes @PROJECT_VERSION@ / @PROJECT_DESCRIPTION@ at
+# configure time; the script itself generates a correct platemaker.pc at
+# install time using the actual prefix chosen by the user.
+if(UNIX AND NOT APPLE)
+    configure_file(
+        "${CMAKE_SOURCE_DIR}/cmake/install.sh.in"
+        "${CMAKE_BINARY_DIR}/install.sh"
+        @ONLY
+    )
+    install(PROGRAMS "${CMAKE_BINARY_DIR}/install.sh"
+        DESTINATION "."
+        COMPONENT Development
+    )
+endif()
+
 include(CPack)
 
 # ---------------------------------------------------------------------------

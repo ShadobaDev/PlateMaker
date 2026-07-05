@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# install.sh — installs libplatemaker @PROJECT_VERSION@ from the extracted tarball.
+#
+# Usage:
+#   ./install.sh               # installs to /usr/local (needs sudo on most systems)
+#   ./install.sh /some/prefix  # installs to a custom prefix
+#
+# Prerequisites:
+#   libvips must be installed. If pkg-config cannot find it, the script will
+#   print the correct install command for your package manager and exit.
+set -euo pipefail
+
+PREFIX="${1:-/usr/local}"
+
+# ── Check for libvips ──────────────────────────────────────────────────────────
+if ! pkg-config --exists vips-cpp 2>/dev/null; then
+    echo "ERROR: libvips not found. Install it first:"
+    if   command -v apt-get &>/dev/null; then echo "  sudo apt install libvips-dev"
+    elif command -v dnf     &>/dev/null; then echo "  sudo dnf install vips-devel"
+    elif command -v pacman  &>/dev/null; then echo "  sudo pacman -S libvips"
+    else echo "  install libvips via your distribution's package manager"
+    fi
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ── Copy library, headers, CMake config ───────────────────────────────────────
+install -d "$PREFIX/lib/pkgconfig" \
+           "$PREFIX/include" \
+           "$PREFIX/lib/cmake/platemaker"
+
+cp -a "$SCRIPT_DIR"/lib/libplatemaker.so*  "$PREFIX/lib/"
+cp -r "$SCRIPT_DIR"/include/*              "$PREFIX/include/"
+cp    "$SCRIPT_DIR"/lib/cmake/platemaker/* "$PREFIX/lib/cmake/platemaker/"
+
+# ── Generate pkg-config file with the actual install prefix ───────────────────
+cat > "$PREFIX/lib/pkgconfig/platemaker.pc" <<PKGEOF
+prefix=$PREFIX
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: platemaker
+Description: @PROJECT_DESCRIPTION@
+Version: @PROJECT_VERSION@
+Libs: -L\${libdir} -lplatemaker
+Cflags: -I\${includedir}
+Requires: vips-cpp
+PKGEOF
+
+# ── Update linker cache ────────────────────────────────────────────────────────
+ldconfig 2>/dev/null || true
+
+echo "libplatemaker @PROJECT_VERSION@ installed to $PREFIX"
+echo ""
+echo "CMake users:     find_package(platemaker CONFIG REQUIRED HINTS \"$PREFIX/lib/cmake/platemaker\")"
+echo "pkg-config users: PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig pkg-config --libs platemaker"
