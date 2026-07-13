@@ -1,0 +1,52 @@
+# platemaker-cli @PROJECT_VERSION@
+
+Command-line tool for pre- and post-processing Webtoon-format artwork.
+
+## Requirements
+
+**libvips** must be installed before running the installer:
+
+| Distribution        | Command                          |
+|---------------------|----------------------------------|
+| Debian / Ubuntu     | `sudo apt install libvips`       |
+| Fedora / RHEL       | `sudo dnf install vips`          |
+| Arch Linux          | `sudo pacman -S libvips`         |
+| openSUSE            | `sudo zypper install libvips`    |
+
+## Installation
+
+```bash
+./install.sh              # installs to /usr/local (will prompt for sudo if needed)
+./install.sh ~/.local     # installs to a custom prefix without root
+```
+
+The script will:
+1. Verify that libvips is installed — and tell you how to install it if it's missing.
+2. Copy `platemaker-cli` to `<prefix>/bin/`.
+3. Copy `libplatemaker.so` to `<prefix>/lib/` and refresh the linker cache.
+
+If you installed to a custom prefix, add it to your PATH:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"   # add to ~/.bashrc or ~/.zshrc
+```
+
+## Usage
+
+```bash
+platemaker-cli --help
+```
+
+## Uninstallation
+
+```bash
+rm <prefix>/bin/platemaker-cli
+rm <prefix>/lib/libplatemaker.so*
+```
+
+## License
+
+`platemaker-cli` is distributed under the **GNU General Public License v3.0** (GPL-3.0).
+See `LICENSE` for the full text.
+
+The bundled `libplatemaker` is licensed under LGPL-3.0.

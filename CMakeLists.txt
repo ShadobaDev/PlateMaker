@@ -206,14 +206,17 @@ set(CPACK_INSTALL_CMAKE_PROJECTS
     "${CMAKE_BINARY_DIR}" "${PROJECT_NAME}" "ALL" "/"
 )
 
-# LICENSE belongs in both archives → install under a component in each group.
-foreach(_pm_lic_comp Development cli)
-    install(FILES "${CMAKE_SOURCE_DIR}/LICENSE.LGPL"
-        DESTINATION "."
-        RENAME "LICENSE"
-        COMPONENT ${_pm_lic_comp}
-    )
-endforeach()
+# LICENSE belongs in both archives — library (dev) ships LGPL, CLI ships GPL.
+install(FILES "${CMAKE_SOURCE_DIR}/LICENSE.LGPL"
+    DESTINATION "."
+    RENAME "LICENSE"
+    COMPONENT Development
+)
+install(FILES "${CMAKE_SOURCE_DIR}/LICENSE.GPL"
+    DESTINATION "."
+    RENAME "LICENSE"
+    COMPONENT cli
+)
 
 # Linux tarball: ship install.sh so developers can install without CMake.
 # configure_file substitutes @PROJECT_VERSION@ / @PROJECT_DESCRIPTION@ at
@@ -228,6 +231,28 @@ if(UNIX AND NOT APPLE)
     install(PROGRAMS "${CMAKE_BINARY_DIR}/install.sh"
         DESTINATION "."
         COMPONENT Development
+    )
+
+    configure_file(
+        "${CMAKE_SOURCE_DIR}/cmake/install-cli.sh.in"
+        "${CMAKE_BINARY_DIR}/install-cli.sh"
+        @ONLY
+    )
+    install(PROGRAMS "${CMAKE_BINARY_DIR}/install-cli.sh"
+        DESTINATION "."
+        RENAME "install.sh"
+        COMPONENT cli
+    )
+
+    configure_file(
+        "${CMAKE_SOURCE_DIR}/cmake/README-cli.md.in"
+        "${CMAKE_BINARY_DIR}/README-cli.md"
+        @ONLY
+    )
+    install(FILES "${CMAKE_BINARY_DIR}/README-cli.md"
+        DESTINATION "."
+        RENAME "README.md"
+        COMPONENT cli
     )
 endif()
 
