@@ -52,7 +52,7 @@ if(MSVC)
     # Version 8.16.0
     FetchContent_Declare(
         vips_binaries
-        URL https://github.com/libvips/build-win64-mxe/releases/download/v8.18.2/vips-dev-x64-all-8.18.2.zip
+        URL https://github.com/libvips/build-win64-mxe/releases/download/v8.18.2/vips-dev-x64-web-8.18.2.zip
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     
