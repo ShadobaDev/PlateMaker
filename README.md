@@ -483,3 +483,16 @@ and `cpack --preset`.
 ## Coding style
 
 See **[docs/CODING_STYLE.md](docs/CODING_STYLE.md)** for naming conventions, Doxygen comment format, namespace-to-directory mapping rules, and file layout requirements.
+
+---
+
+## Licence
+
+- **`libplatemaker`** — LGPL 3.0 (see `LICENSE.LGPL`)
+- **`platemaker-cli`** — GPL 3.0 (see `LICENSE.GPL`)
+
+---
+
+## Contributing
+
+Contributions are welcome. By opening a pull request you agree to the **[Contributor License Agreement](CLA.md)**.
