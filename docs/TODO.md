@@ -2,45 +2,14 @@
 
 ## CLI
 
-### UTF-8 argument encoding on Windows
+### ~~UTF-8 argument encoding on Windows~~ ✅
 
-PowerShell 5.1 (and `cmd.exe`) pass command-line arguments using the active console
-code page (e.g. Windows-1250 for Polish locale) instead of UTF-8.  Passing names
-with non-ASCII characters (e.g. `--name "Rozdział 01"`) causes
-`json.exception.type_error.316: invalid UTF-8 byte` when the workspace is saved.
-
-Two approaches to fix:
-
-**Option A — set UTF-8 console code page at startup (simple):**
-```cpp
-// cli/main.cpp  — top of main()
-#ifdef _WIN32
-#include <windows.h>
-SetConsoleCP(CP_UTF8);
-SetConsoleOutputCP(CP_UTF8);
-#endif
-```
-
-**Option B — use `wmain` + UTF-16 → UTF-8 conversion (robust):**
-```cpp
-// cli/main.cpp
-#ifdef _WIN32
-int wmain(int argc, wchar_t* argv[])
-{
-    std::vector<std::string> args_utf8;
-    for (int i = 0; i < argc; ++i) {
-        int len = WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, nullptr, 0, nullptr, nullptr);
-        std::string s(len - 1, '\0');
-        WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, s.data(), len, nullptr, nullptr);
-        args_utf8.push_back(std::move(s));
-    }
-    // rebuild char* argv from args_utf8 and call run(argc, argv)
-}
-#endif
-```
-
-Option B is more correct — `SetConsoleCP` only affects input read from the console,
-not arguments already passed by the shell.
+Implemented (Option B) in `cli/main.cpp`: on Windows `main()` ignores the ANSI argv,
+rebuilds a UTF-8 argv from the real UTF-16 command line
+(`GetCommandLineW` + `CommandLineToArgvW` → `WideCharToMultiByte`), and delegates to
+`runCli(argc, argv)`. Console output is also set to UTF-8 (`SetConsoleOutputCP`), so
+non-ASCII names/paths and the description print correctly. `shell32` is linked for
+`CommandLineToArgvW`. Non-Windows keeps the plain `main` → `runCli` path.
 
 ---
 

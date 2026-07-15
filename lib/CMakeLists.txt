@@ -107,6 +107,17 @@ generate_export_header(platemaker-lib
         "${CMAKE_CURRENT_BINARY_DIR}/platemaker/platemaker_export.h"
 )
 
+# ---------------------------------------------------------------------------
+# Version / metadata header — generated from the root project() declaration.
+# Header-only constexpr values (single source of truth); consumed by the CLI
+# (--version) and available to any package consumer via #include <platemaker/version.hpp>.
+# ---------------------------------------------------------------------------
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/platemaker/version.hpp"
+    @ONLY
+)
+
 # Windows DLL symbol export.
 # MSVC: WINDOWS_EXPORT_ALL_SYMBOLS generates a .def file automatically.
 # MinGW/GCC: the equivalent is the --export-all-symbols linker flag;
@@ -164,7 +175,9 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
     COMPONENT Development
 )
 
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/platemaker/platemaker_export.h"
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/platemaker/platemaker_export.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/platemaker/version.hpp"
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/platemaker
     COMPONENT Development
 )

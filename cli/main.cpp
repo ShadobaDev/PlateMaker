@@ -61,6 +61,7 @@
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/project_item.hpp>
 #include <platemaker/models/workspace.hpp>
+#include <platemaker/version.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -81,10 +82,16 @@
 #include <unordered_set>
 #include <vector>
 
-// ---------------------------------------------------------------------------
-// Version constant (kept in sync with CMakeLists.txt project VERSION)
-// ---------------------------------------------------------------------------
-static constexpr const char* k_version = "0.1.1";
+#ifdef _WIN32
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX          // MinGW's os_defines.h already defines it — don't redefine
+#  endif
+#  include <windows.h>       // SetConsoleOutputCP, GetCommandLineW, CommandLineToArgvW
+#  include <shellapi.h>      // CommandLineToArgvW
+#endif
 
 namespace fs = std::filesystem;
 using namespace Platemaker::Models;
@@ -273,7 +280,11 @@ static std::string nowIso8601()
 
 static int cmdVersion()
 {
-    std::cout << k_version << '\n';
+    // First line stays machine-parseable: "platemaker <version>".
+    std::cout << Platemaker::project_name << ' ' << Platemaker::version_string << '\n';
+    std::cout << Platemaker::description << '\n';
+    std::cout << "libvips " << vips_version(0) << '.'
+              << vips_version(1) << '.' << vips_version(2) << '\n';
     return 0;
 }
 
@@ -1537,7 +1548,8 @@ static int cmdTemplate(const Opts& opts)
 // main
 // ===========================================================================
 
-int main(int argc, char** argv)
+// Real CLI logic. argv is always UTF-8 (guaranteed by the Windows main() below).
+static int runCli(int argc, char** argv)
 {
     if (VIPS_INIT(argv[0])) {
         std::cerr << "Fatal: libvips init failed: "
@@ -1611,3 +1623,54 @@ int main(int argc, char** argv)
     vips_shutdown();
     return exitCode;
 }
+
+// ===========================================================================
+// Platform entry points
+//
+// On Windows the shell passes argv in the active console code page (e.g. CP1250
+// for a Polish locale), so non-ASCII arguments — e.g. --name "Rozdział 01" —
+// arrive as invalid UTF-8 and later break JSON serialisation
+// (json.exception.type_error.316). We ignore the ANSI argv entirely and rebuild
+// a UTF-8 argv from the real UTF-16 command line, and switch console output to
+// UTF-8 so non-ASCII text also prints correctly.
+// ===========================================================================
+#ifdef _WIN32
+int main()
+{
+    SetConsoleOutputCP(CP_UTF8);
+
+    int wargc = 0;
+    LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
+    if (!wargv) {
+        std::cerr << "Fatal: cannot parse the command line.\n";
+        return 1;
+    }
+
+    // Convert each UTF-16 argument to a UTF-8 std::string (owned by `storage`).
+    std::vector<std::string> storage;
+    storage.reserve(static_cast<std::size_t>(wargc));
+    for (int i = 0; i < wargc; ++i) {
+        const int len = WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1,
+                                            nullptr, 0, nullptr, nullptr);
+        std::string s(len > 0 ? static_cast<std::size_t>(len - 1) : 0, '\0');
+        if (len > 0)
+            WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1,
+                                s.data(), len, nullptr, nullptr);
+        storage.push_back(std::move(s));
+    }
+    LocalFree(wargv);
+
+    // Build a char* argv[] pointing into `storage` (stable — reserved above).
+    std::vector<char*> argv_utf8;
+    argv_utf8.reserve(storage.size() + 1);
+    for (auto& s : storage) argv_utf8.push_back(s.data());
+    argv_utf8.push_back(nullptr);
+
+    return runCli(wargc, argv_utf8.data());
+}
+#else
+int main(int argc, char** argv)
+{
+    return runCli(argc, argv);
+}
+#endif

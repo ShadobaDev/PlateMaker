@@ -19,6 +19,11 @@ target_link_libraries(platemaker-cli
         nlohmann_json::nlohmann_json
 )
 
+# Windows: CommandLineToArgvW (UTF-8 argv reconstruction in main()) lives in shell32.
+if(WIN32)
+    target_link_libraries(platemaker-cli PRIVATE shell32)
+endif()
+
 # ---------------------------------------------------------------------------
 # Install — the CLI ships in its own CPack component ("cli"), packaged as the
 # standalone platemaker-cli-<ver>-<sys>-<type> archive (see root CMakeLists.txt).
