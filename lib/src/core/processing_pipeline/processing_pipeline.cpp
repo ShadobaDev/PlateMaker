@@ -167,48 +167,37 @@ ProcessingOutcome ProcessingPipeline::run(
         ((remainder > 0 && outProfile.lastSlicePolicy != LastSlicePolicy::Crop) ? 1 : 0);
 
     // -----------------------------------------------------------------------
-    // 2. Slice the strip (cancellable — returns the slices completed so far).
-    // -----------------------------------------------------------------------
-    std::vector<SliceResult> slices;
-    try {
-        slices = strip.sliceAll(outProfile.sliceHeight,
-                                outProfile.lastSlicePolicy, cancel);
-    } catch (const std::exception& e) {
-        outcome.failed       = true;
-        outcome.errorMessage = std::string("Slicing failed: ") + e.what();
-        emitLog(onLog, ProcessingLogLevel::Error, outcome.errorMessage);
-        return outcome;
-    }
-
-    // -----------------------------------------------------------------------
-    // 3. Save each slice (per-slice progress + cancellation).
+    // 2. Slice and save in one pass.
+    //
+    // The strip streams each slice to us and releases source images as it goes,
+    // so saving must happen here rather than over a collected list — that is what
+    // keeps only one slice and ~two sources alive at a time.
     // -----------------------------------------------------------------------
     const std::string ext = fmtExt(outProfile.outputFormat);
-    outcome.records.reserve(slices.size());
 
-    const auto sliceName = [&](const SliceResult& s) {
-        return "output_" + zeroPad(outProfile.startIndex + s.index, 3) + ext;
+    const auto sliceName = [&](int index) {
+        return "output_" + zeroPad(outProfile.startIndex + index, 3) + ext;
     };
 
-    // Partial render: progress denominator is the number of slices we will
-    // actually save (those whose name is in the filter), not the full count.
+    // Partial render: progress denominator is the number of slices we will actually
+    // save (those whose name is in the filter), not the full count. Slice names derive
+    // from the index alone, so this is computed from the expected count up front —
+    // no need to build the slices first.
     int renderTotal = expectedTotal;
     if (onlySlices) {
         renderTotal = 0;
-        for (const auto& s : slices)
-            if (onlySlices->count(sliceName(s))) ++renderTotal;
+        for (int i = 0; i < expectedTotal; ++i)
+            if (onlySlices->count(sliceName(i))) ++renderTotal;
     }
+    outcome.records.reserve(static_cast<std::size_t>(renderTotal));
 
     int savedCount = 0;
-    for (std::size_t i = 0; i < slices.size(); ++i) {
-        if (cancel.isCancelled()) { outcome.cancelled = true; break; }
-
-        const auto& slice = slices[i];
-        const std::string outName = sliceName(slice);
+    const auto onSlice = [&](SliceResult&& slice) -> bool {
+        const std::string outName = sliceName(slice.index);
 
         // Skip clean slices when a partial-render filter is supplied.
         if (onlySlices && onlySlices->count(outName) == 0)
-            continue;
+            return true;
 
         const std::string outPath = outputDir + "/" + outName;
 
@@ -218,13 +207,13 @@ ProcessingOutcome ProcessingPipeline::run(
             outcome.failed       = true;
             outcome.errorMessage = "Failed to save '" + outName + "': " + e.what();
             emitLog(onLog, ProcessingLogLevel::Error, outcome.errorMessage);
-            return outcome;
+            return false;   // stop slicing
         }
 
         ProcessingSliceRecord rec;
         rec.fileName     = outName;
         rec.outputSha256 = FileMetaData::computeFileSha256(outPath);
-        rec.sourceMap    = slice.sourceMap;
+        rec.sourceMap    = std::move(slice.sourceMap);
         outcome.records.push_back(std::move(rec));
 
         ++savedCount;
@@ -233,9 +222,25 @@ ProcessingOutcome ProcessingPipeline::run(
             onProgress({savedCount, renderTotal, outName});
         if (onSliceSaved)
             onSliceSaved(outName, outPath);
+
+        return true;
+    };
+
+    try {
+        strip.sliceAll(outProfile.sliceHeight, outProfile.lastSlicePolicy,
+                       cancel, onSlice);
+    } catch (const std::exception& e) {
+        outcome.failed       = true;
+        outcome.errorMessage = std::string("Slicing failed: ") + e.what();
+        emitLog(onLog, ProcessingLogLevel::Error, outcome.errorMessage);
+        return outcome;
     }
 
-    // If slicing itself was cut short by cancellation, flag it.
+    // A save error already set `failed` and stopped the run; don't mask it.
+    if (outcome.failed)
+        return outcome;
+
+    // If slicing was cut short by cancellation, flag it.
     if (cancel.isCancelled())
         outcome.cancelled = true;
 

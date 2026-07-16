@@ -35,9 +35,13 @@ add_executable(platemaker-lib-tests
     test_canvas_profile_matcher.cpp
 )
 
+# libvips is PRIVATE on platemaker-lib (VipsImage never appears in the public API),
+# but tests are part of this project rather than consumers: they need VIPS_INIT and
+# vips_black() to build synthetic images for the ScaledStrip memory-contract test.
 target_link_libraries(platemaker-lib-tests
     PRIVATE
         Platemaker::platemaker
+        VIPS::vips-cpp
         GTest::gtest
         GTest::gtest_main
 )

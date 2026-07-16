@@ -32,7 +32,7 @@ typedef struct _VipsImage VipsImage; //!< Opaque libvips image handle.
  * \brief Core image-processing components of libplatemaker.
  *
  * The Core namespace contains the main processing pipeline: PixelBuffer, Scaler,
- * ScaledStrip, Slicer, MarginCropper, and TemplateGenerator.  All components in
+ * ScaledStrip, MarginCropper, and TemplateGenerator.  All components in
  * this namespace are pure C++ and have zero dependency on Qt.
  */
 namespace Platemaker::Core {

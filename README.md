@@ -22,7 +22,7 @@ platemaker/
 │   ├── cmake/               # CMake package config template
 │   ├── include/platemaker/
 │   │   ├── models/          # Shared data types (CanvasProfile, Workspace, …)
-│   │   ├── core/            # Pipeline components (Scaler, ScaledStrip, Slicer, …)
+│   │   ├── core/            # Pipeline components (Scaler, ScaledStrip, MarginCropper, …)
 │   │   └── infrastructure/  # IO + caching (ImageIO, WorkspaceSerializer, ThumbnailCache)
 │   └── src/                 # Implementation files (mirrors include/ structure)
 ├── cli/                     # platemaker binary — links libplatemaker

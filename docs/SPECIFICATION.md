@@ -102,7 +102,7 @@ The margin crop step is deterministic and driven entirely by the saved `CanvasPr
 │        CLI binary  (`platemaker`)            │  Standalone tool; future web backend
 ├──────────────────────────────────────────────┤
 │      Core Library  (`libplatemaker`)         │  Pure C++, zero Qt dependency
-│  Scaler │ Strip │ Slicer │ Cropper │ TplGen  │
+│  Scaler │ Strip │ Cropper │ TplGen  │ Match  │
 ├──────────────────────────────────────────────┤
 │       Infrastructure / IO                    │  WorkspaceSerializer, ImageIO, Cache
 ├──────────────────────────────────────────────┤
@@ -151,22 +151,35 @@ libplatemaker  (shared library, pure C++)
 #### `Scaler`
 - Input: file path + target width (px)
 - Output: `ScaledImage` (pixel buffer + original file path for provenance)
-- Algorithm: **Lanczos3** via `vips_thumbnail()` — aspect-preserving, anti-aliased
+- Algorithm: **Lanczos3** via `vips_resize()` — aspect-preserving, anti-aliased
 - Stateless and thread-safe
-- Uses libvips sequential access — does not load the full source image to RAM
+- Loads with `VIPS_ACCESS_RANDOM`, which caches the decoded source in RAM; the resize on top of it stays lazy. `vips_thumbnail()` (sequential access) is deliberately **not** used — it makes downstream `vips_extract_area` + tiled encoders read out of order. See the rationale block in `scaler.cpp`.
+- Consequence: the full-resolution source is what occupies memory, not the scaled result. `ScaledStrip` is what bounds how many are alive at once.
 
 #### `ScaledStrip`
 - Abstraction of the virtual tape
 - Accepts `ScaledImage` objects appended one at a time via `append()`
-- **Memory policy:** retains only the minimum number of scaled images required to assemble the next output slice. Once a source image's pixels are no longer needed by any future slice, it is freed immediately. At most 2 source images are in memory simultaneously (when a slice boundary splits across a file boundary).
+- Produces exactly `floor(totalHeight / sliceHeight)` full slices + 1 tail (if remainder > 0)
+- LastSlicePolicy: `CROP` | `PAD_WHITE` | `KEEP_AS_IS`
 - Tracks `SourceMap` — which input file and Y-range contributed to each output slice
+- **Memory policy:** only the sources overlapping the slice currently being built hold decoded pixels — the minimum the slice cannot be assembled without. This is deliberately not a fixed number:
+  - Sources taller than `sliceHeight` (the usual case): 1, or 2 when the slice straddles a source boundary.
+  - Sources shorter than `sliceHeight`: as many as it takes to fill the slice. A 200px leftover tail + a 500px extra panel + a 100px spacer + 480px off the next page all feed one 1280px slice → 4 live sources. Inputs are **not** required to be at least one slice tall; this is how a small panel or some breathing room between panels can be inserted without redrawing the surrounding pages.
+  
+  It rests on two mechanisms, both required:
+  1. *Decoding is lazy* — an appended source is decoded only when the first slice overlapping it is computed, not when it is appended.
+  2. *`sliceAll()` releases as it advances* — slices go in increasing Y, so a source lying entirely above the current slice can never contribute again and its buffer is dropped.
+- `sliceAll()` therefore **consumes** the strip (single-use) and streams slices to a callback rather than returning them: collecting them would be harmless in itself (slices are lazy graphs, not pixels), but saving must interleave with slicing for the release to bound anything.
 
 ```cpp
 class ScaledStrip {
 public:
+    using SliceFn = std::function<bool(SliceResult&&)>;  // false → stop
+
     void append(ScaledImage image);
     int totalHeight() const;
-    std::vector<SliceResult> sliceAll(int sliceHeight, LastSlicePolicy policy);
+    void sliceAll(int sliceHeight, LastSlicePolicy policy,
+                  const CancellationToken& cancel, const SliceFn& onSlice);
 };
 ```
 
@@ -184,11 +197,6 @@ struct SliceResult {
     std::vector<SourceSegment> sourceMap; // provenance — used for incremental hashing
 };
 ```
-
-#### `Slicer`
-- Operates on `ScaledStrip`, not on individual files
-- Produces exactly `floor(totalHeight / sliceHeight)` full slices + 1 tail (if remainder > 0)
-- LastSlicePolicy: `CROP` | `PAD_WHITE` | `KEEP_AS_IS`
 
 #### `MarginCropper`
 - Input: pixel buffer + `Margins` struct (top/right/bottom/left in px)
@@ -718,9 +726,8 @@ This makes the web frontend entirely independent of the C++ codebase. iPad / mob
 - [x] Integrate libvips, nlohmann/json
 - [x] Implement `ImageIO` with PNG/JPEG/WebP support and per-file error handling
 - [x] Implement `PixelBuffer` abstraction (RAII wrapper for `VipsImage*`)
-- [x] Implement `Scaler` (Lanczos3, aspect-preserving, sequential access)
-- [x] Implement `ScaledStrip` (streaming, minimum-RAM policy, sourceMap tracking)
-- [x] Implement `Slicer` (all three LastSlicePolicy values)
+- [x] Implement `Scaler` (Lanczos3, aspect-preserving, random access)
+- [x] Implement `ScaledStrip` (streaming, minimum-RAM policy, sourceMap tracking, all three LastSlicePolicy values)
 - [x] Implement `MarginCropper`
 - [x] Implement `WorkspaceSerializer` (read + write + version field + processedFiles)
 - [x] Implement cancellation token (`std::atomic<bool>`)

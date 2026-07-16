@@ -2,15 +2,6 @@
 
 ## CLI
 
-### ~~UTF-8 argument encoding on Windows~~ ✅
-
-Implemented (Option B) in `cli/main.cpp`: on Windows `main()` ignores the ANSI argv,
-rebuilds a UTF-8 argv from the real UTF-16 command line
-(`GetCommandLineW` + `CommandLineToArgvW` → `WideCharToMultiByte`), and delegates to
-`runCli(argc, argv)`. Console output is also set to UTF-8 (`SetConsoleOutputCP`), so
-non-ASCII names/paths and the description print correctly. `shell32` is linked for
-`CommandLineToArgvW`. Non-Windows keeps the plain `main` → `runCli` path.
-
 ---
 
 ## Tests

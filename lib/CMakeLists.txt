@@ -15,7 +15,6 @@ set(PLATEMAKER_SOURCES
     src/core/pixel_buffer/pixel_buffer.cpp
     src/core/scaler/scaler.cpp
     src/core/scaled_strip/scaled_strip.cpp
-    src/core/slicer/slicer.cpp
     src/core/margin_cropper/margin_cropper.cpp
     src/core/template_generator/template_generator.cpp
     src/core/canvas_profile_matcher/canvas_profile_matcher.cpp

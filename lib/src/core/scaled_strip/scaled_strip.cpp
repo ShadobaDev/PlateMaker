@@ -5,8 +5,10 @@
  * The strip accumulates ScaledImage objects and slices them into fixed-height
  * output panels.  libvips deferred evaluation ensures that pixel data for a
  * given source image is only computed when it is actually needed to assemble
- * the next output slice.  At most two source images are held in memory
- * simultaneously when a slice boundary straddles a file boundary.
+ * the next output slice; sliceAll() then releases each source once the slice
+ * cursor has passed it.  Together these keep only the sources overlapping the
+ * current slice decoded — usually one or two, but as many as it takes when the
+ * sources are shorter than a slice.  See the class docs for the full contract.
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
  * 
@@ -38,8 +40,11 @@ void ScaledStrip::append(ScaledImage image)
 
     Entry entry;
     entry.startY = m_totalHeight;
+    // Cache the height now: sliceAll() releases buffers as it advances, and a released
+    // buffer reports height 0 — the strip's geometry must survive that.
+    entry.height = image.buffer.height();
     entry.image  = std::move(image);
-    m_totalHeight += entry.image.buffer.height();
+    m_totalHeight += entry.height;
     m_entries.push_back(std::move(entry));
 }
 
@@ -68,10 +73,23 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
     parts.reserve(2); // at most 2 in the common case
 
     for (const auto& entry : m_entries) {
-        const int entryEndY = entry.startY + entry.image.buffer.height();
+        // Geometry comes from the cached height, never from the buffer: entries we have
+        // already sliced past have had their buffers released and report height 0.
+        const int entryEndY = entry.startY + entry.height;
 
         if (entryEndY <= sliceStartY) continue; // entirely above this slice
         if (entry.startY >= sliceEndY) break;   // entirely below — entries are ordered
+
+        // An overlapping entry must still hold its pixels. If it does not,
+        // releaseConsumedEntries() ran ahead of the slice cursor — a logic error here,
+        // not bad input, and one that would otherwise surface as a confusing vips failure.
+        if (!entry.image.buffer.isValid()) {
+            for (VipsImage* p : parts) g_object_unref(p);
+            throw std::runtime_error(
+                "ScaledStrip::buildSlice() — source '" + entry.image.sourceFilePath +
+                "' overlaps slice " + std::to_string(index) +
+                " but its buffer was already released");
+        }
 
         // Intersection in virtual-strip coordinates.
         const int overlapStart = std::max(entry.startY, sliceStartY);
@@ -135,26 +153,31 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
 }
 
 // ---------------------------------------------------------------------------
-// sliceAll — no-cancel overload
+// releaseConsumedEntries (private)
 // ---------------------------------------------------------------------------
 
-std::vector<SliceResult> ScaledStrip::sliceAll(
-    int                     sliceHeight,
-    Models::LastSlicePolicy policy) const
+void ScaledStrip::releaseConsumedEntries(int sliceStartY) noexcept
 {
-    // Construct a dummy no-op token so we share one implementation path.
-    Infrastructure::CancellationToken noop;
-    return sliceAll(sliceHeight, policy, noop);
+    // Slices advance in increasing Y, so an entry ending at or above the next slice's
+    // top can never contribute again. Dropping the buffer unrefs the VipsImage, which
+    // lets libvips free the decoded source — this is what keeps peak memory flat.
+    // The entry stays in place; its startY/height still define the strip's geometry.
+    for (auto& entry : m_entries) {
+        if (entry.startY >= sliceStartY) break;  // entries are ordered — rest are below
+        if (entry.startY + entry.height <= sliceStartY)
+            entry.image.buffer = PixelBuffer{};
+    }
 }
 
 // ---------------------------------------------------------------------------
-// sliceAll — cancellable overload
+// sliceAll
 // ---------------------------------------------------------------------------
 
-std::vector<SliceResult> ScaledStrip::sliceAll(
+void ScaledStrip::sliceAll(
     int                                      sliceHeight,
     Models::LastSlicePolicy                  policy,
-    const Infrastructure::CancellationToken& cancelToken) const
+    const Infrastructure::CancellationToken& cancelToken,
+    const SliceFn&                           onSlice)
 {
     if (m_entries.empty()) {
         throw std::runtime_error("ScaledStrip::sliceAll() — strip is empty");
@@ -164,17 +187,21 @@ std::vector<SliceResult> ScaledStrip::sliceAll(
             "ScaledStrip::sliceAll() — sliceHeight must be > 0 (got " +
             std::to_string(sliceHeight) + ")");
     }
+    if (!onSlice) {
+        throw std::runtime_error("ScaledStrip::sliceAll() — onSlice callback is empty");
+    }
 
     const int numFull = m_totalHeight / sliceHeight;
     const int tail    = m_totalHeight % sliceHeight;
 
-    std::vector<SliceResult> results;
-    results.reserve(static_cast<std::size_t>(numFull) + (tail > 0 ? 1 : 0));
-
     // --- Full slices ---
     for (int i = 0; i < numFull; ++i) {
-        if (cancelToken.isCancelled()) return results;
-        results.push_back(buildSlice(i, i * sliceHeight, sliceHeight));
+        if (cancelToken.isCancelled()) return;
+
+        const int sliceStartY = i * sliceHeight;
+        releaseConsumedEntries(sliceStartY);
+
+        if (!onSlice(buildSlice(i, sliceStartY, sliceHeight))) return;
     }
 
     // --- Tail slice ---
@@ -187,10 +214,12 @@ std::vector<SliceResult> ScaledStrip::sliceAll(
                 break;
 
             case Models::LastSlicePolicy::KeepAsIs:
-                results.push_back(buildSlice(numFull, tailStartY, tail));
+                releaseConsumedEntries(tailStartY);
+                (void)onSlice(buildSlice(numFull, tailStartY, tail));
                 break;
 
             case Models::LastSlicePolicy::PadWhite: {
+                releaseConsumedEntries(tailStartY);
                 SliceResult tailSlice = buildSlice(numFull, tailStartY, tail);
 
                 // Embed the tail image into a white canvas of the full sliceHeight.
@@ -207,13 +236,11 @@ std::vector<SliceResult> ScaledStrip::sliceAll(
                         std::string(vips_error_buffer()));
                 }
                 tailSlice.image = PixelBuffer{padded};
-                results.push_back(std::move(tailSlice));
+                (void)onSlice(std::move(tailSlice));
                 break;
             }
         }
     }
-
-    return results;
 }
 
 } // namespace Platemaker::Core
