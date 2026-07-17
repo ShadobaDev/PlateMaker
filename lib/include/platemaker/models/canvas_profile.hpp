@@ -121,6 +121,34 @@ public:
     [[nodiscard]] Size safeArea() const noexcept;
 };
 
+// ---------------------------------------------------------------------------
+// Render-relevant identity
+// ---------------------------------------------------------------------------
+
+/**
+ * \brief Returns the render-relevant identity of \p cp — everything about the profile
+ *        that can change output pixels, and nothing else.
+ *
+ * Covers \c canvasSize (which page a profile matches) and \c margins (what
+ * MarginCropper removes).  Recorded per input at render time, then compared on the
+ * next run: a mismatch means that page's output is stale.
+ *
+ * \warning Deliberately **excludes** \c visualColour and \c backgroundColour.  Those
+ *          only affect the generated template PNG, never a render — folding them in
+ *          would force a full re-render every time the overlay colour is nudged.
+ *          This is why \c TemplateGenerator::signature() (which does include them,
+ *          correctly, for template identity) must not be reused here.
+ *
+ * \note Format matches the house convention (\c outputProfileSignature,
+ *       \c TemplateGenerator::signature): a deterministic, tagged, human-inspectable
+ *       string rather than a hash — it stays readable in the workspace JSON and is
+ *       shorter than a hex digest.
+ *
+ * \param cp The profile to fingerprint.
+ * \return e.g. \c "cw=1600;ch=10240;mt=100;mr=100;mb=100;ml=100"
+ */
+[[nodiscard]] PLATEMAKER_EXPORT std::string canvasRenderFingerprint(const CanvasProfile& cp);
+
 } // namespace Platemaker::Models
 
 #endif // PLATEMAKER_MODELS_CANVAS_PROFILE_HPP

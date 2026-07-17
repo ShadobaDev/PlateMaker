@@ -826,6 +826,13 @@ static int cmdProcess(const Opts& opts)
     // --- Sanitize — update file statuses and check if reprocess is needed ---
     project.sanitize();
 
+    // --no-profile is honoured by passing an empty canvas-profile palette (no margin
+    // matching). Declared here because staleness detection and the pipeline run must
+    // agree on which palette is in effect.
+    const std::vector<CanvasProfile> noProfiles;
+    const std::vector<CanvasProfile>& effectiveProfiles =
+        noProfile ? noProfiles : ws.canvasProfiles;
+
     // Detect an output-invalidating configuration change (format / slice size /
     // quality / …) by comparing the current profile signature against the one
     // stored at the last render. A mismatch makes every existing slice stale.
@@ -847,7 +854,25 @@ static int cmdProcess(const Opts& opts)
         formatMismatch = !haveExt.empty() && haveExt != wantExt;
     }
 
-    const bool configChanged = hasOutputs && (sigMismatch || formatMismatch);
+    // Canvas-profile edits are invisible to every check above: they change neither the
+    // input files nor the output files, and outputProfileSignature() covers the output
+    // profile only. Without this, editing margins left the project reporting itself up
+    // to date while its outputs were stale.
+    const auto canvasChange =
+        project.detectCanvasConfigChange(effectiveProfiles);
+
+    const bool configChanged =
+        hasOutputs && (sigMismatch || formatMismatch || canvasChange.any());
+
+    if (!jsonMode && canvasChange.any()) {
+        if (canvasChange.listChanged)
+            std::cerr << "Canvas profiles changed since the last render "
+                         "(added / removed / reordered) — re-rendering.\n";
+        else
+            std::cerr << "Canvas profile edited since the last render — "
+                      << canvasChange.changedInputs.size()
+                      << " page(s) affected; re-rendering.\n";
+    }
 
     if (project.isUpToDate() && !configChanged) {
         if (!jsonMode)
@@ -922,16 +947,13 @@ static int cmdProcess(const Opts& opts)
         std::cerr << " ...\n";
     }
 
-    // Run the shared pipeline. --no-profile is honoured by passing an empty
-    // canvas-profile palette (no margin matching). The CLI never cancels, so it
-    // uses a token that stays unset.
-    const std::vector<CanvasProfile> noProfiles;
+    // The CLI never cancels, so it uses a token that stays unset.
     Platemaker::Infrastructure::CancellationToken cancelToken;
 
     const auto outcome = Platemaker::Core::ProcessingPipeline{}.run(
         project.getInputImages(),
         outProfile,
-        noProfile ? noProfiles : ws.canvasProfiles,
+        effectiveProfiles,
         project.canvasProfileIds,
         outputDir,
         cancelToken,
@@ -955,7 +977,8 @@ static int cmdProcess(const Opts& opts)
     if (partial) {
         project.applyPartialResults(outcome.records);
     } else {
-        project.applyProcessingResults(outcome.records, outputDir, nowIso8601());
+        project.applyProcessingResults(outcome.records, outcome.appliedProfiles,
+                                       effectiveProfiles, outputDir, nowIso8601());
 
         // Remove outputs the new configuration no longer produces (e.g. old-format
         // files after a PNG→JPEG switch). The CLI is non-interactive, so it cleans

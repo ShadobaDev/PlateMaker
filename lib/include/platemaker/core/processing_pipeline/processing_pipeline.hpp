@@ -48,6 +48,7 @@ enum class ProcessingLogLevel { Info, Warning, Error };
 struct ProcessingOutcome {
     std::vector<Models::ProcessingSliceRecord> records;      //!< One per saved slice, in order.
     std::vector<std::string>                   skippedPages; //!< Inputs that were skipped (missing / unmatched / load error).
+    std::vector<Models::AppliedCanvasProfile>  appliedProfiles; //!< Canvas profile applied per input (see the Models type).
     bool        cancelled = false; //!< True if cancellation cut the run short.
     bool        failed    = false; //!< True if a fatal error aborted the run.
     std::string errorMessage;      //!< Human-readable message when \c failed is true.

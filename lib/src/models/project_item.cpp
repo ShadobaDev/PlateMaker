@@ -27,6 +27,10 @@ ProjectItem::ProjectItem() noexcept
     : m_isUpToDate(false)
 {}
 
+// WARNING: these move operations enumerate every member by hand. A new field left out
+// of them is silently default-constructed on every move — and since loading a workspace
+// moves ProjectItems, the field would arrive empty with nothing to hint why. Add new
+// members here and in operator=(ProjectItem&&) as well.
 ProjectItem::ProjectItem(ProjectItem&& other) noexcept
     : name(std::move(other.name))
     , uuid(std::move(other.uuid))
@@ -34,6 +38,7 @@ ProjectItem::ProjectItem(ProjectItem&& other) noexcept
     , canvasProfileIds(std::move(other.canvasProfileIds))
     , outputProfileId(std::move(other.outputProfileId))
     , outputSignature(std::move(other.outputSignature))
+    , canvasProfileIdsAtRender(std::move(other.canvasProfileIdsAtRender))
     , m_input_images(std::move(other.m_input_images))
     , m_output_images(std::move(other.m_output_images))
     , m_output_directory(std::move(other.m_output_directory))
@@ -51,6 +56,7 @@ ProjectItem& ProjectItem::operator=(ProjectItem&& other) noexcept
         canvasProfileIds      = std::move(other.canvasProfileIds);
         outputProfileId       = std::move(other.outputProfileId);
         outputSignature       = std::move(other.outputSignature);
+        canvasProfileIdsAtRender = std::move(other.canvasProfileIdsAtRender);
         m_input_images        = std::move(other.m_input_images);
         m_output_images       = std::move(other.m_output_images);
         m_output_directory    = std::move(other.m_output_directory);
@@ -196,6 +202,77 @@ bool ProjectItem::inputsAllProcessed() const noexcept
 }
 
 // ---------------------------------------------------------------------------
+// Canvas profile staleness
+// ---------------------------------------------------------------------------
+
+std::vector<std::string> ProjectItem::effectiveCanvasProfileIds(
+    const std::vector<CanvasProfile>& workspaceProfiles) const
+{
+    std::vector<std::string> ids;
+
+    if (canvasProfileIds.empty()) {
+        // No per-project filter → CanvasProfileMatcher accepts every workspace
+        // profile, so the whole palette is what we render with.
+        ids.reserve(workspaceProfiles.size());
+        for (const auto& cp : workspaceProfiles)
+            ids.push_back(cp.id);
+        return ids;
+    }
+
+    // Keep the project's order, but drop ids that no longer exist in the workspace:
+    // they match nothing, so they cannot influence a render either way.
+    ids.reserve(canvasProfileIds.size());
+    for (const auto& id : canvasProfileIds) {
+        const auto it = std::find_if(
+            workspaceProfiles.begin(), workspaceProfiles.end(),
+            [&id](const CanvasProfile& cp) { return cp.id == id; });
+        if (it != workspaceProfiles.end())
+            ids.push_back(id);
+    }
+    return ids;
+}
+
+CanvasConfigChange ProjectItem::detectCanvasConfigChange(
+    const std::vector<CanvasProfile>& workspaceProfiles) const
+{
+    CanvasConfigChange change;
+
+    // Never rendered → no baseline to compare against, and the inputs are Pending
+    // anyway, which already forces a full run. Note this cannot be inferred from
+    // canvasProfileIdsAtRender being empty: a project rendered with no canvas
+    // profiles at all legitimately has an empty list, and adding a profile to it
+    // later must still register as a change.
+    if (m_output_images.empty())
+        return change;
+
+    // Workspaces written before per-input fingerprints existed have no baseline
+    // either, so a project that uses profiles reports listChanged here and takes one
+    // full re-render to establish it. That is the honest outcome — those outputs may
+    // genuinely be stale, since not noticing this is exactly the bug being fixed.
+    change.listChanged =
+        (effectiveCanvasProfileIds(workspaceProfiles) != canvasProfileIdsAtRender);
+
+    // Per-input: did the profile this page was rendered with change content?
+    for (const auto& inf : m_input_images) {
+        if (inf.canvasProfileId.empty())
+            continue;   // no profile applied — the list check above covers this page
+
+        const auto it = std::find_if(
+            workspaceProfiles.begin(), workspaceProfiles.end(),
+            [&inf](const CanvasProfile& cp) { return cp.id == inf.canvasProfileId; });
+
+        // Profile deleted outright, or its render-relevant fields differ.
+        if (it == workspaceProfiles.end() ||
+            canvasRenderFingerprint(*it) != inf.canvasFingerprint)
+        {
+            change.changedInputs.push_back(inf.filePath);
+        }
+    }
+
+    return change;
+}
+
+// ---------------------------------------------------------------------------
 // rebuildLookupTables
 // ---------------------------------------------------------------------------
 
@@ -220,6 +297,8 @@ void ProjectItem::rebuildLookupTables()
 
 void ProjectItem::applyProcessingResults(
     const std::vector<ProcessingSliceRecord>& records,
+    const std::vector<AppliedCanvasProfile>&  appliedProfiles,
+    const std::vector<CanvasProfile>&         workspaceProfiles,
     const std::string&                        outputDirectory,
     const std::string&                        timestamp)
 {
@@ -229,7 +308,13 @@ void ProjectItem::applyProcessingResults(
         for (const auto& seg : rec.sourceMap)
             contributes[seg.sourceFilePath].push_back(rec.fileName);
 
-    // Update each InputFile: hash, status, timestamp, contributesTo.
+    // filePath → canvas profile the run applied to it.
+    std::unordered_map<std::string, const AppliedCanvasProfile*> applied;
+    applied.reserve(appliedProfiles.size());
+    for (const auto& ap : appliedProfiles)
+        applied[ap.sourceFilePath] = &ap;
+
+    // Update each InputFile: hash, status, timestamp, contributesTo, canvas baseline.
     for (auto& inf : m_input_images) {
         const std::string h =
             Infrastructure::FileMetaData::computeFileSha256(inf.filePath);
@@ -242,6 +327,18 @@ void ProjectItem::applyProcessingResults(
         inf.contributesTo = (it != contributes.end())
                             ? it->second
                             : std::vector<std::string>{};
+
+        // Record which profile produced this page, so a later edit to it is detectable.
+        // Inputs the run never reached (e.g. Missing) get no entry — clear the baseline
+        // rather than leave a stale one claiming a profile was applied.
+        const auto ap = applied.find(inf.filePath);
+        if (ap != applied.end()) {
+            inf.canvasProfileId   = ap->second->profileId;
+            inf.canvasFingerprint = ap->second->fingerprint;
+        } else {
+            inf.canvasProfileId.clear();
+            inf.canvasFingerprint.clear();
+        }
     }
 
     // Rebuild OutputFile list from records.
@@ -259,6 +356,11 @@ void ProjectItem::applyProcessingResults(
 
     m_output_directory = outputDirectory;
     m_isUpToDate       = true;
+
+    // Baseline for detectCanvasConfigChange(): the profile list this render used.
+    // Captured here rather than by the caller so it can never drift out of sync with
+    // the per-input fingerprints written above.
+    canvasProfileIdsAtRender = effectiveCanvasProfileIds(workspaceProfiles);
 
     rebuildLookupTables();
 }

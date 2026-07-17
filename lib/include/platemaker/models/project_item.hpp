@@ -98,6 +98,26 @@ struct InputFile {
     FileStatus  status       = FileStatus::Pending; //!< Current lifecycle status.
     std::string lastProcessed;           //!< ISO 8601 timestamp of the last processing run.
     std::vector<std::string> contributesTo; //!< Output file names produced from this input.
+
+    /**
+     * \brief Id of the canvas profile applied to this page at the last render.
+     *
+     * Empty means no profile matched (the page was skipped) or the project has no
+     * canvas profiles at all.  Not needed for staleness detection — \c canvasFingerprint
+     * already catches a profile swap — but kept so the UI can say *which* profile was
+     * used instead of showing an opaque fingerprint.
+     */
+    std::string canvasProfileId;
+
+    /**
+     * \brief \c canvasRenderFingerprint() of the profile applied at the last render.
+     *
+     * The record of what was actually applied to *this* page, exactly like \c sha256
+     * records its content.  Compared against the current profile on the next run: a
+     * mismatch means this page's output is stale even though its file never changed.
+     * Empty when no profile was applied.
+     */
+    std::string canvasFingerprint;
 };
 
 /**
@@ -133,8 +153,51 @@ struct ProcessingSliceRecord {
 };
 
 // ---------------------------------------------------------------------------
+// AppliedCanvasProfile
+// ---------------------------------------------------------------------------
+
+/**
+ * \brief Which canvas profile a processing run actually applied to one input.
+ *
+ * Editing a profile leaves both the input file and the output file byte-identical, so
+ * no hash can notice that a page went stale.  This is the trace that makes it
+ * detectable: the pipeline reports what it applied, \c applyProcessingResults() stores
+ * it on the \c InputFile, and \c detectCanvasConfigChange() compares it next time.
+ *
+ * Lives in Models — like \c ProcessingSliceRecord — so \c ProjectItem can consume it
+ * without depending on Core.
+ */
+struct AppliedCanvasProfile {
+    std::string sourceFilePath; //!< Input this refers to.
+    std::string profileId;      //!< Profile that matched ("" = none matched / project has no profiles).
+    std::string fingerprint;    //!< canvasRenderFingerprint() of it ("" when profileId is empty).
+};
+
+// ---------------------------------------------------------------------------
 // ScanMergeResult
 // ---------------------------------------------------------------------------
+
+/**
+ * \brief Canvas-profile staleness detected by \c ProjectItem::detectCanvasConfigChange().
+ *
+ * A page's output depends on the canvas profile applied to it (margins are cropped
+ * away before scaling), but editing a profile touches neither the input files nor the
+ * output files — so hashes alone can never notice it.  This is what notices.
+ */
+struct CanvasConfigChange {
+    /// The effective profile list itself changed (added / removed / reordered).
+    /// Coarse by nature: it can flip which profile a page matches, or make a
+    /// previously-skipped page match, so it degrades to a full re-render.
+    bool listChanged = false;
+
+    /// Paths of inputs whose applied profile changed content (e.g. margins edited).
+    /// Precise: only these pages — and whatever the layout shift below them touches —
+    /// actually need redrawing.
+    std::vector<std::string> changedInputs;
+
+    /// True when anything at all is stale.
+    [[nodiscard]] bool any() const noexcept { return listChanged || !changedInputs.empty(); }
+};
 
 /**
  * \brief Result returned by \c ProjectItem::mergeFileScan().
@@ -163,9 +226,11 @@ struct ScanMergeResult {
  * ### Typical usage (incremental processing)
  * \code
  * project.sanitize();                       // refresh file statuses
- * if (!project.isUpToDate()) {
- *     auto slices = pipeline.run(project);  // Core layer
- *     project.applyProcessingResults(records, outDir, now);
+ * if (!project.isUpToDate() ||
+ *     project.detectCanvasConfigChange(ws.canvasProfiles).any()) {
+ *     auto outcome = pipeline.run(...);     // Core layer
+ *     project.applyProcessingResults(outcome.records, outcome.appliedProfiles,
+ *                                    ws.canvasProfiles, outDir, now);
  * }
  * \endcode
  *
@@ -192,7 +257,23 @@ public:
     /// outputs (see \c outputProfileSignature()).  Empty until the first render.
     /// A mismatch against the current profile means the outputs are stale and a
     /// full re-render is required (e.g. the output format or slice height changed).
+    ///
+    /// Covers the output profile **only** — canvas-profile staleness is tracked
+    /// per input via \c InputFile::canvasFingerprint, because it invalidates only
+    /// the pages that profile applies to rather than the whole project.  It is also
+    /// the only mechanism that catches changes provenance cannot see: switching
+    /// PNG→JPEG or nudging quality leaves the geometry (and thus every sourceMap)
+    /// identical while changing every output byte.
     std::string outputSignature;
+
+    /// Effective canvas-profile ids at the last render, in effective order (see
+    /// \c effectiveCanvasProfileIds()).  Empty until the first render.
+    ///
+    /// Per-input fingerprints cannot catch a page that previously matched **no**
+    /// profile and now matches a newly added one — there is nothing to compare
+    /// against.  Comparing the list itself closes that hole: any add / remove /
+    /// reorder degrades to a full re-render.
+    std::vector<std::string> canvasProfileIdsAtRender;
 
     // -----------------------------------------------------------------------
     // Construction
@@ -285,6 +366,39 @@ public:
      */
     [[nodiscard]] bool inputsAllProcessed() const noexcept;
 
+    /**
+     * \brief Returns the canvas profile ids this project effectively renders with.
+     *
+     * Mirrors \c CanvasProfileMatcher's rule: the project's own \c canvasProfileIds
+     * when set, otherwise **every** workspace profile (an empty per-project list means
+     * "accept all").  Ids listed but absent from \p workspaceProfiles are dropped —
+     * they match nothing and so cannot affect a render.
+     *
+     * \param workspaceProfiles The full workspace palette.
+     * \return Ids in effective order.
+     */
+    [[nodiscard]] std::vector<std::string> effectiveCanvasProfileIds(
+        const std::vector<CanvasProfile>& workspaceProfiles) const;
+
+    /**
+     * \brief Detects canvas-profile edits that invalidate this project's outputs.
+     *
+     * Compares each input's recorded \c canvasFingerprint against the current profile
+     * of the same id, and the effective profile list against
+     * \c canvasProfileIdsAtRender.  Neither the input files nor the output files change
+     * when a profile is edited, so no hash notices — without this the project would
+     * report itself up to date while its outputs are stale.
+     *
+     * Only meaningful after a first render — a project with no outputs reports no
+     * change, having no baseline to compare against (and Pending inputs already force
+     * a full run).
+     *
+     * \param workspaceProfiles The full workspace palette.
+     * \return What changed; see \c CanvasConfigChange.
+     */
+    [[nodiscard]] CanvasConfigChange detectCanvasConfigChange(
+        const std::vector<CanvasProfile>& workspaceProfiles) const;
+
     // -----------------------------------------------------------------------
     // Operations
     // -----------------------------------------------------------------------
@@ -330,18 +444,29 @@ public:
      *
      * Updates each \c InputFile with its current SHA-256 hash, sets status
      * to \c Processed, fills \c contributesTo from the provenance data in
-     * \p records, rebuilds the \c OutputFile list and the runtime lookup
+     * \p records, records the canvas profile applied to each page from
+     * \p appliedProfiles, rebuilds the \c OutputFile list and the runtime lookup
      * tables.
+     *
+     * \param appliedProfiles What the run applied per input; establishes the baseline
+     *                        \c detectCanvasConfigChange() compares against later.
+     *                        Also captures \c canvasProfileIdsAtRender.
      *
      * This method centralises all post-processing bookkeeping that was
      * previously scattered across the CLI layer.
      *
-     * \param records        One record per saved output file, in order.
-     * \param outputDirectory Absolute path where output files were written.
-     * \param timestamp      ISO 8601 string for \c InputFile::lastProcessed.
+     * \param records           One record per saved output file, in order.
+     * \param appliedProfiles   One entry per input the run considered.
+     * \param workspaceProfiles The full workspace palette, to capture
+     *                          \c canvasProfileIdsAtRender via
+     *                          \c effectiveCanvasProfileIds().
+     * \param outputDirectory   Absolute path where output files were written.
+     * \param timestamp         ISO 8601 string for \c InputFile::lastProcessed.
      */
     void applyProcessingResults(
         const std::vector<ProcessingSliceRecord>& records,
+        const std::vector<AppliedCanvasProfile>&  appliedProfiles,
+        const std::vector<CanvasProfile>&         workspaceProfiles,
         const std::string&                        outputDirectory,
         const std::string&                        timestamp);
 

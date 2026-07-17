@@ -33,6 +33,7 @@ add_executable(platemaker-lib-tests
     test_scaled_strip.cpp
     test_workspace_serializer.cpp
     test_canvas_profile_matcher.cpp
+    test_canvas_staleness.cpp
 )
 
 # libvips is PRIVATE on platemaker-lib (VipsImage never appears in the public API),

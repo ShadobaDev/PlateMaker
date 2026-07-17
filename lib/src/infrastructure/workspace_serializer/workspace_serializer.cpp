@@ -223,7 +223,9 @@ void to_json(nlohmann::json& j, const InputFile& v) {
         {"thumbnailPath", v.thumbnailPath},
         {"status", v.status},
         {"lastProcessed", v.lastProcessed},
-        {"contributesTo", v.contributesTo}
+        {"contributesTo", v.contributesTo},
+        {"canvasProfileId", v.canvasProfileId},
+        {"canvasFingerprint", v.canvasFingerprint}
     };
 }
 
@@ -236,6 +238,10 @@ void from_json(const nlohmann::json& j, InputFile& v) {
     j.at("status").get_to(v.status);
     j.at("lastProcessed").get_to(v.lastProcessed);
     j.at("contributesTo").get_to(v.contributesTo);
+    // additive — absent in workspaces written before canvas-profile staleness was
+    // tracked; an empty fingerprint simply means "no baseline for this page".
+    if (j.contains("canvasProfileId"))   j.at("canvasProfileId").get_to(v.canvasProfileId);
+    if (j.contains("canvasFingerprint")) j.at("canvasFingerprint").get_to(v.canvasFingerprint);
 }
 
 // --- SourceSegment ---
@@ -281,6 +287,7 @@ void to_json(nlohmann::json& j, const ProjectItem& v) {
         {"canvasProfileIds", v.canvasProfileIds},
         {"outputProfileId",  v.outputProfileId},
         {"outputSignature",  v.outputSignature},
+        {"canvasProfileIdsAtRender", v.canvasProfileIdsAtRender},
         {"inputFiles",       v.getInputImages()},
         {"outputFiles",      v.getOutputImages()},
         {"outputDirectory",  v.getOutputDirectory()}
@@ -293,6 +300,8 @@ void from_json(const nlohmann::json& j, ProjectItem& v) {
     if (j.contains("canvasProfileIds")) j.at("canvasProfileIds").get_to(v.canvasProfileIds);
     if (j.contains("outputProfileId"))  j.at("outputProfileId").get_to(v.outputProfileId);
     if (j.contains("outputSignature"))  j.at("outputSignature").get_to(v.outputSignature);
+    if (j.contains("canvasProfileIdsAtRender"))
+        j.at("canvasProfileIdsAtRender").get_to(v.canvasProfileIdsAtRender);
     j.at("inputFiles").get_to(v.getInputImages());
     j.at("outputFiles").get_to(v.getOutputImages());
     j.at("outputDirectory").get_to(v.getOutputDirectory());

@@ -127,6 +127,15 @@ ProcessingOutcome ProcessingPipeline::run(
                 matchedProfile = result.profile;
             }
 
+            // Record what was actually applied to this page. Editing a profile leaves
+            // both the input and the output file byte-identical, so this is the only
+            // trace that lets the next run notice the page went stale.
+            outcome.appliedProfiles.push_back(Models::AppliedCanvasProfile{
+                file.filePath,
+                matchedProfile ? matchedProfile->id : std::string{},
+                matchedProfile ? Models::canvasRenderFingerprint(*matchedProfile)
+                               : std::string{}});
+
             const bool doMarginCrop =
                 matchedProfile != nullptr &&
                 (matchedProfile->margins.top    > 0 ||
