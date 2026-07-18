@@ -68,6 +68,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdio>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -1689,7 +1690,27 @@ int main()
     for (auto& s : storage) argv_utf8.push_back(s.data());
     argv_utf8.push_back(nullptr);
 
-    return runCli(wargc, argv_utf8.data());
+    const int exitCode = runCli(wargc, argv_utf8.data());
+
+    // Skip the C runtime / loader teardown and terminate immediately.
+    //
+    // Returning here would run static destructors and then ntdll!LdrShutdownProcess,
+    // which unloads libvips' large DLL dependency graph and runs each DLL's
+    // DLL_PROCESS_DETACH. That path intermittently deadlocks on a loader RunOnce lock
+    // (confirmed by gdb: main thread wedged in LdrShutdownProcess → ZwWaitForAlertByThreadId;
+    // reproduces under both MinGW and MSVC, so it is the third-party teardown, not our code
+    // or compiler — see docs/TODO.md). A CLI has nothing to clean up that the OS won't
+    // reclaim, so we flush our output and hard-exit, bypassing that teardown entirely.
+    //
+    // Flushing is mandatory: many messages end in '\n' (not std::endl), so their bytes are
+    // still buffered; TerminateProcess would otherwise drop them and tests reading stdout
+    // would see truncated output. Note _exit()/ExitProcess() do NOT help — they too invoke
+    // LdrShutdownProcess; only TerminateProcess bypasses it.
+    std::cout.flush();
+    std::cerr.flush();
+    std::fflush(nullptr);   // flush every C stdio buffer as well
+    TerminateProcess(GetCurrentProcess(), static_cast<UINT>(exitCode));
+    return exitCode;        // not reached
 }
 #else
 int main(int argc, char** argv)

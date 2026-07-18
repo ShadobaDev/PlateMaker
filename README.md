@@ -118,6 +118,29 @@ pip install -r tests/cli-tests/requirements.txt
 
 ---
 
+### Debugging (optional)
+
+A native debugger is useful for crashes and hangs — e.g. attaching to a stuck process
+to capture a stack trace. Install the one that matches how you build:
+
+| Toolchain | Debugger | Install |
+|---|---|---|
+| MinGW (MSYS2) | GDB — reads MinGW's DWARF symbols | `pacman -S mingw-w64-x86_64-gdb` |
+| Linux / WSL2 | GDB | `sudo apt install gdb` |
+| MSVC | Visual Studio debugger (already installed with VS) — reads PDB, **not** DWARF | — |
+
+> GDB is the right tool for MinGW/Linux builds; the Visual Studio debugger only understands
+> MSVC's PDB symbols, so use GDB for anything built with `g++`.
+
+Build with a debug preset (`-g` symbols) for readable stacks. To dump every thread's stack
+of an already-running (e.g. wedged) process:
+
+```bash
+gdb -p <pid> -batch -ex "thread apply all bt"
+```
+
+---
+
 ## Using libplatemaker from a release package
 
 Download the pre-built package for your platform from the [Releases page](https://github.com/ShadobaDev/PlateMaker/releases).

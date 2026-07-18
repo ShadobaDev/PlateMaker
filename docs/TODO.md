@@ -2,39 +2,6 @@
 
 ## CLI
 
----
-
-## Tests
-
-### `cli-tests` intermittently hangs (suspected environment, not code)
-
-`ctest -R cli-tests` sporadically stalls until it trips its `TIMEOUT 120`
-(`tests/cli-tests/CMakeLists.txt`), reported as `cli-tests (Timeout)`. A normal run
-takes ~10 s. Re-running usually passes, so it is easy to mistake for a flaky test.
-
-Evidence gathered so far (2026-07-17, mingw-release):
-
-- **Not a code regression.** Reproduced on a pristine `HEAD` worktree built from scratch
-  (1 hang / 8 runs), so it predates the canvas-fingerprint work.
-- **Not a specific test.** The stall lands at a random point each time — observed after
-  7 %, 24 %, 37 %, 77 % and 92 % of the suite, across different files.
-- **Not first-run/cold-binary related.** A run immediately after relinking the DLL + exe
-  passed in 10.5 s while a later run on the *same* binaries hung — the opposite of the
-  "antivirus scans the fresh binary" theory.
-- `test_template.py` alone: 19 passed, ~3.9 s, 5/5 stable. Only the full suite hangs.
-- Rate measured at 1/8 (pristine HEAD) vs 4/8 (working tree) — too small a sample to
-  tell those apart (p ≈ 0.28); do not read a regression into it without more runs.
-- Possibly related on the same machine: `g++` cannot spawn `cc1plus` from Git Bash
-  (exit 127, no diagnostics, fails even on a trivial `int main(){}`), while the same
-  compiler works from PowerShell. Both smell like intermittent process-spawn
-  interference (AV / EDR real-time scanning), and the suite spawns ~200 CLI processes.
-
-Next step when picking this up: reproduce, and while it is stuck inspect whether a
-`platemaker-cli.exe` child is alive (spawned but never exiting) or whether pytest itself
-is stuck — that separates "the CLI hangs" from "the OS won't start the process". The
-user suspects a cluttered Windows install and may reset the machine first, which would
-also test the environment hypothesis.
-
 ### Stage 1 integration tests (unit tests with real pixel data)
 
 Seven tests are currently stubbed with `GTEST_SKIP()` pending real image fixtures:
@@ -79,3 +46,47 @@ on separate threads and the slice files numbered deterministically afterwards.
 The GUI render log is in-memory only (cleared on exit). Optionally persist the
 last run's log (and the slice/skip summary) next to the workspace so a user can
 review what the previous render did.
+
+---
+
+## Packaging
+
+### Slim the MinGW package by switching to the `vips-dev-x64-web` variant
+
+The MinGW build ships a much larger libvips than MSVC — **not** because of the compiler,
+but because the two branches source different libvips builds
+([CMakeLists.txt](../CMakeLists.txt#L54-L95)):
+
+- **MSVC** FetchContents libvips' official `vips-dev-x64-web-8.18.2` zip — a deliberately
+  minimal build: **38 DLLs / 22.7 MB**, and no `vips-modules-*` dir (so the "unable to load
+  vips-heif/jxl/magick/…" warnings don't appear either).
+- **MinGW** uses MSYS2's `mingw-w64-x86_64-libvips` via pkg-config — the **full** build
+  (every loader + poppler/openslide/magick/raw/OpenEXR/…), ~92 DLLs / 34 MB even after the
+  existing DLL pruning. MSYS2 offers no minimal/web libvips package, so pacman can't provide
+  the web variant.
+
+**Plan: point the MinGW branch at the same web zip the MSVC branch already downloads.**
+Verified feasible:
+
+- **Formats cover our needs.** The web zip ships PNG, JPEG, WebP, TIFF (+ GIF/HEIF). Platemaker
+  saves PNG/JPEG/WebP and loads PNG/JPEG, so nothing we use is missing; only heavy formats we
+  never touch (PDF/poppler, openslide, magick, matio, cfitsio, OpenEXR, raw) are gone.
+- **ABI is clean because we use the vips C API only** — `grep` confirms zero `VImage` / `vips::`
+  / `<vips/vips8>` usage. The web zip's C++ runtime is LLVM libc++ (`libc++.dll`/`libunwind.dll`),
+  so linking `libvips-cpp` would clash with our libstdc++ — but we must link the **C** `libvips`
+  (not `vips-cpp`), and the C boundary is ABI-stable regardless of the DLL's C++ runtime. Note
+  CMake currently links `VIPS::vips-cpp`; switch the alias to the C `libvips`.
+- **MinGW can link the web zip's import libs.** It ships a `.def` for every library, so
+  `dlltool -d libvips.def -l libvips.dll.a -D libvips-42.dll` produces GNU import libs; modern
+  `ld` also often links the MS `.lib` directly.
+
+Side benefits beyond size: fewer DLLs means a smaller `DLL_PROCESS_DETACH` surface at exit —
+i.e. less exposure to the loader-shutdown deadlock recorded in
+[ISSUES.md](ISSUES.md) (already fixed via fast-exit, but a smaller graph lowers the odds
+regardless), and unifies MSVC + MinGW on one libvips source of truth.
+
+**Only real unknown — resolve with a ~30 min spike first:** does MinGW `ld` link the web zip's
+libs directly, or is the `dlltool`-from-`.def` step required? Point the MinGW build at the
+downloaded `build/msvc-release/_deps/vips_binaries-src`, link the C `libvips`, build the CLI and
+run ctest. If green, plan the full switch (CMake branch, DLL-closure/deploy code, README,
+CMakePresets).
