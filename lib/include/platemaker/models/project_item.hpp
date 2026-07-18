@@ -225,9 +225,8 @@ struct ScanMergeResult {
  *
  * ### Typical usage (incremental processing)
  * \code
- * project.sanitize();                       // refresh file statuses
- * if (!project.isUpToDate() ||
- *     project.detectCanvasConfigChange(ws.canvasProfiles).any()) {
+ * project.sanitize(ws.canvasProfiles);      // refresh statuses (disk + config)
+ * if (!project.isUpToDate()) {
  *     auto outcome = pipeline.run(...);     // Core layer
  *     project.applyProcessingResults(outcome.records, outcome.appliedProfiles,
  *                                    ws.canvasProfiles, outDir, now);
@@ -404,7 +403,7 @@ public:
     // -----------------------------------------------------------------------
 
     /**
-     * \brief Walks the filesystem and updates the status of every tracked file.
+     * \brief Refreshes the status of every tracked file against disk *and* config.
      *
      * For each \c InputFile:
      * - \c Missing   — file no longer exists on disk.
@@ -417,12 +416,21 @@ public:
      * - \c Modified  — slice exists but its SHA-256 differs from the stored hash.
      * - \c Done      — slice exists and (if hashed) matches.
      *
+     * Finally, pages whose canvas profile changed since the render that produced them
+     * — or was never recorded at all — are marked \c Desynchronized, along with the
+     * outputs they fed.  A profile edit changes neither the input nor the output file,
+     * so hashes alone can never notice it; this is what surfaces it (and what makes the
+     * GUI colour those tiles "out of sync").  See \c detectCanvasConfigChange().
+     *
      * Sets the internal up-to-date flag to \c false if any input is not
      * \c Processed or any output is not \c Done.
      *
+     * \param workspaceProfiles The canvas profiles currently in effect. Required rather
+     *        than optional: an overload without it could be called by accident and would
+     *        silently skip the config check — exactly the class of bug this detects.
      * \return \c true if every input is \c Processed and every output is \c Done.
      */
-    bool sanitize();
+    bool sanitize(const std::vector<CanvasProfile>& workspaceProfiles);
 
     /**
      * \brief Rebuilds the non-serialised runtime lookup tables from the

@@ -824,15 +824,15 @@ static int cmdProcess(const Opts& opts)
         return 1;
     }
 
-    // --- Sanitize — update file statuses and check if reprocess is needed ---
-    project.sanitize();
-
     // --no-profile is honoured by passing an empty canvas-profile palette (no margin
-    // matching). Declared here because staleness detection and the pipeline run must
-    // agree on which palette is in effect.
+    // matching). Declared before sanitize() because status refresh, staleness detection
+    // and the pipeline run must all agree on which palette is in effect.
     const std::vector<CanvasProfile> noProfiles;
     const std::vector<CanvasProfile>& effectiveProfiles =
         noProfile ? noProfiles : ws.canvasProfiles;
+
+    // --- Sanitize — update file statuses (disk + config) and check if reprocess is needed ---
+    project.sanitize(effectiveProfiles);
 
     // Detect an output-invalidating configuration change (format / slice size /
     // quality / …) by comparing the current profile signature against the one
@@ -1378,8 +1378,10 @@ static int cmdProjectStatus(const Opts& opts)
         return 1;
     }
 
-    // Sanitize updates file statuses by checking hashes on disk.
-    const bool upToDate = pi->sanitize();
+    // Sanitize updates file statuses from disk hashes and from the canvas profiles in
+    // effect, so pages whose profile changed since their render report DESYNCHRONIZED
+    // rather than a misleading PROCESSED.
+    const bool upToDate = pi->sanitize(ws.canvasProfiles);
 
     static const auto statusStr = [](FileStatus s) -> const char* {
         switch (s) {

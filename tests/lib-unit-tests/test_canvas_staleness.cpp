@@ -15,10 +15,13 @@
 
 #include <gtest/gtest.h>
 
+#include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/project_item.hpp>
 
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -68,6 +71,83 @@ ProjectItem makeRenderedProject(const std::vector<CanvasProfile>& profiles,
     p.canvasProfileIdsAtRender = p.effectiveCanvasProfileIds(profiles);
     return p;
 }
+
+// ---------------------------------------------------------------------------
+// On-disk fixture — sanitize() checks the filesystem, so the "clean" statuses it
+// must produce before any config marking can apply require real files.
+// ---------------------------------------------------------------------------
+
+/// A project backed by real files: `pages` inputs, one output per input, all hashed
+/// so a sanitize() with unchanged config reports everything Processed / Done.
+class DiskProject {
+public:
+    explicit DiskProject(const std::string& testName, int pages,
+                         const std::vector<CanvasProfile>& profiles,
+                         const std::string& usedProfileId)
+        : m_dir(std::filesystem::temp_directory_path() /
+                ("pm-sanitize-" + testName))
+    {
+        std::filesystem::remove_all(m_dir);
+        std::filesystem::create_directories(m_dir);
+
+        project.name = "Chapter";
+        project.getOutputDirectory() = m_dir.string();
+
+        const CanvasProfile* used = nullptr;
+        for (const auto& cp : profiles)
+            if (cp.id == usedProfileId) { used = &cp; break; }
+
+        for (int i = 0; i < pages; ++i) {
+            const std::string inName  = "page_" + std::to_string(i) + ".png";
+            const std::string outName = "output_" + std::to_string(i) + ".png";
+
+            InputFile inf;
+            inf.filePath      = write(inName, "input-" + std::to_string(i));
+            inf.sha256        = Infrastructure::FileMetaData::computeFileSha256(inf.filePath);
+            inf.contributesTo = {outName};
+            if (used) {
+                inf.canvasProfileId   = used->id;
+                inf.canvasFingerprint = canvasRenderFingerprint(*used);
+            }
+            project.getInputImages().push_back(std::move(inf));
+
+            OutputFile outf;
+            outf.fileName = outName;
+            outf.sha256   =
+                Infrastructure::FileMetaData::computeFileSha256(write(outName, "out-" + std::to_string(i)));
+            project.getOutputImages().push_back(std::move(outf));
+        }
+
+        project.canvasProfileIdsAtRender = project.effectiveCanvasProfileIds(profiles);
+        project.rebuildLookupTables();   // outputsForInput() drives the precise marking
+    }
+
+    ~DiskProject() { std::error_code ec; std::filesystem::remove_all(m_dir, ec); }
+
+    DiskProject(const DiskProject&)            = delete;
+    DiskProject& operator=(const DiskProject&) = delete;
+
+    [[nodiscard]] FileStatus inputStatus(int i) const
+    {
+        return project.getInputImages()[static_cast<std::size_t>(i)].status;
+    }
+    [[nodiscard]] FileStatus outputStatus(int i) const
+    {
+        return project.getOutputImages()[static_cast<std::size_t>(i)].status;
+    }
+
+    ProjectItem project;
+
+private:
+    std::string write(const std::string& name, const std::string& content)
+    {
+        const auto path = m_dir / name;
+        std::ofstream(path, std::ios::binary) << content;
+        return path.string();
+    }
+
+    std::filesystem::path m_dir;
+};
 
 } // namespace
 
@@ -296,6 +376,111 @@ TEST(CanvasConfigChangeTest, BaselineSurvivesAMove)
     assigned = makeRenderedProject(ws, "p1");
     EXPECT_FALSE(assigned.detectCanvasConfigChange(ws).any())
         << "move assignment dropped the canvas baseline";
+}
+
+// ---------------------------------------------------------------------------
+// sanitize() — config staleness surfaces as FileStatus::Desynchronized
+//
+// This is what paints the tiles amber in the UI, so it is asserted on the statuses
+// themselves rather than on the detection helper.
+// ---------------------------------------------------------------------------
+
+TEST(SanitizeCanvasTest, UnchangedConfigLeavesEverythingClean)
+{
+    const std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
+    DiskProject d("clean", 3, ws, "p1");
+
+    EXPECT_TRUE(d.project.sanitize(ws));
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed) << "input " << i;
+        EXPECT_EQ(d.outputStatus(i), FileStatus::Done)      << "output " << i;
+    }
+}
+
+TEST(SanitizeCanvasTest, MarginEditDesynchronizesOnlyTheAffectedPages)
+{
+    // Page 1 uses a different profile from pages 0 and 2, so editing that profile must
+    // touch page 1 and its slice — and nothing else. The precision is the whole point:
+    // marking everything would be safe but would make the amber tiles meaningless.
+    std::vector<CanvasProfile> ws{
+        makeProfile("p1", 1600, 10240, 100),
+        makeProfile("p2", 800, 1280, 20),
+    };
+    DiskProject d("precise", 3, ws, "p1");
+
+    // Re-point page 1 at the second profile.
+    auto &pages = d.project.getInputImages();
+    pages[1].canvasProfileId   = "p2";
+    pages[1].canvasFingerprint = canvasRenderFingerprint(ws[1]);
+
+    ASSERT_TRUE(d.project.sanitize(ws)) << "baseline must start clean";
+
+    ws[1].margins.top = 999;   // edit only the profile page 1 uses
+
+    EXPECT_FALSE(d.project.sanitize(ws));
+
+    EXPECT_EQ(d.inputStatus(0),  FileStatus::Processed);
+    EXPECT_EQ(d.outputStatus(0), FileStatus::Done);
+
+    EXPECT_EQ(d.inputStatus(1),  FileStatus::Desynchronized) << "page using the edited profile";
+    EXPECT_EQ(d.outputStatus(1), FileStatus::Desynchronized) << "the slice it fed";
+
+    EXPECT_EQ(d.inputStatus(2),  FileStatus::Processed);
+    EXPECT_EQ(d.outputStatus(2), FileStatus::Done);
+}
+
+TEST(SanitizeCanvasTest, LegacyWorkspaceDesynchronizesEverything)
+{
+    // No baseline recorded at all: which page used which profile is unknowable, so
+    // everything is suspect. This is the "why is it all amber?" case the UI explains.
+    const std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
+    DiskProject d("legacy", 3, ws, "p1");
+
+    for (auto &inf : d.project.getInputImages()) {
+        inf.canvasProfileId.clear();
+        inf.canvasFingerprint.clear();
+    }
+    d.project.canvasProfileIdsAtRender.clear();
+
+    EXPECT_FALSE(d.project.sanitize(ws));
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(d.inputStatus(i),  FileStatus::Desynchronized) << "input " << i;
+        EXPECT_EQ(d.outputStatus(i), FileStatus::Desynchronized) << "output " << i;
+    }
+}
+
+TEST(SanitizeCanvasTest, ColourEditLeavesEverythingClean)
+{
+    // The regression that would make every tile amber on a harmless overlay tweak.
+    std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
+    DiskProject d("colour", 2, ws, "p1");
+    ASSERT_TRUE(d.project.sanitize(ws));
+
+    ws[0].visualColour     = RGBA{1, 2, 3, 4};
+    ws[0].backgroundColour = RGBA{5, 6, 7, 8};
+
+    EXPECT_TRUE(d.project.sanitize(ws)) << "template-only fields must not desynchronize";
+    for (int i = 0; i < 2; ++i) {
+        EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed);
+        EXPECT_EQ(d.outputStatus(i), FileStatus::Done);
+    }
+}
+
+TEST(SanitizeCanvasTest, MissingFileIsNotMaskedByConfigChange)
+{
+    // A deleted file is more urgent and more specific than "config moved on" — the
+    // config pass must not overwrite it.
+    std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
+    DiskProject d("missing", 2, ws, "p1");
+    ASSERT_TRUE(d.project.sanitize(ws));
+
+    std::filesystem::remove(d.project.getInputImages()[0].filePath);
+    ws[0].margins.top = 999;   // config changes too
+
+    EXPECT_FALSE(d.project.sanitize(ws));
+    EXPECT_EQ(d.inputStatus(0), FileStatus::Missing)
+        << "Missing must survive the config pass";
+    EXPECT_EQ(d.inputStatus(1), FileStatus::Desynchronized);
 }
 
 // ---------------------------------------------------------------------------

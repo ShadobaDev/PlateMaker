@@ -118,7 +118,7 @@ const std::vector<std::string>& ProjectItem::outputsForInput(
 // sanitize
 // ---------------------------------------------------------------------------
 
-bool ProjectItem::sanitize()
+bool ProjectItem::sanitize(const std::vector<CanvasProfile>& workspaceProfiles)
 {
     namespace fs = std::filesystem;
 
@@ -174,6 +174,45 @@ bool ProjectItem::sanitize()
             m_isUpToDate = false;
         } else {
             out.status = FileStatus::Done;
+        }
+    }
+
+    // Config axis: a canvas-profile edit leaves every file byte-identical, so nothing
+    // above can see it. Mark what it invalidated as Desynchronized ("out of sync with
+    // config") — the status the UI already renders in amber.
+    //
+    // Only files the disk pass found clean are re-flagged: Missing / Modified / Pending
+    // are more specific and more urgent, so a config change must not mask them.
+    const auto markDesynchronized = [](FileStatus& status, FileStatus cleanValue) {
+        if (status == cleanValue)
+            status = FileStatus::Desynchronized;
+    };
+
+    const auto canvasChange = detectCanvasConfigChange(workspaceProfiles);
+    if (canvasChange.any()) {
+        m_isUpToDate = false;
+
+        if (canvasChange.listChanged) {
+            // The effective profile list itself changed (or, for a workspace written
+            // before fingerprints existed, there is no baseline at all). Which page got
+            // which profile can no longer be attributed, so everything is suspect.
+            for (auto& inf : m_input_images)
+                markDesynchronized(inf.status, FileStatus::Processed);
+            for (auto& out : m_output_images)
+                markDesynchronized(out.status, FileStatus::Done);
+        } else {
+            // Precise: only the pages whose applied profile changed, plus the slices
+            // they fed (provenance already records that mapping).
+            for (const auto& path : canvasChange.changedInputs) {
+                for (auto& inf : m_input_images)
+                    if (inf.filePath == path)
+                        markDesynchronized(inf.status, FileStatus::Processed);
+
+                for (const auto& outName : outputsForInput(path))
+                    for (auto& out : m_output_images)
+                        if (out.fileName == outName)
+                            markDesynchronized(out.status, FileStatus::Done);
+            }
         }
     }
 
