@@ -23,6 +23,7 @@
  */
 
 #include <platemaker/infrastructure/thumbnail_cache/thumbnail_cache.hpp>
+#include <platemaker/infrastructure/file/path_utf8.hpp>
 #include <platemaker/core/pixel_buffer/pixel_buffer.hpp>
 
 #include <vips/vips.h>
@@ -65,7 +66,7 @@ ThumbnailCache::ThumbnailCache(const std::string& cacheDirectory)
 {
     namespace fs = std::filesystem;
     std::error_code ec;
-    fs::create_directories(cacheDirectory, ec);
+    fs::create_directories(utf8ToPath(cacheDirectory), ec);
     if (ec) {
         throw std::runtime_error(
             "ThumbnailCache: cannot create cache directory '" +
@@ -80,8 +81,11 @@ ThumbnailCache::ThumbnailCache(const std::string& cacheDirectory)
 std::string ThumbnailCache::thumbnailPath(const std::string& sourceFilePath) const
 {
     namespace fs = std::filesystem;
-    const fs::path name = pathDigest(sourceFilePath) + ".png";
-    return (fs::path{m_cacheDirectory} / name).string();
+    // Both directions go through the UTF-8 helpers: building the path from a narrow string
+    // and reading it back with .string() are the two halves of the same encoding hazard, and
+    // .string() additionally throws on MSVC for a character the ANSI page cannot represent.
+    const fs::path name = utf8ToPath(pathDigest(sourceFilePath) + ".png");
+    return pathToUtf8(utf8ToPath(m_cacheDirectory) / name);
 }
 
 // ---------------------------------------------------------------------------
@@ -93,9 +97,10 @@ bool ThumbnailCache::isCached(const std::string& sourceFilePath) const
     namespace fs = std::filesystem;
     const std::string path = thumbnailPath(sourceFilePath);
     std::error_code ec;
-    const auto st = fs::status(path, ec);
+    const fs::path fsPath = utf8ToPath(path);
+    const auto st = fs::status(fsPath, ec);
     if (ec || !fs::is_regular_file(st)) return false;
-    const auto sz = fs::file_size(path, ec);
+    const auto sz = fs::file_size(fsPath, ec);
     return !ec && sz > 0;
 }
 

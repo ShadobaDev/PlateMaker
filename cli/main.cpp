@@ -53,12 +53,12 @@
 #include <platemaker/core/scaler/scaler.hpp>
 #include <platemaker/core/template_generator/template_generator.hpp>
 #include <platemaker/infrastructure/control/cancellation_token.hpp>
+#include <platemaker/infrastructure/id_generator/id_generator.hpp>
 #include <platemaker/infrastructure/image_io/image_io.hpp>
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/common_types.hpp>
-#include <platemaker/models/id.hpp>
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/project_item.hpp>
 #include <platemaker/models/workspace.hpp>
@@ -398,15 +398,18 @@ static int cmdWorkspaceCreate(const Opts& opts)
     const int         targetWidth = opts.getInt("target-width", 800);
     const int         sliceHeight = opts.getInt("slice-height", 1280);
 
-    // Build a default "Webtoon Standard" output profile.
-    OutputProfile op;
-    op.id              = makeUniqueOutputProfileId({}); // brand-new workspace: nothing taken yet
-    op.name            = "Webtoon Standard";
-    op.targetWidth     = targetWidth;
-    op.sliceHeight     = sliceHeight;
-    op.lastSlicePolicy = LastSlicePolicy::KeepAsIs;
-    op.outputFormat    = OutputFormat::PNG;
-    op.startIndex      = 1;
+    // Seed from the library's preset rather than assembling one here — the GUI seeds from
+    // the same table, so both produce a workspace carrying the identical preset id.
+    OutputProfile op = webtoonStandardPreset();
+    op.targetWidth   = targetWidth;
+    op.sliceHeight   = sliceHeight;
+
+    // --target-width / --slice-height can move it away from the preset. Once it differs it
+    // is not the preset any more, so it must not keep the shared id — the user asked for
+    // different settings, which by definition makes this their own profile. Without this
+    // the CLI would emit a file violating the invariant that load() then has to repair.
+    if (outputProfileSignature(op) != outputProfileSignature(webtoonStandardPreset()))
+        op.id = makeUniqueOutputProfileId({}); // brand-new workspace: nothing taken yet
 
     // Assemble an empty workspace (no canvas profiles yet).
     Workspace ws;

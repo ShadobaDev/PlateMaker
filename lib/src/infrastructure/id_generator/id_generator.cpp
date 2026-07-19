@@ -1,5 +1,5 @@
 /**
- * \file lib/src/models/id.cpp
+ * \file lib/src/infrastructure/id_generator/id_generator.cpp
  * \brief Implementation of the workspace identifier generator.
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
@@ -10,7 +10,7 @@
  * \copyright Copyright (c) 2026 ShadobaDev
  */
 
-#include <platemaker/models/id.hpp>
+#include <platemaker/infrastructure/id_generator/id_generator.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -19,7 +19,7 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace Platemaker::Models {
+namespace Platemaker::Infrastructure {
 
 namespace {
 
@@ -60,7 +60,7 @@ std::string retryUntilFree(std::string_view prefix, const IsTaken& isTaken)
     }
 
     throw std::runtime_error(
-        "Platemaker::Models — could not find a free identifier for prefix '" +
+        "Platemaker::Infrastructure — could not find a free identifier for prefix '" +
         std::string{prefix} + "' after " + std::to_string(k_maxAttempts) +
         " attempts; the platform's random number source appears to be broken");
 }
@@ -97,14 +97,14 @@ std::string makeUniqueId(std::string_view prefix, const std::vector<std::string>
     });
 }
 
-std::string makeUniqueCanvasProfileId(const std::vector<CanvasProfile>& existing)
+std::string makeUniqueCanvasProfileId(const std::vector<Models::CanvasProfile>& existing)
 {
     return retryUntilFree("cp", idTakenIn(existing));
 }
 
-std::string makeUniqueOutputProfileId(const std::vector<OutputProfile>& existing)
+std::string makeUniqueOutputProfileId(const std::vector<Models::OutputProfile>& existing)
 {
     return retryUntilFree("op", idTakenIn(existing));
 }
 
-} // namespace Platemaker::Models
+} // namespace Platemaker::Infrastructure

@@ -17,7 +17,7 @@
 
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 #include <platemaker/models/canvas_profile.hpp>
-#include <platemaker/models/id.hpp>
+#include <platemaker/infrastructure/id_generator/id_generator.hpp>
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/workspace.hpp>
 
@@ -130,14 +130,14 @@ TEST(MakeIdTest, TightLoopNeverRepeats)
 
     std::set<std::string> seen;
     for (int i = 0; i < k_draws; ++i)
-        seen.insert(Models::makeId("cp"));
+        seen.insert(Infrastructure::makeId("cp"));
 
     EXPECT_EQ(seen.size(), static_cast<std::size_t>(k_draws));
 }
 
 TEST(MakeIdTest, KeepsThePrefixAndHasFullWidth)
 {
-    const std::string id = Models::makeId("cp");
+    const std::string id = Infrastructure::makeId("cp");
     EXPECT_EQ(id.rfind("cp-", 0), 0u);
     EXPECT_EQ(id.size(), 3u + 32u); // "cp-" + 128 bits as hex
 }
@@ -147,10 +147,10 @@ TEST(MakeUniqueIdTest, SkipsIdentifiersAlreadyTaken)
     // Feed it a "taken" set built from ids it just produced: every result must still be new.
     std::vector<std::string> taken;
     for (int i = 0; i < 64; ++i)
-        taken.push_back(Models::makeId("proj"));
+        taken.push_back(Infrastructure::makeId("proj"));
 
     for (int i = 0; i < 64; ++i) {
-        const std::string fresh = Models::makeUniqueId("proj", taken);
+        const std::string fresh = Infrastructure::makeUniqueId("proj", taken);
         EXPECT_EQ(std::find(taken.begin(), taken.end(), fresh), taken.end());
         taken.push_back(fresh);
     }
@@ -159,19 +159,19 @@ TEST(MakeUniqueIdTest, SkipsIdentifiersAlreadyTaken)
 TEST(MakeUniqueIdTest, CanvasAndOutputHelpersAvoidExistingProfiles)
 {
     std::vector<Models::CanvasProfile> canvases(3);
-    canvases[0].id = Models::makeId("cp");
-    canvases[1].id = Models::makeId("cp");
-    canvases[2].id = Models::makeId("cp");
+    canvases[0].id = Infrastructure::makeId("cp");
+    canvases[1].id = Infrastructure::makeId("cp");
+    canvases[2].id = Infrastructure::makeId("cp");
 
-    const std::string freshCanvas = Models::makeUniqueCanvasProfileId(canvases);
+    const std::string freshCanvas = Infrastructure::makeUniqueCanvasProfileId(canvases);
     for (const auto& cp : canvases)
         EXPECT_NE(freshCanvas, cp.id);
 
     std::vector<Models::OutputProfile> outputs(2);
-    outputs[0].id = Models::makeId("op");
-    outputs[1].id = Models::makeId("op");
+    outputs[0].id = Infrastructure::makeId("op");
+    outputs[1].id = Infrastructure::makeId("op");
 
-    const std::string freshOutput = Models::makeUniqueOutputProfileId(outputs);
+    const std::string freshOutput = Infrastructure::makeUniqueOutputProfileId(outputs);
     for (const auto& op : outputs)
         EXPECT_NE(freshOutput, op.id);
 }
@@ -253,9 +253,11 @@ TEST(WorkspaceIdRepairTest, OutputProfileDuplicatesAreRepairedToo)
     Infrastructure::WorkspaceRepairReport report;
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
 
-    ASSERT_EQ(loaded.outputProfiles.size(), 2u);
+    // Two from the file, plus the preset the presence pass guarantees.
+    ASSERT_EQ(loaded.outputProfiles.size(), 3u);
     EXPECT_EQ(loaded.outputProfiles[0].id, "op-collide");
     EXPECT_NE(loaded.outputProfiles[1].id, "op-collide");
+    EXPECT_EQ(loaded.outputProfiles[2].id, Models::k_webtoonStandardPresetId);
 
     ASSERT_EQ(report.outputProfiles.size(), 1u);
     EXPECT_EQ(report.outputProfiles[0].name, "WEBP");
@@ -271,8 +273,12 @@ TEST(WorkspaceIdRepairTest, OutputProfileDuplicatesAreRepairedToo)
 TEST(WorkspaceIdMigrationTest, MissingIdIsMintedAndLegacyReferencesAreRelinked)
 {
     // Pre-0.2.1, a profile saved without an id had one derived from its name, and projects
-    // stored that derived form.  The id is now random, so the reference has to be rewritten
-    // or the project would lose its output profile.
+    // stored that derived form. The id is no longer derived, so the reference has to be
+    // rewritten or the project would lose its output profile.
+    //
+    // This one is also the preset by its settings, so it is adopted rather than given a
+    // random id — otherwise the presence pass would append a second, identical
+    // "Webtoon Standard" next to it.
     const TempWorkspace ws("relink", workspaceJson(
         "",
         outputProfileJson("", "Webtoon Standard"),
@@ -282,13 +288,35 @@ TEST(WorkspaceIdMigrationTest, MissingIdIsMintedAndLegacyReferencesAreRelinked)
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
 
     ASSERT_EQ(loaded.outputProfiles.size(), 1u);
-    EXPECT_NE(loaded.outputProfiles[0].id, "op-Webtoon Standard");
-    EXPECT_FALSE(loaded.outputProfiles[0].id.empty());
+    EXPECT_EQ(loaded.outputProfiles[0].id, Models::k_webtoonStandardPresetId);
 
     // The project follows the profile to its new id.
     EXPECT_EQ(loaded.projectItems[0].outputProfileId, loaded.outputProfiles[0].id);
 
     // Minting is unambiguous bookkeeping, not a collision — nothing to tell the user about.
+    EXPECT_FALSE(report.any());
+}
+
+TEST(WorkspaceIdMigrationTest, LegacyProfileTheUserEditedIsNotPromotedToAPreset)
+{
+    // Same legacy id, but the settings moved on (WebP instead of PNG). Adopting it would make
+    // the shared preset id mean something different in this workspace than in every other, so
+    // it stays a plain user profile — and the real preset is added alongside.
+    std::string edited = outputProfileJson(R"("id": "op-Webtoon Standard", )", "Webtoon Standard");
+    const auto pos = edited.find(R"("outputFormat": "PNG")");
+    ASSERT_NE(pos, std::string::npos);
+    edited.replace(pos, std::string(R"("outputFormat": "PNG")").size(),
+                   R"("outputFormat": "WebP")");
+
+    const TempWorkspace ws("edited_legacy", workspaceJson("", edited, ""));
+
+    Infrastructure::WorkspaceRepairReport report;
+    const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
+
+    ASSERT_EQ(loaded.outputProfiles.size(), 2u);
+    EXPECT_EQ(loaded.outputProfiles[0].id, "op-Webtoon Standard");   // left exactly as it was
+    EXPECT_EQ(loaded.outputProfiles[0].outputFormat, Models::OutputFormat::WebP);
+    EXPECT_EQ(loaded.outputProfiles[1].id, Models::k_webtoonStandardPresetId);
     EXPECT_FALSE(report.any());
 }
 

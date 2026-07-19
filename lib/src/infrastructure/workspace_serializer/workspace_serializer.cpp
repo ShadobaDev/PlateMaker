@@ -17,7 +17,8 @@
 
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 
-#include <platemaker/models/id.hpp>
+#include <platemaker/infrastructure/file/path_utf8.hpp>
+#include <platemaker/infrastructure/id_generator/id_generator.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -405,14 +406,95 @@ void mintMissingProfileIds(Models::Workspace& workspace)
 {
     for (auto& cp : workspace.canvasProfiles) {
         if (!cp.id.empty()) continue;
-        cp.id = Models::makeUniqueCanvasProfileId(workspace.canvasProfiles);
+        cp.id = makeUniqueCanvasProfileId(workspace.canvasProfiles);
         relinkProfileId(workspace, "cp-" + cp.name, cp.id);
     }
 
     for (auto& op : workspace.outputProfiles) {
         if (!op.id.empty()) continue;
-        op.id = Models::makeUniqueOutputProfileId(workspace.outputProfiles);
+        op.id = makeUniqueOutputProfileId(workspace.outputProfiles);
         relinkProfileId(workspace, "op-" + op.name, op.id);
+    }
+}
+
+/**
+ * \brief Restores the invariant "a preset identifier means exactly the preset's settings".
+ *
+ * Preset ids are shared by every workspace, which is what makes a preset recognisable across
+ * files and app updates — but only as long as the id cannot come to mean something else.
+ * Three cases, all silent because none of them is ambiguous:
+ *
+ * - **Adoption.** A profile carrying the legacy id \c "op-Webtoon Standard" is given the
+ *   canonical preset id, *provided its settings still match the preset*. If the user changed
+ *   them, it is left exactly as it is: it is their profile, not the preset, and promoting it
+ *   would make the shared id assert something false.
+ * - **Fork.** A profile carrying a preset id whose settings do **not** match (edited by an
+ *   older build, or by hand in the JSON) is given a fresh random id. Its settings are
+ *   untouched — overwriting them with the canonical ones would destroy the user's work.
+ * - **Presence.** Any preset missing from the workspace is appended.
+ *
+ * The three compose: a diverged profile is forked, which frees the canonical id, and the
+ * presence pass then puts the real preset back beside it. The user keeps their customised
+ * profile and regains the preset, without being asked anything.
+ *
+ * \note Appends, never prepends. resolveOutputProfile() falls back to \c outputProfiles.front()
+ *       when a project has no assignment, so inserting at the front would silently change
+ *       which profile existing workspaces render with.
+ */
+void enforceOutputProfilePresets(Models::Workspace& workspace)
+{
+    const auto presets = Models::outputProfilePresets();
+
+    // Adoption: a profile that *is* the preset takes the canonical id.
+    //
+    // Matched on the legacy name-derived id ("op-Webtoon Standard", the form the GUI wrote)
+    // or on the name, and in both cases only when the settings still match — a profile the
+    // user changed is theirs, and promoting it would make the shared id assert something
+    // false. The name arm matters because pre-id workspaces reach this point already carrying
+    // a freshly minted random id; without it they would keep that id and the presence pass
+    // would append a *second*, identical "Webtoon Standard" beside it.
+    for (auto& op : workspace.outputProfiles) {
+        for (const auto& preset : presets) {
+            const bool looksLikeThisPreset =
+                op.id == "op-" + preset.name || op.name == preset.name;
+            if (!looksLikeThisPreset) continue;
+            if (Models::outputProfileSignature(op) != Models::outputProfileSignature(preset))
+                continue;
+
+            // Never mint a duplicate: if something already holds the canonical id, leave
+            // this one alone and let the presence pass see the preset as present.
+            const bool idTaken = std::any_of(
+                workspace.outputProfiles.begin(), workspace.outputProfiles.end(),
+                [&](const Models::OutputProfile& other) { return other.id == preset.id; });
+            if (idTaken) continue;
+
+            const std::string oldId = op.id;
+            op.id = preset.id;
+            relinkProfileId(workspace, oldId, op.id);
+            break;
+        }
+    }
+
+    // Fork: carries a preset id but is no longer that preset.
+    for (auto& op : workspace.outputProfiles) {
+        const auto preset = Models::outputProfilePresetById(op.id);
+        if (!preset) continue;
+        if (Models::outputProfileSignature(op) == Models::outputProfileSignature(*preset))
+            continue;
+
+        const std::string oldId = op.id;
+        op.id = makeUniqueOutputProfileId(workspace.outputProfiles);
+        relinkProfileId(workspace, oldId, op.id);
+    }
+
+    // Presence: presets are always in the set.
+    for (const auto& preset : presets) {
+        const bool present = std::any_of(
+            workspace.outputProfiles.begin(), workspace.outputProfiles.end(),
+            [&](const Models::OutputProfile& op) { return op.id == preset.id; });
+
+        if (!present)
+            workspace.outputProfiles.push_back(preset);
     }
 }
 
@@ -470,7 +552,11 @@ Models::Workspace WorkspaceSerializer::load(const std::string&     filePath,
 {
     report = WorkspaceRepairReport{};
 
-    std::ifstream file(filePath);
+    // Through utf8ToPath(), matching save() below. The two used to disagree — save() opened
+    // via an fs::path (converted correctly) while load() passed the narrow string straight to
+    // fopen() (read as ANSI) — so a workspace under a non-ASCII path could be written once
+    // and then never reopened.
+    std::ifstream file(utf8ToPath(filePath));
     if (!file.is_open()) {
         throw std::runtime_error(
             "WorkspaceSerializer::load() — cannot open '" + filePath + "'");
@@ -516,13 +602,17 @@ Models::Workspace WorkspaceSerializer::load(const std::string&     filePath,
 
     deduplicateIds(
         workspace.canvasProfiles,
-        [](const auto& existing) { return Models::makeUniqueCanvasProfileId(existing); },
+        [](const auto& existing) { return makeUniqueCanvasProfileId(existing); },
         report.canvasProfiles);
 
     deduplicateIds(
         workspace.outputProfiles,
-        [](const auto& existing) { return Models::makeUniqueOutputProfileId(existing); },
+        [](const auto& existing) { return makeUniqueOutputProfileId(existing); },
         report.outputProfiles);
+
+    // Presets last: adoption and forking both hand out ids, so they must run on a list that
+    // is already free of duplicates, and the presence pass must see the final set.
+    enforceOutputProfilePresets(workspace);
 
     // Rebuild runtime lookup tables for every project.
     // These tables are not serialised so they must always be reconstructed
@@ -553,22 +643,24 @@ void WorkspaceSerializer::save(
     const std::string text = serialize(workspace);
 
     // Write to a sibling temp file then rename for near-atomic replacement.
-    const fs::path finalPath{filePath};
-    const fs::path tmpPath =
-        finalPath.parent_path() / (finalPath.filename().string() + ".tmp");
+    // The appended name goes back through utf8ToPath() as well: operator/ with a narrow
+    // string would rebuild a path the ambiguous way, reintroducing the bug on the temp file.
+    const fs::path finalPath = utf8ToPath(filePath);
+    const fs::path tmpPath   =
+        finalPath.parent_path() / utf8ToPath(pathToUtf8(finalPath.filename()) + ".tmp");
 
     {
         std::ofstream tmp(tmpPath, std::ios::out | std::ios::trunc);
         if (!tmp.is_open()) {
             throw std::runtime_error(
                 "WorkspaceSerializer::save() — cannot open temp file '" +
-                tmpPath.string() + "' for writing");
+                pathToUtf8(tmpPath) + "' for writing");
         }
         tmp << text;
         if (!tmp.good()) {
             throw std::runtime_error(
                 "WorkspaceSerializer::save() — write error for '" +
-                tmpPath.string() + "'");
+                pathToUtf8(tmpPath) + "'");
         }
     } // tmp closed and flushed here
 

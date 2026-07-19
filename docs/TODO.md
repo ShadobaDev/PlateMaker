@@ -33,6 +33,21 @@ encode / io) carrying a stable code + message, so the GUI can localise, group an
 react (e.g. offer "open output folder", "re-scan inputs"). `ProcessingOutcome`
 would carry typed errors instead of a plain string.
 
+**Concrete case to fold in — an unreadable file fails silently and loops forever.**
+`FileMetaData::computeFileSha256()` returns an empty string both when the file is absent and
+when it exists but cannot be opened; the two are indistinguishable. `applyProcessingResults()`
+then skips that input's update entirely (`if (!h.empty())` in
+`lib/src/models/project_item.cpp`), leaving `status`, `sha256` and `lastProcessed` untouched.
+An input that was never processed therefore stays `Pending` even after a successful render,
+`sanitize()` agrees, and the next render redoes all the work and overwrites the output —
+indefinitely, with nothing reported anywhere.
+
+This is exactly how the non-ASCII path bug stayed invisible (fixed in 0.2.1). The cause is
+gone, the *mechanism* is not: a locked file, missing permissions, or an offline network drive
+all produce the same silent loop. Whatever shape the structured errors take, a hash that
+fails after a successful render has to surface — at minimum the input must not be left
+claiming a state the render did not reach.
+
 ### Dynamic thread spawning for processing
 
 `ProcessingPipeline` runs single-threaded because the virtual strip is built

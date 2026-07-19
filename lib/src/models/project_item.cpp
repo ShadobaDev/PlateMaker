@@ -12,6 +12,7 @@
 
 #include <platemaker/models/project_item.hpp>
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
+#include <platemaker/infrastructure/file/path_utf8.hpp>
 
 #include <algorithm>
 #include <filesystem>
@@ -125,7 +126,9 @@ bool ProjectItem::sanitize(const std::vector<CanvasProfile>& workspaceProfiles)
     m_isUpToDate = true;
 
     for (auto& file : m_input_images) {
-        if (!fs::exists(file.filePath)) {
+        // utf8ToPath() rather than the bare string: on MSVC a narrow path is read in the ANSI
+        // code page, so a non-ASCII path would report as Missing even though the file is there.
+        if (!fs::exists(Infrastructure::utf8ToPath(file.filePath))) {
             file.status  = FileStatus::Missing;
             m_isUpToDate = false;
             continue;
@@ -154,7 +157,7 @@ bool ProjectItem::sanitize(const std::vector<CanvasProfile>& workspaceProfiles)
     for (auto& out : m_output_images) {
         const std::string path = m_output_directory + "/" + out.fileName;
 
-        if (!fs::exists(path)) {
+        if (!fs::exists(Infrastructure::utf8ToPath(path))) {
             out.status   = FileStatus::Missing;
             m_isUpToDate = false;
             continue;

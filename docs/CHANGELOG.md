@@ -7,9 +7,15 @@ compatible in both directions.
 
 ### Added
 
-- **`Models::makeId()` and the `makeUnique*Id()` helpers** (`platemaker/models/id.hpp`) —
-  random 128-bit identifiers that are checked against the ids already in use, so a
-  collision is impossible rather than merely unlikely
+- **`Infrastructure::makeId()` and the `makeUnique*Id()` helpers**
+  (`platemaker/infrastructure/id_generator/id_generator.hpp`) — random 128-bit identifiers
+  that are checked against the ids already in use, so a collision is impossible rather than
+  merely unlikely.
+- **Output profile presets** (`platemaker/models/output_profile.hpp`) —
+  `webtoonStandardPreset()`, the `outputProfilePresets()` lookup table,
+  `isOutputProfilePresetId()` and `outputProfilePresetById()`. Preset identifiers are the
+  same in every workspace, so a preset stays recognisable across files and across app
+  updates
 - **`WorkspaceSerializer::load()` overload taking a `WorkspaceRepairReport`** — reports
   identifier collisions the load had to repair, so a GUI can explain them to the user
 
@@ -25,8 +31,32 @@ compatible in both directions.
   scheme that was not unique either, since two profiles with the same name collided.
   Profiles saved without an id now get a random one, and the legacy references that relied
   on the derived form are relinked on load
+- **Paths containing non-ASCII characters did not work on Windows** — one cause behind two
+  symptoms that looked unrelated:
+  - **inputs stayed Pending after a successful render**, so every render redid all the work
+    and overwrote the existing output. Hashing an input opened the file through a narrow
+    string, which Windows reads in the ANSI code page while the library's paths are UTF-8,
+    so the hash silently came back empty and the status was never updated
+  - **a workspace could be saved but not reopened.** `save()` opened through a
+    `std::filesystem::path` and `load()` through a `std::string`, so the two disagreed about
+    the same path. Easy to mistake for a Google Drive limitation, because Drive creates a
+    localised folder name (Polish "Mój dysk") — the same file under an ASCII path was fine
+
+  Every filesystem boundary now converts explicitly (`utf8ToPath()` / `pathToUtf8()` in
+  `platemaker/infrastructure/file/path_utf8.hpp`), so behaviour no longer depends on the
+  toolchain or on the machine's code page. Rendering itself was never affected: libvips
+  takes UTF-8 and lets GLib convert it
 - **CLI could create two projects with the same identifier** — project ids came from a
   second-resolution timestamp, so a single command creating two projects collided
+- **The "Webtoon Standard" profile was defined twice**, once in the CLI and once in the GUI,
+  agreeing only because both happened to match the struct's field defaults. Both now seed
+  from the library's preset table, so a workspace created either way carries the same
+  preset with the same id
+- **Presets are kept consistent on load** — a profile that is the preset takes the canonical
+  id, one that carries a preset id but has been edited is given an id of its own (its
+  settings untouched), and any missing preset is added back. The passes compose: an edited
+  profile is separated out, which frees the canonical id, and the genuine preset returns
+  beside it
 
 ## [0.2.0] — 2026-07-18
 

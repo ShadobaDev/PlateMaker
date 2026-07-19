@@ -6,11 +6,11 @@ cmake_minimum_required(VERSION 3.21)
 set(PLATEMAKER_SOURCES
     # Models (non-trivial computed properties)
     src/models/canvas_profile.cpp
-    src/models/id.cpp
     src/models/project_item.cpp
 
     # Infrastructure — control
     src/infrastructure/control/cancellation_token.cpp
+    src/infrastructure/id_generator/id_generator.cpp
 
     # Core pipeline
     src/core/pixel_buffer/pixel_buffer.cpp

@@ -1,6 +1,14 @@
 /**
- * \file lib/include/platemaker/models/id.hpp
+ * \file lib/include/platemaker/infrastructure/id_generator/id_generator.hpp
  * \brief Identifier generation for workspace entities (canvas profiles, output profiles, projects).
+ *
+ * Lives in Infrastructure rather than Core or Models on purpose.  It is not part of the data
+ * model — it produces values rather than describing them — and it is not Core either, because
+ * Core is deterministic domain logic (CanvasProfileMatcher, MarginCropper, Scaler all return
+ * the same answer for the same input).  This draws on \c std::random_device, a platform
+ * entropy source, which makes it a service from the outside world in the same sense as the
+ * clock or the filesystem.  CancellationToken sets the precedent: Infrastructure here means
+ * platform-facing plumbing, not strictly file I/O.
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
  *
@@ -11,8 +19,8 @@
  */
 
 
-#ifndef PLATEMAKER_MODELS_ID_HPP
-#define PLATEMAKER_MODELS_ID_HPP
+#ifndef PLATEMAKER_INFRASTRUCTURE_ID_GENERATOR_HPP
+#define PLATEMAKER_INFRASTRUCTURE_ID_GENERATOR_HPP
 
 #include <string>
 #include <string_view>
@@ -23,7 +31,7 @@
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/output_profile.hpp>
 
-namespace Platemaker::Models {
+namespace Platemaker::Infrastructure {
 
 /**
  * \brief Generates a random identifier of the form \c "<prefix>-<32 hex digits>".
@@ -45,7 +53,7 @@ namespace Platemaker::Models {
 /**
  * \brief Returns an identifier that does not appear in \p taken.
  *
- * The general form, for entities the typed helpers below do not cover (project uuids, for
+ * The general form, for entities the typed helpers below do not cover (project uids, for
  * instance, whose field is named \c uuid rather than \c id).
  *
  * \param prefix Short tag, as for makeId().
@@ -69,15 +77,20 @@ namespace Platemaker::Models {
  *         which in practice only happens if the platform's randomness is broken.
  */
 [[nodiscard]] PLATEMAKER_EXPORT std::string makeUniqueCanvasProfileId(
-    const std::vector<CanvasProfile>& existing);
+    const std::vector<Models::CanvasProfile>& existing);
 
 /**
  * \brief Returns an \c "op-" identifier that no profile in \p existing is using.
+ *
+ * \note Never returns a preset identifier: presets use the reserved \c "op-preset-" prefix
+ *       (see \c Models::outputProfilePresets()) and generated ids are hex, so the two
+ *       namespaces cannot overlap.
+ *
  * \see makeUniqueCanvasProfileId
  */
 [[nodiscard]] PLATEMAKER_EXPORT std::string makeUniqueOutputProfileId(
-    const std::vector<OutputProfile>& existing);
+    const std::vector<Models::OutputProfile>& existing);
 
-} // namespace Platemaker::Models
+} // namespace Platemaker::Infrastructure
 
-#endif // PLATEMAKER_MODELS_ID_HPP
+#endif // PLATEMAKER_INFRASTRUCTURE_ID_GENERATOR_HPP

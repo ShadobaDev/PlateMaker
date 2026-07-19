@@ -12,6 +12,7 @@
 
 
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
+#include <platemaker/infrastructure/file/path_utf8.hpp>
 #include <fstream>
 #include <vips/vips.h> //glib dependency for GChecksum API
 
@@ -19,7 +20,10 @@ namespace Platemaker::Infrastructure {
 
 std::string FileMetaData::computeFileSha256(const std::string& filePath)
 {
-    std::ifstream file(filePath, std::ios::binary);
+    // Through utf8ToPath(): opening from the narrow string sent the bytes to fopen(), which
+    // reads them in the ANSI code page, so any path with a non-ASCII character (a Polish
+    // "Mój dysk", an accented user name) failed to open and hashed to nothing.
+    std::ifstream file(utf8ToPath(filePath), std::ios::binary);
     if (!file) return {};
 
     GChecksum* cs = g_checksum_new(G_CHECKSUM_SHA256);

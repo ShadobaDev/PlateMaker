@@ -111,11 +111,15 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesOutputProfile)
     ser.save(original, tmp.string());
     const auto loaded = ser.load(tmp.string());
 
-    ASSERT_EQ(loaded.outputProfiles.size(), 1u);
+    // The workspace's own profile stays first and unchanged; load() appends the preset it
+    // guarantees, and appending is what keeps outputProfiles.front() — the fallback for an
+    // unassigned project — pointing where it always did.
+    ASSERT_EQ(loaded.outputProfiles.size(), 2u);
     EXPECT_EQ(loaded.outputProfiles[0].targetWidth,  original.outputProfiles[0].targetWidth);
     EXPECT_EQ(loaded.outputProfiles[0].sliceHeight,  original.outputProfiles[0].sliceHeight);
     EXPECT_EQ(loaded.outputProfiles[0].outputFormat, original.outputProfiles[0].outputFormat);
     EXPECT_EQ(loaded.outputProfiles[0].startIndex,   original.outputProfiles[0].startIndex);
+    EXPECT_EQ(loaded.outputProfiles[1].id, Models::k_webtoonStandardPresetId);
 
     std::filesystem::remove(tmp);
 }

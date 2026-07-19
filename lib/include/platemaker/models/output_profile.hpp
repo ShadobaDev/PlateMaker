@@ -14,7 +14,11 @@
 #ifndef PLATEMAKER_MODELS_OUTPUT_PROFILE_HPP
 #define PLATEMAKER_MODELS_OUTPUT_PROFILE_HPP
 
+#include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
+
 #include <platemaker/models/common_types.hpp>
 
 namespace Platemaker::Models {
@@ -122,6 +126,102 @@ public:
            ";webp" + to_string(p.webpOptions.quality) +
            "," + to_string(p.webpOptions.lossless) +
            "," + to_string(p.webpOptions.effort);
+}
+
+// ---------------------------------------------------------------------------
+// Presets
+//
+// A preset is an ordinary OutputProfile holding a reserved identifier — not a distinct
+// type.  Making it one would force conversions everywhere and invite storing "is a preset"
+// as a field, which is exactly the failure mode being avoided: a value that asserts
+// something nobody verifies.  Preset-ness is *derived*, from the id and the signature.
+//
+// These live in the model header, as inline free functions next to outputProfileSignature(),
+// for two reasons.  OutputProfile is header-only and — unlike CanvasProfile — is not
+// PLATEMAKER_EXPORT, so keeping the catalogue inline adds nothing to the DLL boundary.  And
+// outputProfileSignature() is already a free function here; a second convention alongside it
+// would buy nothing.
+//
+// The identifiers are the same in every workspace on purpose.  That is what lets a future
+// partial import/export of settings recognise "this is the shared preset" rather than "some
+// profile that happens to look alike", and it keeps a preset stable across app updates.
+// ---------------------------------------------------------------------------
+
+//! Reserved identifier prefix.  Preset-ness is decidable from the id alone — no table needed
+//! at the call site, and generated ids are hex, so the two namespaces cannot collide.
+inline constexpr std::string_view k_outputPresetPrefix = "op-preset-";
+
+//! Canonical id of the Webtoon Standard preset.  Stable across workspaces and releases.
+inline constexpr std::string_view k_webtoonStandardPresetId = "op-preset-webtoon-standard";
+
+/**
+ * \brief The Webtoon Standard preset: 800 px wide, 1280 px slices, PNG.
+ *
+ * Every field is set **explicitly** rather than left to the struct's defaults. The defaults
+ * happen to match today, which is precisely the hazard: changing one would silently
+ * redefine the preset and desynchronise it from every workspace already on disk.
+ */
+[[nodiscard]] inline OutputProfile webtoonStandardPreset()
+{
+    OutputProfile p;
+    p.id                       = std::string{k_webtoonStandardPresetId};
+    p.name                     = "Webtoon Standard";
+    p.targetWidth              = 800;
+    p.sliceHeight              = 1280;
+    p.lastSlicePolicy          = LastSlicePolicy::KeepAsIs;
+    p.outputFormat             = OutputFormat::PNG;
+    p.startIndex               = 1;
+    p.jpegOptions.quality      = 90;
+    p.jpegOptions.subsampling  = JpegSubsampling::YUV_444;
+    p.jpegOptions.optimize     = true;
+    p.jpegOptions.progressive  = false;
+    p.pngOptions.compression   = 6;
+    p.pngOptions.interlaced    = false;
+    p.webpOptions.quality      = 80;
+    p.webpOptions.lossless     = false;
+    p.webpOptions.effort       = 4;
+    return p;
+}
+
+/**
+ * \brief Every preset this build ships — the lookup table.
+ *
+ * The single source of truth for seeding a new workspace, for guaranteeing presets are
+ * present when one is loaded, and for marking them in the GUI.
+ *
+ * \note Returned **by value**, not as a reference to a function-local static: in an inline
+ *       function such an object can be duplicated between the DLL and the executable on
+ *       MinGW, which would quietly break identity comparisons. With a handful of presets the
+ *       copy costs nothing and the hazard disappears.
+ */
+[[nodiscard]] inline std::vector<OutputProfile> outputProfilePresets()
+{
+    return { webtoonStandardPreset() };
+}
+
+/**
+ * \brief Whether \p id belongs to the reserved preset namespace.
+ *
+ * What the GUI uses to mark a row read-only, so it never needs to know a specific preset id
+ * and adding a preset to the library requires no change on its side.
+ */
+[[nodiscard]] inline bool isOutputProfilePresetId(std::string_view id)
+{
+    return id.rfind(k_outputPresetPrefix, 0) == 0;
+}
+
+/**
+ * \brief The canonical definition of the preset with \p id, if one exists.
+ *
+ * Used to decide whether a *stored* profile is still that preset: compare
+ * outputProfileSignature() against this. A stored profile carrying a preset id but different
+ * settings has been edited and is no longer the preset.
+ */
+[[nodiscard]] inline std::optional<OutputProfile> outputProfilePresetById(std::string_view id)
+{
+    for (auto& preset : outputProfilePresets())
+        if (preset.id == id) return preset;
+    return std::nullopt;
 }
 
 } // namespace Platemaker::Models

@@ -132,6 +132,27 @@ This keeps the Core testable without a display, usable from CLI without Qt, and 
 
 `ScaledStrip` processes files one at a time and keeps in memory only the minimum number of scaled images needed to complete the current output slice. For example: if a slice boundary falls mid-file, two files may be in memory simultaneously (tail of file N + head of file N+1). As soon as a file's contribution to all remaining slices is exhausted, it is released. This is critical for large projects where the total input may be several gigabytes — the file list and thumbnails are metadata only; raw pixel data is loaded on demand.
 
+> **Every path in the API is UTF-8, and the conversion to `std::filesystem` is explicit.**
+
+Workspace JSON stores UTF-8 and the GUI hands over UTF-8, but what a *narrow* `std::string`
+means is not agreed upon across the standard library: on Windows `std::ifstream` passes the
+bytes to `fopen()`, which reads them in the ANSI code page, while libstdc++'s
+`std::filesystem::path` reads the same bytes as UTF-8 (MSVC reads them as ANSI in both
+places). A program mixing the two conventions is not portable and not even self-consistent.
+
+Nothing in the library may construct a `std::filesystem::path` from a narrow string, or call
+`path::string()`. Use `utf8ToPath()` / `pathToUtf8()` from
+`platemaker/infrastructure/file/path_utf8.hpp`, which go through `std::u8string` and are
+therefore defined by C++20 rather than by the toolchain or the machine's code page.
+`path::string()` is additionally unsafe on MSVC: it throws on a character the ANSI page
+cannot represent.
+
+This was not hypothetical. Under a path such as `G:/Mój dysk/…` — the folder name Google
+Drive creates on a Polish system — hashing an input silently returned nothing, so inputs
+stayed `Pending` after a successful render and every render redid all the work; and a
+workspace saved through an `fs::path` could never be reopened through a `std::string`. See
+`tests/lib-unit-tests/test_path_encoding.cpp`.
+
 ### 4.4 CLI as First-Class Citizen
 
 CLI is not a wrapper added after the fact — it is a primary interface and the intended backend for a future web application. A web server can call `platemaker process --json` as a subprocess and parse its stdout. The layer hierarchy is:
@@ -571,9 +592,17 @@ offending entry.
 ##### Profile identity
 
 `CanvasProfile::id` and `OutputProfile::id` are **random and unique within a workspace**.
-They are minted by `Models::makeUniqueCanvasProfileId()` / `makeUniqueOutputProfileId()`
-(`platemaker/models/id.hpp`), which draw 128 random bits and re-draw on collision with an
-existing id.  An identifier is opaque: nothing may parse it or derive meaning from it.
+They are minted by `Infrastructure::makeUniqueCanvasProfileId()` / `makeUniqueOutputProfileId()`
+(`platemaker/infrastructure/id_generator/id_generator.hpp`), which draw 128 random bits and
+re-draw on collision with an existing id.  An identifier is opaque: nothing may parse it or
+derive meaning from it, with the single exception of the preset prefix described below.
+
+The generator lives in **Infrastructure**, not Models or Core.  It is not part of the data
+model — it produces values rather than describing them — and it is not Core either, because
+Core is deterministic domain logic (`CanvasProfileMatcher`, `MarginCropper`, `Scaler` all
+return the same answer for the same input).  Drawing on `std::random_device` makes it a
+platform service in the same sense as the clock or the filesystem; `CancellationToken` sets
+the precedent that Infrastructure here means platform-facing plumbing, not file I/O.
 
 Two rules were dropped in 0.2.1 and must not be reintroduced:
 
@@ -594,6 +623,42 @@ reported, being unambiguous.
 After a separation, which of the two profiles a project actually rendered with is unknowable
 from the id alone.  It is not guessed: `ProjectItem::sanitize()` settles it exactly, by
 comparing the `canvasRenderFingerprint()` recorded per input at render time.
+
+##### Output profile presets
+
+Presets are the one deliberate exception to "an identifier carries no meaning".  They use
+the reserved prefix `op-preset-` and their ids are **identical in every workspace** — that
+is what lets a future partial import/export of settings recognise *the shared preset* rather
+than *a profile that happens to look similar*, and what keeps a preset stable across app
+updates.  Generated ids are hex after their prefix, so the two id spaces cannot overlap.
+
+The catalogue is `Models::outputProfilePresets()` in `platemaker/models/output_profile.hpp`
+— inline free functions beside `outputProfileSignature()`, deliberately not a separate class.
+A preset *is* an `OutputProfile`; a distinct type would force conversions everywhere and
+invite storing "is a preset" as a field, when it must stay **derivable** from the id and the
+signature.  Every field is set explicitly rather than left to the struct's defaults, so
+changing a default cannot silently redefine a preset already written to disk.
+
+A shared id is only true while it cannot come to mean something else, so **presets are
+read-only** — the GUI offers Duplicate instead of Edit or Delete — and `load()` enforces the
+invariant regardless of which path wrote the file:
+
+- **Adoption.** A profile that *is* the preset (matched on the legacy `"op-<name>"` id or on
+  the name, and in both cases only when the signature matches) takes the canonical id, with
+  references relinked.  A profile the user changed is left exactly as it is: promoting it
+  would make the shared id assert something false.
+- **Fork.** A profile carrying a preset id whose signature does **not** match was edited by
+  an older build or by hand; it is given a fresh random id.  Its settings are never
+  overwritten with the canonical ones — that would destroy the user's work.
+- **Presence.** Any preset missing from the workspace is **appended**.  Appended, never
+  prepended: `outputProfiles.front()` is the fallback for a project with no assignment, so
+  inserting at the front would silently change what an existing workspace renders with.
+
+The three compose.  A diverged profile is forked, which frees the canonical id, and the
+presence pass then restores the genuine preset beside it — the user keeps their customised
+profile and regains the preset, without being asked anything.  All three are unambiguous
+bookkeeping and are therefore **not** reported in `WorkspaceRepairReport`, which stays
+reserved for genuine collisions.
 
 **Planned API:**
 ```cpp
