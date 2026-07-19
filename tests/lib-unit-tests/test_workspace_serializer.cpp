@@ -180,10 +180,16 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesCanvasProfileId)
     std::filesystem::remove(tmp);
 }
 
-TEST(WorkspaceSerializerTest, BackCompatLoadWithoutIdDerivedFromName)
+TEST(WorkspaceSerializerTest, BackCompatLoadWithoutIdGetsAMintedId)
 {
     // Workspace JSON that predates the 'id' field on CanvasProfile.
-    // The serializer should derive 'id' from 'name' so the object is usable.
+    //
+    // Such a profile used to have its id *derived from its name* ("cp-" + name).  That was
+    // a second identity scheme and it was not unique either — two profiles sharing a name
+    // shared an id.  Since 0.2.1 the serializer mints a random unique id instead and
+    // relinks the legacy references (covered by test_profile_ids.cpp); all this test cares
+    // about is that the profile comes back usable, with *some* id that is not the old
+    // name-derived one.
     const std::filesystem::path tmp =
         std::filesystem::temp_directory_path() / "pm_test_backcompat_id.json";
 
@@ -208,8 +214,9 @@ TEST(WorkspaceSerializerTest, BackCompatLoadWithoutIdDerivedFromName)
     ASSERT_NO_THROW(loaded = ser.load(tmp.string()));
 
     ASSERT_EQ(loaded.canvasProfiles.size(), 1u);
-    // Back-compat: id derived as "cp-" + name
-    EXPECT_EQ(loaded.canvasProfiles[0].id, "cp-Webtoon Standard");
+    EXPECT_FALSE(loaded.canvasProfiles[0].id.empty());
+    EXPECT_NE(loaded.canvasProfiles[0].id, "cp-Webtoon Standard");
+    EXPECT_EQ(loaded.canvasProfiles[0].id.rfind("cp-", 0), 0u); // keeps the readable prefix
 
     std::filesystem::remove(tmp);
 }

@@ -568,6 +568,33 @@ checks for a collision and returns a structured error identifying the conflictin
 profile — so the CLI can suggest a removal command and the GUI can highlight the
 offending entry.
 
+##### Profile identity
+
+`CanvasProfile::id` and `OutputProfile::id` are **random and unique within a workspace**.
+They are minted by `Models::makeUniqueCanvasProfileId()` / `makeUniqueOutputProfileId()`
+(`platemaker/models/id.hpp`), which draw 128 random bits and re-draw on collision with an
+existing id.  An identifier is opaque: nothing may parse it or derive meaning from it.
+
+Two rules were dropped in 0.2.1 and must not be reintroduced:
+
+- **Timestamps as identifiers.**  Ids used to be a millisecond timestamp, so profiles minted
+  inside one loop shared an id.  A shared id makes the second profile unreachable — every
+  lookup resolves to the first — which surfaces as a profile that cannot be assigned to a
+  project (it counts as *already* assigned) and silently disappears from the assign list.
+- **Deriving an id from the name** (`"cp-" + name`).  A second identity scheme, and not
+  unique either: two profiles with the same name collide.
+
+`WorkspaceSerializer::load()` repairs both on the way in.  Profiles with no id are given one
+and the legacy `"cp-<name>"` / `"op-<name>"` references are relinked; profiles sharing an id
+are separated, with the **first keeping it** so existing project references stay valid and
+resolve to the same profile as before.  The second overload reports the collisions it fixed
+(`WorkspaceRepairReport`) so a GUI can explain the change; minting an absent id is not
+reported, being unambiguous.
+
+After a separation, which of the two profiles a project actually rendered with is unknowable
+from the id alone.  It is not guessed: `ProjectItem::sanitize()` settles it exactly, by
+comparing the `canvasRenderFingerprint()` recorded per input at render time.
+
 **Planned API:**
 ```cpp
 struct AddCanvasProfileResult {

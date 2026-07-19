@@ -58,6 +58,7 @@
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/common_types.hpp>
+#include <platemaker/models/id.hpp>
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/project_item.hpp>
 #include <platemaker/models/workspace.hpp>
@@ -275,6 +276,26 @@ static std::string nowIso8601()
     return oss.str();
 }
 
+/**
+ * \brief Returns a "proj-" identifier that no project in \p ws is already using.
+ *
+ * These used to come from nowIso8601(), which resolves to the second — so two projects
+ * created by one command came out identical.
+ *
+ * \note "uid" (unique identifier), not "uuid": what we generate is a random identifier,
+ *       not an RFC 4122 UUID, and it has never had that layout.  ProjectItem still calls
+ *       the field \c uuid; renaming it is a public API break, so it waits for 0.3.0.
+ */
+static std::string makeProjectUid(const Workspace& ws)
+{
+    std::vector<std::string> taken;
+    taken.reserve(ws.projectItems.size());
+    for (const auto& pi : ws.projectItems)
+        taken.push_back(pi.uuid);
+
+    return makeUniqueId("proj", taken);
+}
+
 // ===========================================================================
 // platemaker --version
 // ===========================================================================
@@ -379,7 +400,7 @@ static int cmdWorkspaceCreate(const Opts& opts)
 
     // Build a default "Webtoon Standard" output profile.
     OutputProfile op;
-    op.id              = "op-" + nowIso8601();
+    op.id              = makeUniqueOutputProfileId({}); // brand-new workspace: nothing taken yet
     op.name            = "Webtoon Standard";
     op.targetWidth     = targetWidth;
     op.sliceHeight     = sliceHeight;
@@ -478,7 +499,7 @@ static int cmdWorkspaceAddProfile(const Opts& opts)
     }
 
     CanvasProfile cp;
-    cp.id           = "cp-" + nowIso8601();
+    cp.id           = makeUniqueCanvasProfileId(ws.canvasProfiles);
     cp.name         = name;
     cp.canvasSize   = canvasSize;
     cp.margins      = margins;
@@ -788,7 +809,7 @@ static int cmdProcess(const Opts& opts)
             // No match — create a new project and append to workspace.
             ProjectItem newProj;
             newProj.name           = inputDir.filename().string();
-            newProj.uuid           = "proj-" + nowIso8601();
+            newProj.uuid           = makeProjectUid(ws);
             newProj.inputDirectory = absInput;
             // Use mergeFileScan() on the empty project to populate the file
             // list via the library layer (same path as updates later on).
@@ -1115,7 +1136,7 @@ static int cmdProjectCreate(const Opts& opts)
 
     ProjectItem newProj;
     newProj.name = opts.get("name");
-    newProj.uuid = "proj-" + nowIso8601();
+    newProj.uuid = makeProjectUid(ws);
 
     if (opts.has("input")) {
         const fs::path inputDir = opts.get("input");

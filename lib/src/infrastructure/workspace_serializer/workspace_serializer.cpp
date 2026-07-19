@@ -17,12 +17,16 @@
 
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 
+#include <platemaker/models/id.hpp>
+
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // JSON serialisation helpers for Platemaker::Models types.
@@ -167,10 +171,9 @@ void to_json(nlohmann::json& j, const CanvasProfile& v) {
     };
 }
 void from_json(const nlohmann::json& j, CanvasProfile& v) {
-    if (j.contains("id"))
-        j.at("id").get_to(v.id);
-    else
-        v.id = "cp-" + j.at("name").get<std::string>(); // back-compat: derive from name
+    // Left empty when absent (pre-id workspaces); load() mints a unique id and
+    // relinks the legacy "cp-<name>" references.  See mintMissingProfileIds().
+    if (j.contains("id")) j.at("id").get_to(v.id);
     j.at("name").get_to(v.name);
     j.at("canvasSize").get_to(v.canvasSize);
     j.at("margins").get_to(v.margins);
@@ -349,6 +352,107 @@ namespace Platemaker::Infrastructure {
 namespace {
     /// Current on-disk schema version.  Increment on every breaking schema change.
     constexpr int k_currentVersion = 2;
+
+// ---------------------------------------------------------------------------
+// Identifier repair helpers
+//
+// Both run on every load, for any file version.  Order matters: mint first, then
+// deduplicate — two id-less profiles sharing a name used to derive the same legacy
+// id, so minting after the dedup pass would leave that collision in place.
+// ---------------------------------------------------------------------------
+
+/**
+ * \brief Rewrites every project reference to \p oldId so it points at \p newId instead.
+ *
+ * Covers all four places a profile id is stored on a project: the assigned canvas
+ * profiles, the output profile, the canvas baseline recorded at render time, and the
+ * per-input profile the page was rendered with.
+ */
+void relinkProfileId(Models::Workspace&  workspace,
+                     const std::string&  oldId,
+                     const std::string&  newId)
+{
+    for (auto& pi : workspace.projectItems) {
+        for (auto& id : pi.canvasProfileIds)
+            if (id == oldId) id = newId;
+
+        for (auto& id : pi.canvasProfileIdsAtRender)
+            if (id == oldId) id = newId;
+
+        if (pi.outputProfileId == oldId)
+            pi.outputProfileId = newId;
+
+        for (auto& inf : pi.getInputImages())
+            if (inf.canvasProfileId == oldId)
+                inf.canvasProfileId = newId;
+    }
+}
+
+/**
+ * \brief Gives a random unique id to every profile saved without one, migrating the
+ *        references that used to rely on the id being derived from the name.
+ *
+ * Pre-id workspaces (and, until 0.2.1, any profile a GUI saved with an empty id) had
+ * their id computed as \c "cp-<name>" / \c "op-<name>".  That was a second, parallel
+ * identity scheme and it was not unique either — two profiles sharing a name shared an
+ * id.  Since the old form is *deterministic*, we can compute what a profile's id would
+ * have been and relink exactly those references, which turns the name-derived scheme
+ * into a one-off migration instead of a permanent fixture.
+ *
+ * Not reported: this is unambiguous bookkeeping, not a collision the user should hear about.
+ */
+void mintMissingProfileIds(Models::Workspace& workspace)
+{
+    for (auto& cp : workspace.canvasProfiles) {
+        if (!cp.id.empty()) continue;
+        cp.id = Models::makeUniqueCanvasProfileId(workspace.canvasProfiles);
+        relinkProfileId(workspace, "cp-" + cp.name, cp.id);
+    }
+
+    for (auto& op : workspace.outputProfiles) {
+        if (!op.id.empty()) continue;
+        op.id = Models::makeUniqueOutputProfileId(workspace.outputProfiles);
+        relinkProfileId(workspace, "op-" + op.name, op.id);
+    }
+}
+
+/**
+ * \brief Breaks up shared identifiers so every profile is reachable again.
+ *
+ * The first profile holding an id keeps it — that way every existing project reference
+ * still resolves, and to the same profile it resolved to before.  Later duplicates get a
+ * fresh id and become unassigned, which is what puts them back in the "assign a profile"
+ * list they had silently dropped out of.
+ *
+ * Deliberately does **not** touch project references to the duplicated id.  We cannot know
+ * which of the two profiles a project really rendered with, and guessing would be worse than
+ * leaving it: ProjectItem::sanitize() settles it exactly, by comparing the canvas fingerprint
+ * recorded per input at render time.
+ *
+ * \tparam Profiles Vector of profiles exposing \c id and \c name.
+ * \tparam MakeId   Callable returning a fresh unique id for that vector.
+ */
+template <typename Profiles, typename MakeId>
+void deduplicateIds(Profiles&                                              profiles,
+                    const MakeId&                                          makeFreshId,
+                    std::vector<WorkspaceRepairReport::ReassignedProfile>&  out)
+{
+    std::vector<std::string> seen;
+    seen.reserve(profiles.size());
+
+    for (auto& p : profiles) {
+        if (std::find(seen.begin(), seen.end(), p.id) == seen.end()) {
+            seen.push_back(p.id);
+            continue;
+        }
+
+        const std::string oldId = p.id;
+        p.id = makeFreshId(profiles);
+        seen.push_back(p.id);
+        out.push_back({p.name, oldId, p.id});
+    }
+}
+
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
@@ -357,6 +461,15 @@ namespace {
 
 Models::Workspace WorkspaceSerializer::load(const std::string& filePath) const
 {
+    WorkspaceRepairReport discarded;
+    return load(filePath, discarded);
+}
+
+Models::Workspace WorkspaceSerializer::load(const std::string&     filePath,
+                                            WorkspaceRepairReport& report) const
+{
+    report = WorkspaceRepairReport{};
+
     std::ifstream file(filePath);
     if (!file.is_open()) {
         throw std::runtime_error(
@@ -393,14 +506,23 @@ Models::Workspace WorkspaceSerializer::load(const std::string& filePath) const
         migrate(workspace, fileVersion);
     }
 
-    // Safety net (runs for ANY version): a current-version file may still have
-    // OutputProfiles with an empty id — e.g. saved by a GUI that wiped the id on
-    // edit, or seeded a default profile without one. Re-assign the canonical id
-    // (same convention as the v1→v2 migration) so output-profile selection works
-    // and existing ProjectItem::outputProfileId ("op-<name>") references re-link.
-    for (auto& op : workspace.outputProfiles)
-        if (op.id.empty())
-            op.id = "op-" + op.name;
+    // Identifier repair (runs for ANY version) — see the helpers above.
+    //
+    // Mint first, then deduplicate.  A file can arrive needing both: profiles saved
+    // without an id at all (pre-id workspaces, or a GUI that wiped the id on edit) and
+    // profiles that share one (ids used to be a millisecond timestamp, so several minted
+    // in the same loop came out identical).
+    mintMissingProfileIds(workspace);
+
+    deduplicateIds(
+        workspace.canvasProfiles,
+        [](const auto& existing) { return Models::makeUniqueCanvasProfileId(existing); },
+        report.canvasProfiles);
+
+    deduplicateIds(
+        workspace.outputProfiles,
+        [](const auto& existing) { return Models::makeUniqueOutputProfileId(existing); },
+        report.outputProfiles);
 
     // Rebuild runtime lookup tables for every project.
     // These tables are not serialised so they must always be reconstructed
@@ -479,11 +601,10 @@ void WorkspaceSerializer::migrate(
     //           All handled in from_json with j.contains() guards — no in-place fixup needed.
     if (fromVersion < 2) {
         workspace.version = k_currentVersion;
-        // Assign stable IDs to OutputProfiles that were deserialized without one.
-        for (auto& op : workspace.outputProfiles) {
-            if (op.id.empty())
-                op.id = "op-" + op.name;
-        }
+        // Ids for profiles deserialised without one are minted by mintMissingProfileIds()
+        // in load(), which runs for every file version — so there is nothing to do here.
+        // It also relinks the legacy "op-<name>" / "cp-<name>" references that a v1 file
+        // may carry, which this step could not do on its own.
     }
 }
 

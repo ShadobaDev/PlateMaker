@@ -6,6 +6,7 @@ cmake_minimum_required(VERSION 3.21)
 set(PLATEMAKER_SOURCES
     # Models (non-trivial computed properties)
     src/models/canvas_profile.cpp
+    src/models/id.cpp
     src/models/project_item.cpp
 
     # Infrastructure — control

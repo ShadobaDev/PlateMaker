@@ -65,6 +65,15 @@ cmake --workflow --preset dist-mingw-debug
 # → dist/platemaker-cli-0.1.1-windows-mingw-debug.zip    (unstripped)
 ```
 
+```powershell
+cmake --preset msvc-release
+cmake --build --preset msvc-release
+ctest --preset msvc-release
+cmake --workflow --preset dist-msvc-release
+# → dist/platemaker-dev-0.1.1-windows-msvc-release.zip
+# → dist/platemaker-cli-0.1.1-windows-msvc-release.zip
+```
+
 ---
 
 ## Package only (build already done)

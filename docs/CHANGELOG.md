@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.2.1] — 2026-07-19
+
+Additive API only — 0.2.0 consumers keep working without changes. Workspace files stay
+compatible in both directions.
+
+### Added
+
+- **`Models::makeId()` and the `makeUnique*Id()` helpers** (`platemaker/models/id.hpp`) —
+  random 128-bit identifiers that are checked against the ids already in use, so a
+  collision is impossible rather than merely unlikely
+- **`WorkspaceSerializer::load()` overload taking a `WorkspaceRepairReport`** — reports
+  identifier collisions the load had to repair, so a GUI can explain them to the user
+
+### Fixed
+
+- **Profiles could share an identifier, making one of them unreachable** — ids were a
+  millisecond timestamp, so every profile created in one pass of the "manage profiles"
+  dialog got the same one. The visible symptom was a canvas profile that could not be
+  assigned to a project: it counted as *already* assigned and vanished from the assign
+  list. Existing workspaces are repaired on load — the first profile keeps the id, later
+  duplicates get a new one, and project assignments are preserved
+- **Identifiers derived from profile names are gone** (`"cp-" + name`) — a second identity
+  scheme that was not unique either, since two profiles with the same name collided.
+  Profiles saved without an id now get a random one, and the legacy references that relied
+  on the derived form are relinked on load
+- **CLI could create two projects with the same identifier** — project ids came from a
+  second-resolution timestamp, so a single command creating two projects collided
+
 ## [0.2.0] — 2026-07-18
 
 Breaking API changes; consumers must be rebuilt. Workspace files stay compatible in both
