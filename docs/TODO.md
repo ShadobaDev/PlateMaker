@@ -88,6 +88,71 @@ show input progress live no matter what it does on its side.
 **This is an API/ABI break → lib 0.3.0**, and the GUI must move in lockstep (it will pin
 `find_package(platemaker 0.3.0 …)`).
 
+### WorkspaceEditor — enforce workspace invariants in one place — **0.3.0 window**
+
+**Problem.** `Models::Workspace` is a bare struct — public vectors, no mutating methods. Every
+invariant (unique profile ids, no duplicate canvas dimensions, presets present, `templateInfo`
+preserved) lives only in `WorkspaceSerializer::load()`, in the anonymous namespace of
+`workspace_serializer.cpp` (`mintMissingProfileIds`, `deduplicateIds`,
+`enforceOutputProfilePresets`, `relinkProfileId`), reachable **only through a save→load round
+trip**. There is no in-memory editing API, so the GUI has no choice but to mutate the vectors
+directly and then re-establish the invariants by hand — which means the same edit made in a
+running session is *not* validated the way a loaded file is. A duplicate id or duplicate
+dimension introduced through a dialog surfaces only on the next open.
+
+The boundary was intended, never built: the `Workspace` class doc references a "workspace
+management layer" that does not exist, and `SPECIFICATION.md` §7.5.2 already anticipates a
+"future WorkspaceEditor / ProjectEditor type".
+
+**Audit — where the GUI reaches deeper than is healthy** (paths are GUI-repo relative):
+
+*Tier 1 — GUI enforcing lib invariants (the real smell):*
+- Wholesale `canvasProfiles.assign(dialogResult)` then hand-minting ids —
+  `mainwindow/profiles.cpp:115` + `120-122`; the output twin at `230` + `235-237`. No
+  validation / dedup / conflict-guard runs.
+- Id minting scattered across five sites — the two above plus new-profile `157` / `266` and
+  the edit fallback `323`. The rule "every profile has a unique id" lives in the GUI in
+  parallel with the lib.
+- `templateInfo` snapshot-and-reattach by id — `profiles.cpp:125-128`, compensating for
+  `ManageCanvasProfilesDialog` dropping the field on its round trip.
+
+*Tier 2 — asymmetry and raw setters:*
+- Removing a linked profile with a raw `std::remove` — `widgets/project/input.cpp:112` —
+  while *adding* goes through `ProjectItem::addCanvasProfile()` with its conflict guard. No
+  `removeCanvasProfile()` exists.
+- Unvalidated field writes: `outputProfileId =` (`widgets/project/output.cpp:80`, no check the
+  id exists in `outputProfiles`), `inputDirectory =` (`input.cpp:262`),
+  `getOutputDirectory().clear()` (`output.cpp:139`).
+- Input reorder algorithm living in the GUI (`moveByOrder` over the mutable `getInputImages()`
+  ref — `input.cpp:412`/`421`).
+
+*Tier 3 — fine, listed so a fix does not over-reach:* indexing `projectItems[idx]`, iterating
+for display, `.front()/.size()/.empty()`, `push_back`/`erase` of a whole project. A GUI must
+read the model; wrapping every read in an accessor would be cargo cult.
+
+**Direction — a `WorkspaceEditor` facade in the lib**, holding a `Workspace&`, exposing
+intent-level operations that enforce invariants with the *same* code `load()` uses:
+- `replaceCanvasProfiles(...)` / `replaceOutputProfiles(...)` — take the dialog result, mint
+  missing ids, dedup, **carry `templateInfo`** (deletes the GUI's snapshot/restore), keep
+  presets. Replaces the `.assign()` + repair loops.
+- `addCanvasProfileToProject()` / `removeCanvasProfileFromProject()` — the symmetric pair,
+  both through the conflict guard.
+- `setProjectOutputProfile()` — validates the id exists.
+- (consider at implementation) input reorder, directory setters.
+
+**Necessary precondition, not cosmetics:** lift `mintMissingProfileIds` / `deduplicateIds` /
+`enforceOutputProfilePresets` / `relinkProfileId` out of the serializer's anonymous namespace
+into a shared internal header, so `load()` and `WorkspaceEditor` call **one** copy of the
+rules. Without that the facade merely duplicates what the GUI duplicates today — the problem is
+moved, not solved.
+
+**Related, separate:** `ManageCanvasProfilesDialog` losing `templateInfo` is the other half of
+the hand-patch — either the dialog stops dropping it, or `replaceCanvasProfiles` carries it.
+
+Additive to the lib API (a new class, nothing removed), but it naturally rides the **0.3.0**
+window alongside `ProcessingCallbacks`; the GUI adopts it in **1.2.0**, dropping its direct
+`m_workspace` mutations. See the GUI TODO for the call-site map.
+
 ### Public API: report what the lib links, at which version, under which licence
 
 Consumers currently have to hardcode this. The GUI's About dialog lists libvips and its
@@ -214,27 +279,37 @@ CMakePresets).
 
 ## Releases
 
-### Next release: lib **0.2.0** + GUI **1.0.1** (current state, after manual testing)
 
-`CMakeLists.txt` already says `0.2.0` and the GUI already says `1.0.1` — nothing to bump.
+### Already shipped: lib **0.2.0**
 
-**It must not be tagged `0.1.2`.** What is in the tree now breaks the API against the released
-`0.1.1`: `ProjectItem::sanitize()` gained a required parameter and `applyProcessingResults()`
-gained two. Under semver a pre-1.0 library signals a breaking change by bumping the **minor**,
-so `0.2.0` is correct and `0.1.2` would label a breaking change as a patch — which is precisely
-what would let someone's GUI fail to compile against a "patch" update.
+Broke the API against `0.1.1` (`ProjectItem::sanitize()` gained a required parameter,
+`applyProcessingResults()` gained two) — a breaking change, hence the minor bump, not `0.1.2`.
 
-Ship both together: a GUI built against `0.1.1` will not compile against `0.2.0`, and vice versa.
-Until `0.2.0` is on GitHub Releases, the GUI must keep pointing `PLATEMAKER_DIR` at a local
-install — its FetchContent fallback would pull `0.1.1` and fail to build.
+### Next release: lib **0.2.1** + GUI **1.1.0** (current state, after manual testing)
 
-### Release after that: lib **0.3.0** + GUI **1.1.0**
+`CMakeLists.txt` says `0.2.1` (lib) and `1.1.0` (GUI) — nothing to bump.
+
+**Lib is a patch (`0.2.0 → 0.2.1`).** Additive only against `0.2.0`: `makeId()` / the
+`makeUnique*Id()` helpers, output-profile presets, the `WorkspaceRepairReport` overload of
+`load()`, and the non-ASCII path fix. Nothing was removed, so code built against `0.2.0` still
+compiles. (The reverse does not hold — a GUI using the new API needs `0.2.1`.)
+
+**GUI is a minor (`1.0.0 → 1.1.0`), not a patch.** It adds batch render (F6), the About dialog,
+the out-of-sync warning and the workspace-repair notice. New features on a post-1.0 project are
+a minor bump; `1.0.1` would mislabel a new use case as a background fix. Note `1.0.1` was never
+tagged — it was the working number before this reasoning, and 1.1.0 supersedes it.
+
+**Order is forced: lib first.** The GUI pins `LIBPLATEMAKER_VERSION = 0.2.1`, which also builds
+the FetchContent URL, so until `0.2.1` is on GitHub Releases anyone without a local
+`LIBPLATEMAKER_DIR` gets a 404. Tag and upload the lib, then the GUI.
+
+### Release after that: lib **0.3.0** + GUI **1.2.0**
 
 Carries the callbacks-struct change above (breaking → minor bump for a 0.x lib). From that
 release on the GUI pins `find_package(platemaker 0.3.0 CONFIG REQUIRED)`, so an older lib is
 rejected at configure time instead of failing at compile time.
 
-GUI goes to **1.1.0, not 2.0.0**: it gains features (live status, batch render) but breaks
-nothing for the user — the workspace format change was additive and reads both ways, so older
-builds still open newer workspaces. A major bump should be saved for something that actually
-strands the user, e.g. a workspace format older versions cannot read.
+GUI goes to **1.2.0, not 2.0.0**: it gains features but breaks nothing for the user — the
+workspace format change was additive and reads both ways, so older builds still open newer
+workspaces. A major bump is reserved for something that actually strands the user, e.g. a
+workspace format older versions cannot read.

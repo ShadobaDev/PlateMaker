@@ -213,10 +213,10 @@ At configure time, tell CMake where the extracted package lives:
 
 ```bash
 # Linux
-cmake -B build -DCMAKE_PREFIX_PATH="/path/to/platemaker-dev-0.1.1-linux-x86_64-release"
+cmake -B build -DCMAKE_PREFIX_PATH="/path/to/platemaker-dev-0.2.1-linux-x86_64-release"
 
 # Windows (PowerShell)
-cmake -B build -DCMAKE_PREFIX_PATH="C:/path/to/platemaker-dev-0.1.1-windows-mingw-release"
+cmake -B build -DCMAKE_PREFIX_PATH="C:/path/to/platemaker-dev-0.2.1-windows-mingw-release"
 ```
 
 CMake caches `CMAKE_PREFIX_PATH`, so you only need to pass it once per build directory.
@@ -309,8 +309,8 @@ configure → build → package waterfall and zips the result.
 ```powershell
 # Windows MinGW
 cmake --workflow --preset dist-mingw-release
-# → dist/platemaker-dev-0.1.1-windows-mingw-release.zip
-# → dist/platemaker-cli-0.1.1-windows-mingw-release.zip
+# → dist/platemaker-dev-0.2.1-windows-mingw-release.zip
+# → dist/platemaker-cli-0.2.1-windows-mingw-release.zip
 
 # …and dist-mingw-debug for the debug variants
 ```
@@ -318,8 +318,8 @@ cmake --workflow --preset dist-mingw-release
 ```bash
 # Linux
 cmake --workflow --preset dist-linux-release
-# → dist/platemaker-dev-0.1.1-linux-x86_64-release.tar.gz
-# → dist/platemaker-cli-0.1.1-linux-x86_64-release.tar.gz
+# → dist/platemaker-dev-0.2.1-linux-x86_64-release.tar.gz
+# → dist/platemaker-cli-0.2.1-linux-x86_64-release.tar.gz
 
 # …and dist-linux-debug for the debug variants
 ```
@@ -367,7 +367,7 @@ install/<preset>/
   lib/
     libplatemaker.dll.a       MinGW import library
     platemaker.lib            MSVC import library
-    libplatemaker.so          Linux shared library (+ .so.0 / .so.0.1.1 symlinks)
+    libplatemaker.so          Linux shared library (+ .so.0 / .so.0.2.1 symlinks)
   lib/cmake/platemaker/
     platemaker-config.cmake
     platemaker-config-version.cmake
@@ -390,7 +390,7 @@ The recommended pattern tries a local dev package first, then falls back to an a
 #   2. find_package                   — system install or CMAKE_PREFIX_PATH
 #   3. FetchContent                   — downloads pre-built package from GitHub Releases
 # ───────────────────────────────────────────────────────────────────────────────
-set(PLATEMAKER_VERSION "0.1.1")
+set(PLATEMAKER_VERSION "0.2.1")
 set(PLATEMAKER_DIR "" CACHE PATH "Path to a local platemaker dev package")
 
 if(PLATEMAKER_DIR)
@@ -445,12 +445,12 @@ Set `PLATEMAKER_DIR` once on the command line — CMake caches it for subsequent
 
 ```powershell
 # Windows
-cmake -B build -DPLATEMAKER_DIR="C:/path/to/platemaker-dev-0.1.1-windows-mingw-release"
+cmake -B build -DPLATEMAKER_DIR="C:/path/to/platemaker-dev-0.2.1-windows-mingw-release"
 ```
 
 ```bash
 # Linux
-cmake -B build -DPLATEMAKER_DIR="/path/to/platemaker-dev-0.1.1-Linux-x86_64"
+cmake -B build -DPLATEMAKER_DIR="/path/to/platemaker-dev-0.2.1-Linux-x86_64"
 ```
 
 If `PLATEMAKER_DIR` is not set and platemaker is not found on the system, CMake automatically downloads the correct release archive from GitHub Releases during configure.
@@ -460,7 +460,7 @@ If `PLATEMAKER_DIR` is not set and platemaker is not found on the system, CMake 
 The library has an embedded RPATH of `$ORIGIN/../lib`, so executables installed alongside it find `libplatemaker.so` automatically.  During development (running from the build tree without installing), point the loader at the package manually:
 
 ```bash
-export LD_LIBRARY_PATH="/path/to/platemaker-dev-0.1.1-linux-x86_64-release/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="/path/to/platemaker-dev-0.2.1-linux-x86_64-release/lib:$LD_LIBRARY_PATH"
 ./my-app
 ```
 

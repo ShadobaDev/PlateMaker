@@ -1,9 +1,13 @@
 # Changelog
 
-## [0.2.1] — 2026-07-19
+## [0.2.1] — 2026-07-20
 
-Additive API only — 0.2.0 consumers keep working without changes. Workspace files stay
-compatible in both directions.
+Additive API only: nothing was removed or changed, so code written against 0.2.0 still
+compiles. The reverse does not hold — code using anything added below needs 0.2.1.
+
+Workspace files stay compatible in both directions, but **`load()` behaves differently**: it
+now repairs colliding identifiers and appends any missing output preset, so a workspace can
+come back with one more profile than was saved. Nothing is lost or overwritten.
 
 ### Added
 
