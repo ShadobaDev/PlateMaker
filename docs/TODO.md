@@ -48,6 +48,160 @@ all produce the same silent loop. Whatever shape the structured errors take, a h
 fails after a successful render has to surface — at minimum the input must not be left
 claiming a state the render did not reach.
 
+### Unmatched pages: render them implicitly instead of dropping them — **deviates from SPECIFICATION §7.5.1**
+
+**Current behaviour, and it is deliberate.** `ProcessingPipeline::run()` sets
+`hasProfiles = !canvasProfiles.empty()` (`processing_pipeline.cpp:94`) and branches per input
+at `:112-128`:
+
+| Workspace | Page whose `W×H` matches nothing |
+|---|---|
+| no canvas profiles | matching never attempted — page is scaled to `targetWidth` and appended, `appliedProfiles` records an empty profile id (`:133-137`) |
+| ≥ 1 canvas profile | warning logged, path pushed to `outcome.skippedPages`, `continue` — the page never joins the strip |
+
+This matches `SPECIFICATION.md` §7.5.1 steps 4a/4b ("page is skipped; reported in final
+summary") and its design rationale at `:574-577`: adding a profile to the workspace must not
+silently change how existing projects behave, so the user has to opt a project into a profile
+consciously.
+
+**The proposal — keep the page, flag the input.** The determinism argument is sound, but the
+remedy is disproportionate: the cost of *dropping* a page is a published chapter with a page
+missing, and because slice numbering is continuous there is no gap in the output to notice it
+by. The only signal is a summary line the user has to read (`render.cpp:466-472` in the GUI,
+which reports a bare count).
+
+Treating the page as if it belongs in the project — scaled to `targetWidth`, no margin crop,
+exactly the no-profiles path that already exists at `:152-155` — fails softer. Determinism is
+then preserved by *visibility* rather than by omission: mark the input as having been rendered
+with an **implicit profile** (amber, say), so the state is obvious in the tile grid rather than
+buried in a log.
+
+Points that need deciding when this is picked up:
+
+- **`FoundInWorkspaceOnly` probably should not be quietened.** A profile of exactly the right
+  size existing in the workspace but not linked to the project is a different situation from
+  no profile existing at all — it is a one-click fix, and §7.5.1 step 4b wants it named. Keeping
+  it loud (or at least distinctly labelled) while relaxing `NotFoundAnywhere` is likely the
+  right split.
+- **The diagnosis is currently thrown away.** `ProfileMatchResult` carries three statuses and,
+  for `FoundInWorkspaceOnly`, a populated `workspaceCandidates` list. The pipeline discards all
+  of it and emits one generic string — `"Skipping (no matching canvas profile for WxH)"`
+  (`:120-123`) — so the actionable case is indistinguishable from the genuine gap. Whatever the
+  outcome here, that distinction should survive into the log. Pairs with the **structured error
+  system** entry above.
+- **Surfacing "implicit" per input needs a channel that does not exist.** Inputs are consumed
+  in phase 1, before the first slice, and nothing is reported per input — see the
+  `onInputDone` callback in the **ProcessingCallbacks** entry below. This item naturally rides
+  the same 0.3.0 window.
+- **Model impact.** `FileStatus` (`models/project_item.hpp:63-70`) has no value for "processed,
+  but without a profile". Whether that becomes a new enumerator or a separate flag alongside
+  `AppliedCanvasProfile` (which already represents the no-profile case as an empty id) is open.
+
+**`SPECIFICATION.md` §7.5.1 must be amended if this lands** — steps 4a/4b and the design
+rationale below them describe the skip as intended, so the spec is the source of truth being
+changed here, not a document lagging behind the code.
+
+Documented as-is in the GUI wiki (`Manual-Canvas-Profiles`, `Manual-Rendering`,
+`Manual-Troubleshooting`); those three need revisiting if the behaviour changes.
+
+### The "Webtoon Standard" preset is PNG, which cannot meet the platform it is named after
+
+`webtoonStandardPreset()` (`output_profile.hpp:164-184`) sets `outputFormat = PNG`. The preset
+is named after a platform whose published limits are roughly **2 MB per slice and ~20 MB per
+chapter** — and a chapter is easily 80+ slices at 800×1280. PNG of comic artwork will not fit
+that budget in the general case. The first chapter actually published from this project was
+shipped as **JPEG for exactly that reason**, which is the strongest evidence available that the
+preset does not describe the workflow it claims to.
+
+So the preset asserts "this is what that platform wants" while specifying a format that will
+usually violate the platform's cap. Either the format is wrong or the name is.
+
+**This is not a one-field change.** The header carries its own warning and it applies squarely
+here:
+
+> Every field is set **explicitly** rather than left to the struct's defaults. The defaults
+> happen to match today, which is precisely the hazard: changing one would silently redefine the
+> preset and desynchronise it from every workspace already on disk.
+
+Concretely, flipping PNG → JPEG would:
+
+- **Change the meaning of `op-preset-webtoon-standard`** for every workspace already holding it.
+  The id is stable by contract; its *contents* silently would not be.
+- **Invalidate rendered output everywhere.** Format is part of `outputProfileSignature()`, so
+  every project using the preset would flag its outputs out of sync and ask to re-render — a
+  correct signal, but one the user did not cause.
+- **Invert the adoption outcome** described in the entry below. Workspaces whose own
+  *Webtoon Standard* is JPEG would suddenly match the signature and be adopted (removing their
+  duplicate-name problem), while any workspace whose profile is PNG would start diverging and
+  gain the duplicate instead. The population simply swaps places.
+
+Options:
+
+- **Change the preset to JPEG**, and treat it as a data migration rather than an edit: decide the
+  quality/subsampling (the real-world profile in use is quality 90, 4:4:4, optimise on), bump the
+  lib minor, and say so loudly in the changelog and in the workspace-repair notice.
+- **Add a second preset** — keep the PNG one, add a JPEG one, and let the names carry the
+  difference. No migration, no silent redefinition, at the cost of two near-identical entries in
+  a list that already has a name-collision problem.
+- **Rename rather than re-format** — if PNG is genuinely the intended "lossless default", stop
+  naming it after a platform whose limits it cannot meet, and give it a format-neutral name.
+
+Also worth settling as part of this: whether a preset should encode a **size ceiling** at all, so
+the planned output-size warning has something to check against rather than a hardcoded number.
+
+Documented in the GUI wiki as currently-PNG (`Manual-Output-Profiles`); that page needs revisiting
+whichever way this goes.
+
+### Preset adoption can leave two profiles with the same visible name
+
+`enforceOutputProfilePresets()` (`workspace_serializer.cpp:444`) works in two passes: adopt a
+profile that *is* the preset into the canonical id, then ensure the preset is present at all.
+Adoption is skipped when `outputProfileSignature(op) != outputProfileSignature(preset)` — the
+deliberate rule that "a profile the user changed is theirs, and promoting it would make the
+shared id assert something false". That rule is right.
+
+The unplanned consequence is a **name collision**. A workspace whose own *Webtoon Standard* has
+diverged (canonical is PNG; a workspace shipping JPEG is the obvious real case) fails the
+signature check, so the presence pass appends the canonical preset beside it — leaving two
+entries both displaying *Webtoon Standard*, distinguishable only by the GUI's `(preset)` suffix.
+Observed in a real workspace, not hypothetical.
+
+Nothing is broken — the ids differ, matching is by id, and the read-only guard behaves — but the
+user cannot tell from a project's selected-profile name which of the two is in use, and the
+combo box on the Output tab shows the name alone.
+
+Options, none obviously best:
+
+- **Disambiguate on adoption failure** — when appending a preset whose name is already taken,
+  rename the incoming one (`Webtoon Standard (built-in)`) or the existing one
+  (`Webtoon Standard (yours)`). Cheap, but renames data the user did not ask to rename.
+- **Disambiguate in presentation only** — the GUI already appends `(preset)` in the manage
+  dialog; do the same wherever a profile name is shown, notably the Output tab combo. No data
+  touched. Probably the right first move; pairs with a GUI-side entry.
+- **Warn on load** — fold into the existing workspace-repair notice: "your *Webtoon Standard*
+  differs from the built-in one, so both are now present".
+
+### `ProjectItem::inputDirectory` is dead state — remove it or give it a purpose
+
+The model carries `ProjectItem::inputDirectory`, but nothing in the library reads it: inputs
+are tracked as full absolute paths per `InputFile`, and the pipeline, serializer and matcher
+never consult it. The only writer is the GUI (`onAddFromDirectory()` stores the last-picked
+folder there), and even the GUI never reads it back — it is a leftover from Clip2l's
+flat-single-directory model, which Platemaker deliberately moved away from.
+
+It is serialized, so it is dead weight in every workspace file and a small trap for anyone who
+assumes it is authoritative. Two ways out:
+
+- **Remove it** — drop the field and its serialization (a workspace-format change; harmless
+  since nothing consumes it, but note it in the changelog). Old files with the key still load
+  if the reader ignores unknown fields.
+- **Give it a defined meaning** — e.g. "the folder to re-open in the add-from-directory
+  dialog", which is the one use the GUI might want. If kept, document what it means so it stops
+  being ambiguous.
+
+Pairs with the GUI-side entry in `Platemaker-qt/Platemaker/docs/TODO.md`. Decide in one place;
+the field lives here, so the removal or the contract is defined here.
+
 ### Dynamic thread spawning for processing
 
 `ProcessingPipeline` runs single-threaded because the virtual strip is built
@@ -153,6 +307,53 @@ Additive to the lib API (a new class, nothing removed), but it naturally rides t
 window alongside `ProcessingCallbacks`; the GUI adopts it in **1.2.0**, dropping its direct
 `m_workspace` mutations. See the GUI TODO for the call-site map.
 
+### C facade / stable ABI — evaluated, deliberately deferred
+
+**Idea:** expose the library through a C ABI, so any compiler on a given platform could consume
+one binary regardless of how the lib was built — and, optionally, so the lib could be loaded
+dynamically at runtime.
+
+**The diagnosis behind it is correct.** C++ has no standardised ABI; a C++ DLL built with MSVC
+is not consumable from MinGW. The proof that the C-ABI answer works is already in our own
+dependency tree: **libvips** is usable from both toolchains precisely because it is a C library.
+
+**But name mangling is the smallest part of it.** Measured against the current public API:
+
+| obstacle | scale |
+|---|---|
+| `std::string` / `std::vector` layouts differ between MSVC STL and libstdc++ | **137 lines** of public headers use them |
+| exceptions cannot cross a C ABI at all | **41** `throw std::` sites — the entire error strategy |
+| allocate in the DLL, free in the exe with a different CRT = UB | every returned container |
+| C has no move semantics | `Workspace`, `ProjectItem`, `PixelBuffer`, `ScaledStrip` are move-only |
+| `std::function` callbacks | 4 types → function pointer + `void* userdata` |
+
+So this is not "wrap it in `extern "C"`". It is designing a **second, parallel API** — opaque
+handles, out-params, error codes, explicit ownership and free functions — and keeping it in
+sync forever. With 37 public classes, a 1:1 mirror would be a maintenance disaster.
+
+**If it were ever built**, the sane shape is a narrow *task-level* API (open/save a workspace,
+list and edit profiles, run a render with callbacks, query status) — on the order of 20–30
+functions — with the C++ API kept for in-tree consumers. Not a mechanical mirror of the models.
+
+**Why not now:** the consumers are the Qt GUI and the CLI, both built from source with the same
+compiler, and the planned web backend calls the **CLI as a subprocess**, where no ABI is
+involved at all. Per-toolchain dev packages already cover the distribution case, and the
+config-package guard (see the *Library* entry above) closes the practical pain — a mismatch
+failing late and cryptically — for a fraction of the cost.
+
+**Triggers that would justify revisiting** (concrete, not vibes):
+- shipping a **prebuilt** lib to third parties whose compiler we do not control;
+- Python or other language bindings via **ctypes/cffi** — note **pybind11 would not need this**,
+  as it compiles against the C++ API with the same compiler;
+- a plugin system, or runtime `LoadLibrary` / `dlopen` loading;
+- wanting a **single** Windows binary that serves both MinGW and MSVC consumers.
+
+For runtime loading specifically, a C ABI is the prerequisite and the usual shape is a single
+`platemaker_get_api(version)` returning a struct of function pointers — but that is another
+layer of indirection on top of the facade, and there is no use case for it today.
+
+**Status: recorded, not scheduled.** Revisit only if one of the triggers above actually lands.
+
 ### Public API: report what the lib links, at which version, under which licence
 
 Consumers currently have to hardcode this. The GUI's About dialog lists libvips and its
@@ -225,6 +426,31 @@ Switch to `SameMinorVersion` while the lib is pre-1.0: it accepts only the same 
 and still rejects anything older than requested. Cheap now, and it is the difference between
 the pin actually holding and only appearing to.
 
+### The config package does not check the toolchain — mismatches fail late and cryptically
+
+`lib/cmake/platemaker-config.cmake.in` is four lines and records **nothing** about the compiler
+the package was built with. So `find_package(platemaker)` **succeeds** when a MinGW consumer
+picks up an MSVC-built package (or the reverse), and the mismatch only surfaces later — as a
+link error, or at load time with a message that points nowhere useful. This has already bitten
+once: a lib built with MSVC could not be used from a MinGW-built GUI.
+
+Why it cannot work in the first place: C++ has no standardised ABI. MSVC and GCC/MinGW mangle
+names differently, and even if the names matched, `std::string` / `std::vector` have different
+layouts between MSVC STL and libstdc++, exceptions cannot cross the boundary, and memory
+allocated in the DLL cannot be freed in an exe linked to a different CRT.
+
+**Fix — record the toolchain and verify it at `find_package` time.** Pass the build-time
+`CMAKE_CXX_COMPILER_ID` (plus, on Windows, the MSVC/MinGW distinction) into the generated
+config, then compare it against the consumer's compiler and `message(FATAL_ERROR …)` naming
+both sides and pointing at the matching dev package. Roughly 20 lines in
+`lib/cmake/platemaker-config.cmake.in` and `lib/CMakeLists.txt`.
+
+This changes nothing about what is shippable — per-toolchain dev packages already exist
+(`platemaker-dev-…-windows-mingw-release.zip` vs `…-windows-msvc-release.zip`). It just makes
+picking the wrong one fail immediately, with an actionable message, instead of much later with
+a baffling one. Same file/area as the `SameMinorVersion` item above, so the two are naturally
+done together.
+
 ### Persist last render log
 
 The GUI render log is in-memory only (cleared on exit). Optionally persist the
@@ -294,10 +520,15 @@ Broke the API against `0.1.1` (`ProjectItem::sanitize()` gained a required param
 `load()`, and the non-ASCII path fix. Nothing was removed, so code built against `0.2.0` still
 compiles. (The reverse does not hold — a GUI using the new API needs `0.2.1`.)
 
-**GUI is a minor (`1.0.0 → 1.1.0`), not a patch.** It adds batch render (F6), the About dialog,
-the out-of-sync warning and the workspace-repair notice. New features on a post-1.0 project are
-a minor bump; `1.0.1` would mislabel a new use case as a background fix. Note `1.0.1` was never
-tagged — it was the working number before this reasoning, and 1.1.0 supersedes it.
+**GUI is a minor (`1.0.1 → 1.1.0`), not another patch.** The 1.1.0 batch of work — batch
+render (F6), the About dialog, the out-of-sync warning and the workspace-repair notice — is new
+features on a post-1.0 project, so it is a minor bump; a `1.0.2` would mislabel new use cases as
+background fixes.
+
+The real tag history is `1.0.0 → 1.0.1 → 1.1.0`: **`1.0.1` was tagged and released** (tag
+`1.0.1` → `be2863d`, "prepare release 1.0.1"; installer shipped), a genuine patch over 1.0.0.
+An earlier revision of this note claimed 1.0.1 "was never tagged" — that was wrong, corrected
+here.
 
 **Order is forced: lib first.** The GUI pins `LIBPLATEMAKER_VERSION = 0.2.1`, which also builds
 the FetchContent URL, so until `0.2.1` is on GitHub Releases anyone without a local
