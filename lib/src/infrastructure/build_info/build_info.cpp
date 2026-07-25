@@ -73,8 +73,14 @@ std::string platformString()
 
 BuildInfo buildInfo()
 {
+    // The library's own SPDX licence, asserted here because the library owns this fact — it is the
+    // same identifier carried in every source file's SPDX header. Consumers (About boxes, licence
+    // notices) can then read it from the lib instead of hardcoding it.
+    constexpr auto k_licence = "LGPL-3.0-or-later";
+
     return BuildInfo{
         std::string{version_string},
+        k_licence,
         compilerString(),
         platformString(),
     };
@@ -91,8 +97,10 @@ std::vector<LinkedComponent> linkedComponents()
                                     std::to_string(NLOHMANN_JSON_VERSION_PATCH);
 
     return {
-        LinkedComponent{"libvips", vipsVersion, "LGPL-2.1-or-later"},
-        LinkedComponent{"nlohmann/json", jsonVersion, "MIT"},
+        LinkedComponent{"libvips", vipsVersion, "LGPL-2.1-or-later",
+                        "https://github.com/libvips/libvips"},
+        LinkedComponent{"nlohmann/json", jsonVersion, "MIT",
+                        "https://github.com/nlohmann/json"},
     };
 }
 

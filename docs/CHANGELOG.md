@@ -7,17 +7,24 @@ Additive API only: nothing removed or changed, so code written against 0.2.1 sti
 ### Added
 
 - **`Infrastructure::buildInfo()` and `BuildInfo`**
-  (`platemaker/infrastructure/build_info/build_info.hpp`) — the library's own version, compiler and
-  target read back **at runtime** from the loaded DLL. The runtime twin of the compile-time
-  `version.hpp`: replacing only the shared library no longer leaves a consumer reporting a stale
-  version.
+  (`platemaker/infrastructure/build_info/build_info.hpp`) — the library's own version, SPDX licence,
+  compiler and target read back **at runtime** from the loaded DLL. The runtime twin of the
+  compile-time `version.hpp`: replacing only the shared library no longer leaves a consumer
+  reporting a stale version, and a consumer can name the lib's licence without hardcoding it.
 - **`Infrastructure::runtimeMatchesHeader()`** — inline consistency check comparing the compile-time
   `version_string` against the loaded `buildInfo().version`, so a consumer can detect a DLL that
   does not match the header it built against (zlib's `ZLIB_VERSION` / `zlibVersion()` idiom).
 - **`Infrastructure::linkedComponents()` and `LinkedComponent`** — the third-party components this
-  build links, with versions and SPDX licences (libvips, LGPL-2.1-or-later, at its runtime version;
-  nlohmann/json, MIT). Lets a consumer name what is linked, and under what terms, without asserting
-  facts about the lib's dependencies it cannot know.
+  build links, with versions, SPDX licences and upstream GitHub URLs (libvips, LGPL-2.1-or-later, at
+  its runtime version; nlohmann/json, MIT). Lets a consumer name what is linked, and under what terms,
+  without asserting facts about the lib's dependencies it cannot know. `LinkedComponent::url` is
+  guaranteed to be a `https://github.com/` link.
+- **`credits/` in the package** — an SPDX 2.3 SBOM (`sbom.spdx.json`) describing libplatemaker and its
+  bundled dependencies (versions, SPDX licences, `pkg:github/...` purls), plus each dependency's
+  licence text under `credits/licenses/`. The SBOM is the machine-readable inventory expected by the
+  EU Cyber Resilience Act and by commercial integrators; the texts satisfy the LGPL requirement to
+  distribute a copy of the licence. A consumer locates the directory via the `platemaker_CREDITS_DIR`
+  package-config variable.
 
 ## [0.2.1] — 2026-07-20
 

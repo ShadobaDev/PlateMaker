@@ -54,6 +54,7 @@ namespace Platemaker::Infrastructure {
  */
 struct BuildInfo {
     std::string version;   //!< The DLL's own version — the runtime twin of \c version.hpp.
+    std::string licence;   //!< This library's own SPDX licence, e.g. \c "LGPL-3.0-or-later".
     std::string compiler;  //!< Compiler that built the library, e.g. \c "GCC 14.2.0", \c "MSVC 1940".
     std::string platform;  //!< Target OS and architecture, e.g. \c "Windows x86_64".
 };
@@ -74,6 +75,7 @@ struct LinkedComponent {
     std::string name;     //!< e.g. \c "libvips".
     std::string version;  //!< Runtime version where available, else build-time.
     std::string licence;  //!< SPDX identifier, e.g. \c "LGPL-2.1-or-later".
+    std::string url;      //!< Upstream project, always a \c https://github.com/ URL.
 };
 
 /**

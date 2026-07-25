@@ -119,6 +119,52 @@ configure_file(
     @ONLY
 )
 
+# ---------------------------------------------------------------------------
+# Credits — SPDX SBOM + third-party licence texts
+#
+# Emits credits/ (an SPDX 2.3 SBOM describing libplatemaker and its bundled deps, plus a copy of
+# each dependency's licence text). The SBOM is the machine-readable inventory demanded by the EU
+# Cyber Resilience Act and by commercial consumers; the licence texts satisfy the LGPL requirement
+# to distribute a copy of the licence. The GUI merges this into a product-level SBOM (it locates the
+# directory via platemaker_CREDITS_DIR, exported by the package config).
+#
+# Component versions are the build-time values (an SBOM records what was built against); the About
+# dialog shows the honest *runtime* versions separately via Infrastructure::linkedComponents().
+# ---------------------------------------------------------------------------
+# Build-time dependency versions for the SBOM (libvips discovery differs by toolchain — see the root
+# CMakeLists.txt vips section; MSVC has no pkg-config, so its version tracks the FetchContent web-zip).
+if(MSVC)
+    set(_pm_vips_version "${PLATEMAKER_VIPS_MSVC_VERSION}")  # pinned web-zip tag (root CMakeLists.txt)
+else()
+    set(_pm_vips_version "${VIPS_VERSION}")                  # from pkg_check_modules
+endif()
+if(DEFINED nlohmann_json_VERSION)
+    set(_pm_json_version "${nlohmann_json_VERSION}")        # system/FetchContent-reported version
+else()
+    set(_pm_json_version "${PLATEMAKER_JSON_VERSION}")      # pinned tag (root CMakeLists.txt)
+endif()
+
+set(_pm_credits_dir "${CMAKE_CURRENT_BINARY_DIR}/credits")
+file(MAKE_DIRECTORY "${_pm_credits_dir}/licenses")
+
+# Licence texts are vendored (cmake/licenses/) so the package is deterministic across toolchains:
+# MSYS2 ships no libvips COPYING, and a system nlohmann install has no source tree to copy from.
+# Texts are canonical/immutable per licence. Files are named by SPDX id (deduplicated when a text is
+# shared) except a text carrying a unique copyright line (nlohmann's MIT), which keeps a
+# component-qualified name; the GUI viewer maps the SPDX id from linkedComponents() to these names.
+# libplatemaker uses its own repo LICENSE.LGPL (the LGPL-3.0 text).
+configure_file("${CMAKE_SOURCE_DIR}/LICENSE.LGPL"
+               "${_pm_credits_dir}/licenses/LGPL-3.0-or-later.txt" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/licenses/LGPL-2.1-or-later.txt"
+               "${_pm_credits_dir}/licenses/LGPL-2.1-or-later.txt" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/licenses/nlohmann_json.MIT.txt"
+               "${_pm_credits_dir}/licenses/nlohmann_json.MIT.txt" COPYONLY)
+
+string(TIMESTAMP _pm_sbom_created "%Y-%m-%dT%H:%M:%SZ" UTC)
+string(TIMESTAMP _pm_sbom_stamp   "%Y%m%d%H%M%S"       UTC)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/sbom.spdx.json.in"
+               "${_pm_credits_dir}/sbom.spdx.json" @ONLY)
+
 # Windows DLL symbol export.
 # MSVC: WINDOWS_EXPORT_ALL_SYMBOLS generates a .def file automatically.
 # MinGW/GCC: the equivalent is the --export-all-symbols linker flag;
@@ -181,6 +227,17 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/platemaker/version.hpp"
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/platemaker
     COMPONENT Development
+)
+
+# credits/ (SBOM + licence texts) at the package root, in both distributables: the dev package
+# (consumed by the GUI) and the standalone cli archive.
+install(DIRECTORY "${_pm_credits_dir}/"
+    DESTINATION credits
+    COMPONENT Development
+)
+install(DIRECTORY "${_pm_credits_dir}/"
+    DESTINATION credits
+    COMPONENT cli
 )
 
 install(EXPORT platemaker-targets

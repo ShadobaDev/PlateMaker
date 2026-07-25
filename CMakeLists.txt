@@ -45,14 +45,19 @@ endif()
 include(FetchContent)
 
 # libvips  — image processing engine (LGPL 2.1)
+#
+# MSVC fetches a pinned prebuilt libvips (the web zip); MinGW uses whatever pkg-config finds. This
+# single version string drives both the download URL and the SBOM entry in lib/CMakeLists.txt, so
+# the fetched and reported versions cannot drift apart.
+set(PLATEMAKER_VIPS_MSVC_VERSION "8.18.2")
+
 if(MSVC)
-    message(STATUS "[MSVC] Automating libvips deployment via FetchContent...")
+    message(STATUS "[MSVC] Automating libvips deployment via FetchContent (v${PLATEMAKER_VIPS_MSVC_VERSION})...")
 
     # Select libvips for download
-    # Version 8.16.0
     FetchContent_Declare(
         vips_binaries
-        URL https://github.com/libvips/build-win64-mxe/releases/download/v8.18.2/vips-dev-x64-web-8.18.2.zip
+        URL https://github.com/libvips/build-win64-mxe/releases/download/v${PLATEMAKER_VIPS_MSVC_VERSION}/vips-dev-x64-web-${PLATEMAKER_VIPS_MSVC_VERSION}.zip
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     
@@ -96,11 +101,14 @@ endif()
 
 # nlohmann/json — header-only, header is unpacked by FetchContent (no compilation)
 # FIND_PACKAGE first: Linux system install (apt nlohmann-json3-dev) is reused if present.
+# The pinned version drives both the fetch URL and the SBOM fallback in lib/CMakeLists.txt (a system
+# install reports its own version instead); one source of truth so the two cannot drift apart.
+set(PLATEMAKER_JSON_VERSION "3.11.3")
 find_package(nlohmann_json CONFIG QUIET)
 if(NOT nlohmann_json_FOUND)
     FetchContent_Declare(
         nlohmann_json
-        URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+        URL https://github.com/nlohmann/json/releases/download/v${PLATEMAKER_JSON_VERSION}/json.tar.xz
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(nlohmann_json)

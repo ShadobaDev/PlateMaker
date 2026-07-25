@@ -43,6 +43,11 @@ TEST(BuildInfo, RuntimeVersionMatchesHeaderConstant)
     EXPECT_TRUE(runtimeMatchesHeader());
 }
 
+TEST(BuildInfo, ReportsOwnLicence)
+{
+    EXPECT_EQ(buildInfo().licence, "LGPL-3.0-or-later");
+}
+
 TEST(BuildInfo, ReportsCompilerAndPlatform)
 {
     const BuildInfo info = buildInfo();
@@ -76,6 +81,18 @@ TEST(LinkedComponents, DoesNotReportTestOnlyGoogleTest)
     // GoogleTest is never shipped, so it must not appear in a licence/About report.
     EXPECT_EQ(find(linkedComponents(), "GoogleTest"), nullptr);
     EXPECT_EQ(find(linkedComponents(), "gtest"), nullptr);
+}
+
+TEST(LinkedComponents, EveryUrlIsGitHub)
+{
+    // The GUI only renders links it can trust; the lib guarantees GitHub-only so the "url" field
+    // can be surfaced without the GUI vetting each host by hand.
+    const auto components = linkedComponents();
+    ASSERT_FALSE(components.empty());
+    for (const LinkedComponent& c : components) {
+        EXPECT_EQ(c.url.rfind("https://github.com/", 0), 0u)
+            << c.name << " has a non-GitHub url: " << c.url;
+    }
 }
 
 } // namespace Platemaker::Infrastructure

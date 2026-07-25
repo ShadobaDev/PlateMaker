@@ -105,14 +105,21 @@ picking the wrong one fail immediately, with an actionable message, instead of m
 a baffling one. Same file/area as the `SameMinorVersion` item above, so the two are naturally
 done together.
 
-### Third-party notices for the bundled DLLs
+### Third-party notices: extend the SBOM to the full bundled DLL graph
 
-The About dialog names the direct dependencies, but the Windows packages ship the whole
-libvips dependency graph (~90 DLLs: glib, libpng, libjpeg, zlib, expat, …), several of them
-LGPL. Distributing them carries notice obligations that listing only "libvips" does not
-discharge. Worth a generated `THIRD-PARTY-NOTICES` file in the package rather than more rows
-in a dialog — the DLL closure is already computed at install time
-(`_pm_install_mingw_dll_closure()`), so the list can be derived rather than maintained by hand.
+**Foundation shipped in 0.2.2.** The package now emits `credits/sbom.spdx.json` (an SPDX 2.3 SBOM)
+plus `credits/licenses/` — but only for the **direct** dependencies (libvips, nlohmann/json). The
+Windows packages still ship the whole libvips dependency graph (~90 DLLs: glib, libpng, libjpeg,
+zlib, expat, …), several LGPL, and distributing them carries notice obligations that listing only
+"libvips" does not discharge.
+
+What remains is to enumerate that closure into the same SBOM (more `packages[]` entries + their
+licence texts). The DLL closure is already computed at install time
+(`_pm_install_mingw_dll_closure()`), so the list can be derived rather than maintained by hand; a
+scanner such as `syft` over the packaged `bin/` is the likely tool. Each DLL needs mapping to its
+SPDX licence and text — note MSYS2 does **not** ship a licence file for every package (libvips
+itself has none under `share/licenses/`), so some canonical texts must be vendored the way
+`lib/cmake/licenses/` already does for LGPL-2.1 and MIT.
 
 ### Slim the MinGW package by switching to the `vips-dev-x64-web` variant
 

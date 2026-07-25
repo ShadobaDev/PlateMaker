@@ -2,4 +2,10 @@
 
 include("${CMAKE_CURRENT_LIST_DIR}/platemaker-targets.cmake")
 
+# Directory holding the package's credits/ (SPDX SBOM + third-party licence texts). The config lands
+# in <prefix>/lib/cmake/platemaker/, so credits/ sits three levels up. A consumer (e.g. the GUI) reads
+# this to merge the lib's SBOM into a product-level one and to ship the licence texts.
+get_filename_component(platemaker_CREDITS_DIR
+    "${CMAKE_CURRENT_LIST_DIR}/../../../credits" ABSOLUTE)
+
 check_required_components(platemaker)
