@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased] — 0.2.2
+
+Additive API only: nothing removed or changed, so code written against 0.2.1 still compiles.
+
+### Added
+
+- **`Infrastructure::buildInfo()` and `BuildInfo`**
+  (`platemaker/infrastructure/build_info/build_info.hpp`) — the library's own version, compiler and
+  target read back **at runtime** from the loaded DLL. The runtime twin of the compile-time
+  `version.hpp`: replacing only the shared library no longer leaves a consumer reporting a stale
+  version.
+- **`Infrastructure::runtimeMatchesHeader()`** — inline consistency check comparing the compile-time
+  `version_string` against the loaded `buildInfo().version`, so a consumer can detect a DLL that
+  does not match the header it built against (zlib's `ZLIB_VERSION` / `zlibVersion()` idiom).
+- **`Infrastructure::linkedComponents()` and `LinkedComponent`** — the third-party components this
+  build links, with versions and SPDX licences (libvips, LGPL-2.1-or-later, at its runtime version;
+  nlohmann/json, MIT). Lets a consumer name what is linked, and under what terms, without asserting
+  facts about the lib's dependencies it cannot know.
+
 ## [0.2.1] — 2026-07-20
 
 Additive API only: nothing was removed or changed, so code written against 0.2.0 still

@@ -26,59 +26,6 @@ Baseline: **0.2.1 released, 0.2.2 in progress** (`CMakeLists.txt`).
 Fixes and additive changes — nothing a consumer must react to. Code built against 0.2.1 keeps
 compiling.
 
-### Public API: report what the lib links, at which version, under which licence
-
-Consumers currently have to hardcode this. The GUI's About dialog lists libvips and its
-licence with the values injected from its **own** CMake — i.e. the GUI is asserting facts
-about the lib's dependencies, which it cannot actually know. Swap libvips for another
-backend, or bump it across a licence change, and the GUI keeps confidently showing stale
-information with nothing to catch it.
-
-The lib is the only thing that knows what it linked, so it should say so:
-
-```cpp
-struct LinkedComponent {
-    std::string name;     //!< e.g. "libvips"
-    std::string version;  //!< runtime version where available, else build-time
-    std::string licence;  //!< SPDX id, e.g. "LGPL-2.1-or-later"
-};
-
-/// Third-party components this build of libplatemaker links, for About boxes and
-/// licence notices (LGPL requires naming what is used and under what terms).
-[[nodiscard]] PLATEMAKER_EXPORT std::vector<LinkedComponent> linkedComponents();
-```
-
-Pairs with the existing compile-time `platemaker/version.hpp`: that answers "which lib is
-this", this answers "what is inside it". Entries carry versions from wherever they are
-actually knowable — libvips at **runtime** via `vips_version(0/1/2)`, nlohmann/json from its
-`NLOHMANN_JSON_VERSION_*` macros at build time — which also closes the GUI's open item of
-showing them at all, without leaking either into the GUI's link line.
-
-Components to report: **libvips** (LGPL-2.1-or-later) and **nlohmann/json** (MIT). GoogleTest
-is test-only and never shipped, so it does not belong here.
-
-**Additive** (nothing removed), so it needs only a **PATCH (0.2.2)**; it may still be bundled
-into 0.3.0 if it ships alongside the breaking API work.
-
-**Alternative considered — export it through CMake instead.** The lib could attach the facts
-to its exported target and skip the runtime API entirely:
-
-```cmake
-target_compile_definitions(platemaker-lib INTERFACE
-    PLATEMAKER_VIPS_LICENCE="LGPL-2.1-or-later")
-```
-
-`INTERFACE` definitions land in `platemaker-targets.cmake`, so every consumer picks them up
-automatically — including one that downloaded a prebuilt package via FetchContent, since the
-values are baked into the installed config files. Package-config variables
-(`set(platemaker_VIPS_VERSION …)` in `platemaker-config.cmake.in`) work the same way.
-
-It does move ownership to the lib, which is the main point, and it needs no API change — but
-it reports what the lib was **built** against, not what the process actually loaded. For an
-app that ships its own DLLs (and where a user can swap `libvips-42.dll`), the runtime answer
-is the honest one. Not worth maintaining both, so: skip the CMake route and do the function;
-being additive it fits a **patch (0.2.2)**.
-
 ### Preset adoption can leave two profiles with the same visible name
 
 `enforceOutputProfilePresets()` (`workspace_serializer.cpp:444`) works in two passes: adopt a

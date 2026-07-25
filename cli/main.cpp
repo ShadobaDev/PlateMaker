@@ -52,6 +52,7 @@
 #include <platemaker/core/scaled_strip/scaled_strip.hpp>
 #include <platemaker/core/scaler/scaler.hpp>
 #include <platemaker/core/template_generator/template_generator.hpp>
+#include <platemaker/infrastructure/build_info/build_info.hpp>
 #include <platemaker/infrastructure/control/cancellation_token.hpp>
 #include <platemaker/infrastructure/id_generator/id_generator.hpp>
 #include <platemaker/infrastructure/image_io/image_io.hpp>
@@ -302,11 +303,19 @@ static std::string makeProjectUid(const Workspace& ws)
 
 static int cmdVersion()
 {
+    using namespace Platemaker::Infrastructure;
+
     // First line stays machine-parseable: "platemaker <version>".
     std::cout << Platemaker::project_name << ' ' << Platemaker::version_string << '\n';
     std::cout << Platemaker::description << '\n';
-    std::cout << "libvips " << vips_version(0) << '.'
-              << vips_version(1) << '.' << vips_version(2) << '\n';
+
+    // Build identity and linked components come from the lib itself (the honest runtime answer),
+    // not from anything hardcoded here.
+    const BuildInfo build = buildInfo();
+    std::cout << "built with " << build.compiler << " for " << build.platform << '\n';
+    for (const LinkedComponent& c : linkedComponents()) {
+        std::cout << c.name << ' ' << c.version << " (" << c.licence << ")\n";
+    }
     return 0;
 }
 
