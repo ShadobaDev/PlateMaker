@@ -313,10 +313,19 @@ void from_json(const nlohmann::json& j, ProjectItem& v) {
 
 // --- Workspace ---
 void to_json(nlohmann::json& j, const Workspace& v) {
+    // Presets are baked-in and must never be persisted; a preset-id profile in outputProfiles is a
+    // consumer error (the model is that only user profiles live there). Filtering it out here makes
+    // the serializer the lib's own guarantee that a preset cannot be written into a workspace,
+    // independent of whether the CLI/GUI played by the rules.
+    nlohmann::json outputProfiles = nlohmann::json::array();
+    for (const auto& op : v.outputProfiles)
+        if (!outputProfilePresetById(op.id))
+            outputProfiles.push_back(op);
+
     j = nlohmann::json{
         {"version",         v.version},
         {"canvasProfiles",  v.canvasProfiles},
-        {"outputProfiles",  v.outputProfiles},
+        {"outputProfiles",  outputProfiles},
         {"projectItems",    v.projectItems},
         {"outputDirectory", v.outputDirectory},
         {"stripDirty",      v.stripDirty}
@@ -418,83 +427,56 @@ void mintMissingProfileIds(Models::Workspace& workspace)
 }
 
 /**
- * \brief Restores the invariant "a preset identifier means exactly the preset's settings".
+ * \brief Migrates a loaded workspace to the "presets are never persisted" model.
  *
- * Preset ids are shared by every workspace, which is what makes a preset recognisable across
- * files and app updates — but only as long as the id cannot come to mean something else.
- * Three cases, all silent because none of them is ambiguous:
+ * Presets used to be written into \c outputProfiles (an earlier design adopted/forked/appended them).
+ * They are now baked into the build and resolved from the catalogue at runtime, so a persisted preset
+ * must be removed. The key is to touch **only profiles that were persisted as presets**, identified by
+ * their id — never a user's own profile, even one whose settings happen to equal a preset (that is a
+ * legitimate copy the user made and must survive). Per profile:
  *
- * - **Adoption.** A profile carrying the legacy id \c "op-Webtoon Standard" is given the
- *   canonical preset id, *provided its settings still match the preset*. If the user changed
- *   them, it is left exactly as it is: it is their profile, not the preset, and promoting it
- *   would make the shared id assert something false.
- * - **Fork.** A profile carrying a preset id whose settings do **not** match (edited by an
- *   older build, or by hand in the JSON) is given a fresh random id. Its settings are
- *   untouched — overwriting them with the canonical ones would destroy the user's work.
- * - **Presence.** Any preset missing from the workspace is appended.
+ * - **Canonical preset id** (\c op-preset-*). If its settings still match the preset it is a redundant
+ *   copy → dropped; any reference keeps resolving through the catalogue. If it diverged (edited under
+ *   the reserved id) it is the user's → given a fresh id so it cannot masquerade as a preset.
+ * - **Legacy name-derived id** (\c "op-<presetName>") that still matches the preset by signature: a
+ *   pre-adoption persisted preset → references relinked to the canonical id, then dropped.
+ * - **Anything else** — including a user profile whose settings coincidentally match a preset — is left
+ *   exactly as it is.
  *
- * The three compose: a diverged profile is forked, which frees the canonical id, and the
- * presence pass then puts the real preset back beside it. The user keeps their customised
- * profile and regains the preset, without being asked anything.
- *
- * \note Appends, never prepends. resolveOutputProfile() falls back to \c outputProfiles.front()
- *       when a project has no assignment, so inserting at the front would silently change
- *       which profile existing workspaces render with.
+ * After this, \c outputProfiles holds only user-defined profiles; the write-path guard in
+ * to_json(Workspace) keeps it that way.
  */
-void enforceOutputProfilePresets(Models::Workspace& workspace)
+void migrateOutputProfilePresets(Models::Workspace& workspace)
 {
     const auto presets = Models::outputProfilePresets();
+    auto&      ops     = workspace.outputProfiles;
 
-    // Adoption: a profile that *is* the preset takes the canonical id.
-    //
-    // Matched on the legacy name-derived id ("op-Webtoon Standard", the form the GUI wrote)
-    // or on the name, and in both cases only when the settings still match — a profile the
-    // user changed is theirs, and promoting it would make the shared id assert something
-    // false. The name arm matters because pre-id workspaces reach this point already carrying
-    // a freshly minted random id; without it they would keep that id and the presence pass
-    // would append a *second*, identical "Webtoon Standard" beside it.
-    for (auto& op : workspace.outputProfiles) {
-        for (const auto& preset : presets) {
-            const bool looksLikeThisPreset =
-                op.id == "op-" + preset.name || op.name == preset.name;
-            if (!looksLikeThisPreset) continue;
-            if (Models::outputProfileSignature(op) != Models::outputProfileSignature(preset))
-                continue;
-
-            // Never mint a duplicate: if something already holds the canonical id, leave
-            // this one alone and let the presence pass see the preset as present.
-            const bool idTaken = std::any_of(
-                workspace.outputProfiles.begin(), workspace.outputProfiles.end(),
-                [&](const Models::OutputProfile& other) { return other.id == preset.id; });
-            if (idTaken) continue;
-
-            const std::string oldId = op.id;
-            op.id = preset.id;
-            relinkProfileId(workspace, oldId, op.id);
-            break;
-        }
-    }
-
-    // Fork: carries a preset id but is no longer that preset.
-    for (auto& op : workspace.outputProfiles) {
-        const auto preset = Models::outputProfilePresetById(op.id);
-        if (!preset) continue;
-        if (Models::outputProfileSignature(op) == Models::outputProfileSignature(*preset))
+    for (auto it = ops.begin(); it != ops.end();) {
+        // (A) Carries a canonical preset id → it was persisted as a preset, not a user profile.
+        if (const auto preset = Models::outputProfilePresetById(it->id)) {
+            if (Models::outputProfileSignature(*it) == Models::outputProfileSignature(*preset)) {
+                it = ops.erase(it); // redundant copy; references resolve via the catalogue
+            } else {
+                const std::string oldId = it->id; // diverged → strip the reserved id
+                it->id = makeUniqueOutputProfileId(ops);
+                relinkProfileId(workspace, oldId, it->id);
+                ++it;
+            }
             continue;
+        }
 
-        const std::string oldId = op.id;
-        op.id = makeUniqueOutputProfileId(workspace.outputProfiles);
-        relinkProfileId(workspace, oldId, op.id);
-    }
-
-    // Presence: presets are always in the set.
-    for (const auto& preset : presets) {
-        const bool present = std::any_of(
-            workspace.outputProfiles.begin(), workspace.outputProfiles.end(),
-            [&](const Models::OutputProfile& op) { return op.id == preset.id; });
-
-        if (!present)
-            workspace.outputProfiles.push_back(preset);
+        // (B) Legacy "op-<presetName>" that still matches the preset → pre-adoption persisted preset.
+        bool collapsed = false;
+        for (const auto& preset : presets) {
+            if (it->id == "op-" + preset.name &&
+                Models::outputProfileSignature(*it) == Models::outputProfileSignature(preset)) {
+                relinkProfileId(workspace, it->id, preset.id);
+                it = ops.erase(it);
+                collapsed = true;
+                break;
+            }
+        }
+        if (!collapsed) ++it; // any other profile (incl. a user copy of a preset) is left alone
     }
 }
 
@@ -610,9 +592,9 @@ Models::Workspace WorkspaceSerializer::load(const std::string&     filePath,
         [](const auto& existing) { return makeUniqueOutputProfileId(existing); },
         report.outputProfiles);
 
-    // Presets last: adoption and forking both hand out ids, so they must run on a list that
-    // is already free of duplicates, and the presence pass must see the final set.
-    enforceOutputProfilePresets(workspace);
+    // Presets last: the collapse pass hands out relinks and drops copies, so it must run on a list
+    // that is already free of duplicate ids.
+    migrateOutputProfilePresets(workspace);
 
     // Rebuild runtime lookup tables for every project.
     // These tables are not serialised so they must always be reconstructed

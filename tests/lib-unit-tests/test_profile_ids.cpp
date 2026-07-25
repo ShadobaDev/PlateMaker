@@ -72,12 +72,15 @@ std::string projectJson(const std::string& canvasIds, const std::string& outputP
     })";
 }
 
-/// An output profile in the real on-disk shape — note the enums serialise as strings.
-std::string outputProfileJson(const std::string& idField, const std::string& name)
+/// An output profile in the real on-disk shape — note the enums serialise as strings. The format
+/// defaults to WebP so the profile is *not* preset-shaped (the preset is PNG) and therefore is not
+/// collapsed into a catalogue reference on load; these tests are about ids, not presets.
+std::string outputProfileJson(const std::string& idField, const std::string& name,
+                              const std::string& format = "WebP")
 {
     return R"({)" + idField + R"("name": ")" + name + R"(",
         "targetWidth": 800, "sliceHeight": 1280,
-        "lastSlicePolicy": "KeepAsIs", "outputFormat": "PNG",
+        "lastSlicePolicy": "KeepAsIs", "outputFormat": ")" + format + R"(",
         "jpegOptions": {"quality": 90, "optimize": true,
                         "progressive": false, "subsampling": "YUV_444"},
         "pngOptions": {"compression": 6, "interlaced": false},
@@ -253,11 +256,11 @@ TEST(WorkspaceIdRepairTest, OutputProfileDuplicatesAreRepairedToo)
     Infrastructure::WorkspaceRepairReport report;
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
 
-    // Two from the file, plus the preset the presence pass guarantees.
-    ASSERT_EQ(loaded.outputProfiles.size(), 3u);
+    // Both come from the file; the duplicate id is repaired. Neither is preset-shaped, so neither
+    // collapses into a catalogue reference.
+    ASSERT_EQ(loaded.outputProfiles.size(), 2u);
     EXPECT_EQ(loaded.outputProfiles[0].id, "op-collide");
     EXPECT_NE(loaded.outputProfiles[1].id, "op-collide");
-    EXPECT_EQ(loaded.outputProfiles[2].id, Models::k_webtoonStandardPresetId);
 
     ASSERT_EQ(report.outputProfiles.size(), 1u);
     EXPECT_EQ(report.outputProfiles[0].name, "WEBP");
@@ -272,13 +275,9 @@ TEST(WorkspaceIdRepairTest, OutputProfileDuplicatesAreRepairedToo)
 
 TEST(WorkspaceIdMigrationTest, MissingIdIsMintedAndLegacyReferencesAreRelinked)
 {
-    // Pre-0.2.1, a profile saved without an id had one derived from its name, and projects
-    // stored that derived form. The id is no longer derived, so the reference has to be
-    // rewritten or the project would lose its output profile.
-    //
-    // This one is also the preset by its settings, so it is adopted rather than given a
-    // random id — otherwise the presence pass would append a second, identical
-    // "Webtoon Standard" next to it.
+    // Pre-0.2.1, a profile saved without an id had one derived from its name, and projects stored
+    // that derived form ("op-Webtoon Standard"). The id is no longer derived, so load() mints a
+    // fresh one and relinks the reference, or the project would lose its output profile.
     const TempWorkspace ws("relink", workspaceJson(
         "",
         outputProfileJson("", "Webtoon Standard"),
@@ -288,37 +287,18 @@ TEST(WorkspaceIdMigrationTest, MissingIdIsMintedAndLegacyReferencesAreRelinked)
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
 
     ASSERT_EQ(loaded.outputProfiles.size(), 1u);
-    EXPECT_EQ(loaded.outputProfiles[0].id, Models::k_webtoonStandardPresetId);
+    EXPECT_FALSE(loaded.outputProfiles[0].id.empty());
 
-    // The project follows the profile to its new id.
+    // The project follows the profile to its freshly minted id.
     EXPECT_EQ(loaded.projectItems[0].outputProfileId, loaded.outputProfiles[0].id);
 
     // Minting is unambiguous bookkeeping, not a collision — nothing to tell the user about.
     EXPECT_FALSE(report.any());
 }
 
-TEST(WorkspaceIdMigrationTest, LegacyProfileTheUserEditedIsNotPromotedToAPreset)
-{
-    // Same legacy id, but the settings moved on (WebP instead of PNG). Adopting it would make
-    // the shared preset id mean something different in this workspace than in every other, so
-    // it stays a plain user profile — and the real preset is added alongside.
-    std::string edited = outputProfileJson(R"("id": "op-Webtoon Standard", )", "Webtoon Standard");
-    const auto pos = edited.find(R"("outputFormat": "PNG")");
-    ASSERT_NE(pos, std::string::npos);
-    edited.replace(pos, std::string(R"("outputFormat": "PNG")").size(),
-                   R"("outputFormat": "WebP")");
-
-    const TempWorkspace ws("edited_legacy", workspaceJson("", edited, ""));
-
-    Infrastructure::WorkspaceRepairReport report;
-    const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
-
-    ASSERT_EQ(loaded.outputProfiles.size(), 2u);
-    EXPECT_EQ(loaded.outputProfiles[0].id, "op-Webtoon Standard");   // left exactly as it was
-    EXPECT_EQ(loaded.outputProfiles[0].outputFormat, Models::OutputFormat::WebP);
-    EXPECT_EQ(loaded.outputProfiles[1].id, Models::k_webtoonStandardPresetId);
-    EXPECT_FALSE(report.any());
-}
+// (The former "legacy profile the user edited is not promoted to a preset" case is gone with the
+// adopt/fork/presence machinery — a legacy-id user profile simply survives, which the preset suite
+// covers in AUserProfileIsKeptAndNoPresetAppended / DivergedPresetIdProfileIsStripped.)
 
 TEST(WorkspaceIdMigrationTest, TwoIdlessProfilesSharingANameGetDistinctIds)
 {

@@ -37,13 +37,15 @@ Models::Workspace makeMinimalWorkspace()
     canvas.margins      = {100, 100, 100, 100};
     canvas.visualColour = {255, 105, 180, 128}; // hot pink @ 50 % alpha
 
+    // A genuine user profile — deliberately *not* preset-shaped (WebP, not the preset's PNG), so it
+    // is not collapsed into a catalogue reference on load.
     Models::OutputProfile output;
     output.id              = "op-test-001";
     output.name            = "Webtoon Export";
     output.targetWidth     = 800;
     output.sliceHeight     = 1280;
     output.lastSlicePolicy = Models::LastSlicePolicy::KeepAsIs;
-    output.outputFormat    = Models::OutputFormat::PNG;
+    output.outputFormat    = Models::OutputFormat::WebP;
     output.startIndex      = 1;
 
     Models::Workspace ws;
@@ -111,15 +113,14 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesOutputProfile)
     ser.save(original, tmp.string());
     const auto loaded = ser.load(tmp.string());
 
-    // The workspace's own profile stays first and unchanged; load() appends the preset it
-    // guarantees, and appending is what keeps outputProfiles.front() — the fallback for an
-    // unassigned project — pointing where it always did.
-    ASSERT_EQ(loaded.outputProfiles.size(), 2u);
+    // A genuine user profile round-trips unchanged, and load() no longer appends a preset —
+    // presets live in the catalogue, not in the workspace.
+    ASSERT_EQ(loaded.outputProfiles.size(), 1u);
+    EXPECT_EQ(loaded.outputProfiles[0].id,           original.outputProfiles[0].id);
     EXPECT_EQ(loaded.outputProfiles[0].targetWidth,  original.outputProfiles[0].targetWidth);
     EXPECT_EQ(loaded.outputProfiles[0].sliceHeight,  original.outputProfiles[0].sliceHeight);
     EXPECT_EQ(loaded.outputProfiles[0].outputFormat, original.outputProfiles[0].outputFormat);
     EXPECT_EQ(loaded.outputProfiles[0].startIndex,   original.outputProfiles[0].startIndex);
-    EXPECT_EQ(loaded.outputProfiles[1].id, Models::k_webtoonStandardPresetId);
 
     std::filesystem::remove(tmp);
 }

@@ -131,27 +131,26 @@ public:
 // ---------------------------------------------------------------------------
 // Presets
 //
-// A preset is an ordinary OutputProfile holding a reserved identifier — not a distinct
-// type.  Making it one would force conversions everywhere and invite storing "is a preset"
-// as a field, which is exactly the failure mode being avoided: a value that asserts
-// something nobody verifies.  Preset-ness is *derived*, from the id and the signature.
+// A preset is an ordinary OutputProfile that libplatemaker defines in code and ships baked into the
+// build — not a distinct type, and carrying no "is a preset" field.  Preset-ness is *provenance*: a
+// profile is a preset exactly when it comes from this catalogue.  A consumer listing profiles knows
+// that from which vector it asked (outputProfilePresets() vs Workspace::outputProfiles); for a bare
+// id, outputProfilePresetById() answers it.
 //
-// These live in the model header, as inline free functions next to outputProfileSignature(),
-// for two reasons.  OutputProfile is header-only and — unlike CanvasProfile — is not
-// PLATEMAKER_EXPORT, so keeping the catalogue inline adds nothing to the DLL boundary.  And
-// outputProfileSignature() is already a free function here; a second convention alongside it
-// would buy nothing.
+// Presets are never serialised (WorkspaceSerializer strips any that reach outputProfiles, and drops
+// preset copies on load).  They are identical in every build so a ProjectItem::outputProfileId can
+// reference one by its stable id, which resolveOutputProfile() resolves against this catalogue at
+// runtime.  Because the catalogue is rebuilt from code on every call, a preset's definition cannot be
+// mutated at runtime — the source is the single source of truth; a user who wants to change one
+// duplicates it into an ordinary profile.
 //
-// The identifiers are the same in every workspace on purpose.  That is what lets a future
-// partial import/export of settings recognise "this is the shared preset" rather than "some
-// profile that happens to look alike", and it keeps a preset stable across app updates.
+// These live in the model header as inline free functions next to outputProfileSignature():
+// OutputProfile is header-only and not PLATEMAKER_EXPORT, so keeping the catalogue inline adds nothing
+// to the DLL boundary.
 // ---------------------------------------------------------------------------
 
-//! Reserved identifier prefix.  Preset-ness is decidable from the id alone — no table needed
-//! at the call site, and generated ids are hex, so the two namespaces cannot collide.
-inline constexpr std::string_view k_outputPresetPrefix = "op-preset-";
-
-//! Canonical id of the Webtoon Standard preset.  Stable across workspaces and releases.
+//! Canonical id of the Webtoon Standard preset.  Stable across builds and sessions so a stored
+//! ProjectItem::outputProfileId can reference it; resolved from the catalogue, never persisted.
 inline constexpr std::string_view k_webtoonStandardPresetId = "op-preset-webtoon-standard";
 
 /**
@@ -200,22 +199,12 @@ inline constexpr std::string_view k_webtoonStandardPresetId = "op-preset-webtoon
 }
 
 /**
- * \brief Whether \p id belongs to the reserved preset namespace.
+ * \brief The preset named by \p id, if \p id is one — the membership test that decides preset-ness.
  *
- * What the GUI uses to mark a row read-only, so it never needs to know a specific preset id
- * and adding a preset to the library requires no change on its side.
- */
-[[nodiscard]] inline bool isOutputProfilePresetId(std::string_view id)
-{
-    return id.rfind(k_outputPresetPrefix, 0) == 0;
-}
-
-/**
- * \brief The canonical definition of the preset with \p id, if one exists.
- *
- * Used to decide whether a *stored* profile is still that preset: compare
- * outputProfileSignature() against this. A stored profile carrying a preset id but different
- * settings has been edited and is no longer the preset.
+ * The discriminator for a bare id (a consumer holding a whole vector already knows preset-ness from
+ * its provenance). Returns the canonical preset so the caller can also render or compare against it:
+ * the GUI uses it to disable edit/remove on a preset row, and the serializer uses it to keep presets
+ * out of persisted output profiles.
  */
 [[nodiscard]] inline std::optional<OutputProfile> outputProfilePresetById(std::string_view id)
 {

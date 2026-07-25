@@ -29,9 +29,11 @@ def test_workspace_create_produces_json_file(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    ``workspace create`` must produce a valid JSON file containing a
-    ``"version"`` field equal to 1 and at least one entry in
-    ``"outputProfiles"``.
+    ``workspace create`` must produce a valid JSON file with ``"version"`` == 2.
+
+    A plain create stores **no** output profiles: presets are baked into the library and never
+    written to a workspace, so a fresh file lists only what the user defined (nothing yet) — the
+    Webtoon Standard preset is offered from the catalogue instead.
     """
     out = tmp_workspace / "test.platemaker.json"
     create_workspace(platemaker_bin, out)
@@ -42,8 +44,8 @@ def test_workspace_create_produces_json_file(
         data = json.load(fh)
 
     assert data.get("version") == 2, f"Expected version=2, got {data.get('version')}"
-    assert len(data.get("outputProfiles", [])) >= 1, \
-        "Expected at least one outputProfile in a fresh workspace"
+    assert data.get("outputProfiles", []) == [], \
+        "A fresh workspace must persist no output profiles (the preset lives in the catalogue)"
 
 
 def test_workspace_create_sets_default_output_profile(
@@ -570,3 +572,72 @@ def test_mod_profile_canvas_safe_area_with_new_margins(
     assert cp["margins"]["right"]  == 50
     assert cp["margins"]["bottom"] == 100
     assert cp["margins"]["left"]   == 50
+
+
+# ---------------------------------------------------------------------------
+# workspace output-profile family (id-selected; presets are read-only)
+# ---------------------------------------------------------------------------
+
+_PRESET_ID = "op-preset-webtoon-standard"
+
+
+def test_list_presets_shows_the_webtoon_preset(platemaker_bin: pathlib.Path) -> None:
+    result = subprocess.run(
+        [str(platemaker_bin), "workspace", "list-presets"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert _PRESET_ID in result.stdout, result.stdout
+
+
+def test_add_output_profile_from_preset_persists_a_user_copy(
+    platemaker_bin: pathlib.Path, tmp_workspace: pathlib.Path,
+) -> None:
+    """A copy made from a preset is stored as the user's own profile (fresh id, not a preset id)."""
+    ws = tmp_workspace / "op.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+
+    result = subprocess.run(
+        [str(platemaker_bin), "workspace", "add-output-profile",
+         "--workspace", str(ws), "--name", "My Webtoon", "--from-preset", _PRESET_ID],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    profiles = json.loads(ws.read_text()).get("outputProfiles", [])
+    assert len(profiles) == 1, "the copy must be persisted (not swallowed by the migration)"
+    assert profiles[0]["name"] == "My Webtoon"
+    assert not profiles[0]["id"].startswith("op-preset-"), "a copy must not carry a preset id"
+
+
+def test_add_output_profile_from_scratch_stores_settings(
+    platemaker_bin: pathlib.Path, tmp_workspace: pathlib.Path,
+) -> None:
+    ws = tmp_workspace / "op2.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+
+    result = subprocess.run(
+        [str(platemaker_bin), "workspace", "add-output-profile",
+         "--workspace", str(ws), "--name", "Wide",
+         "--target-width", "1080", "--slice-height", "1920", "--format", "jpg"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    op = json.loads(ws.read_text())["outputProfiles"][0]
+    assert op["targetWidth"] == 1080 and op["sliceHeight"] == 1920
+
+
+def test_mod_output_profile_on_a_preset_id_is_rejected(
+    platemaker_bin: pathlib.Path, tmp_workspace: pathlib.Path,
+) -> None:
+    ws = tmp_workspace / "op3.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+
+    result = subprocess.run(
+        [str(platemaker_bin), "workspace", "mod-output-profile",
+         "--workspace", str(ws), "--output-profile", _PRESET_ID, "--name", "Nope"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode != 0, "modifying a preset must be refused by the CLI"
+    assert "preset" in result.stderr.lower()

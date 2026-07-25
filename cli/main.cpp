@@ -245,14 +245,19 @@ static std::vector<fs::path> scanImageDir(const fs::path& dir)
     return files;
 }
 
-/// Returns the OutputProfile for \p project, falling back to the workspace default.
+/// Returns the OutputProfile for \p project, resolving its id against the user profiles and the
+/// baked-in preset catalogue, then falling back to a sensible default.
 static OutputProfile resolveOutputProfile(const Workspace& ws, const ProjectItem& project)
 {
     if (!project.outputProfileId.empty()) {
-        for (const auto& op : ws.outputProfiles)
-            if (op.id == project.outputProfileId) return op;
+        if (auto r = Platemaker::Models::resolveOutputProfile(ws, project.outputProfileId))
+            return r->profile;
     }
+    // Unassigned (or a dangling reference): the user's first profile if any, otherwise a preset so a
+    // fresh workspace renders straight away — the quickstart the presets exist for.
     if (!ws.outputProfiles.empty()) return ws.outputProfiles.front();
+    const auto presets = Platemaker::Models::outputProfilePresets();
+    if (!presets.empty()) return presets.front();
     OutputProfile def;
     def.name = "Default";
     return def;
@@ -336,7 +341,7 @@ static int cmdHelp(const std::string& prog)
         << "      Create a new empty workspace JSON file.\n"
         << "      Default output: ./project.platemaker.json\n"
         << "\n"
-        << "  workspace add-profile\n"
+        << "  workspace add-canvas-profile\n"
         << "      --workspace FILE --name NAME\n"
         << "      { --canvas WxH | --canvas-safe-area WxH }  --margins T,R,B,L\n"
         << "      --canvas and --canvas-safe-area are mutually exclusive.\n"
@@ -344,22 +349,28 @@ static int cmdHelp(const std::string& prog)
         << "        --canvas-safe-area WxH  Drawable area only; canvas = safe-area + margins.\n"
         << "      Add a canvas profile to an existing workspace.\n"
         << "\n"
-        << "  workspace add-profile / mod-profile also accept:\n"
+        << "  workspace add-canvas-profile / mod-canvas-profile also accept:\n"
         << "    --margins-tpl-color R,G,B[,A]    Margin overlay colour for templates.\n"
         << "    --background-tpl-color R,G,B[,A] Background fill colour for templates.\n"
         << "\n"
-        << "  workspace mod-profile\n"
-        << "      --workspace FILE --name NAME\n"
+        << "  workspace mod-canvas-profile --workspace FILE --name NAME\n"
         << "      [--canvas WxH | --canvas-safe-area WxH]  [--margins T,R,B,L]\n"
-        << "      --canvas and --canvas-safe-area are mutually exclusive.\n"
-        << "      With --canvas-safe-area: uses existing margins unless --margins also given.\n"
         << "      Modify an existing canvas profile.\n"
+        << "  workspace rm-canvas-profile   --workspace FILE --name NAME\n"
+        << "  workspace list-canvas-profiles --workspace FILE\n"
+        << "      (The older add-profile / mod-profile / rm-profile / list-profiles names still work.)\n"
         << "\n"
-        << "  workspace rm-profile --workspace FILE --name NAME\n"
-        << "      Remove a canvas profile.\n"
-        << "\n"
-        << "  workspace list-profiles --workspace FILE\n"
-        << "      List canvas and output profiles in a workspace.\n"
+        << "  Output profiles are selected by id (names may repeat, ids do not):\n"
+        << "  workspace list-presets\n"
+        << "      List the built-in output-profile presets.\n"
+        << "  workspace add-output-profile --workspace FILE --name NAME\n"
+        << "      { --from-preset PRESET_ID | [--target-width N] [--slice-height N] [--format png|jpg|webp] }\n"
+        << "      Add an output profile — a copy of a preset, or one from scratch. Prints its id.\n"
+        << "  workspace mod-output-profile --workspace FILE --output-profile ID\n"
+        << "      [--name N] [--target-width N] [--slice-height N] [--format png|jpg|webp]\n"
+        << "  workspace rm-output-profile   --workspace FILE --output-profile ID\n"
+        << "  workspace list-output-profiles --workspace FILE\n"
+        << "      (Presets are read-only; copy one with add-output-profile --from-preset.)\n"
         << "\n"
         << "  process --workspace FILE\n"
         << "          [--input DIR]  [--output DIR]\n"
@@ -388,7 +399,7 @@ static int cmdHelp(const std::string& prog)
         << "           [--new-name N] [--input DIR] [--output DIR]\n"
         << "           [--add-canvas-profile NAME]  link canvas profile to project\n"
         << "           [--rm-canvas-profile  NAME]  unlink canvas profile from project\n"
-        << "           [--output-profile     NAME]  assign output profile to project\n"
+        << "           [--output-profile     ID]    assign output profile/preset (by id) to project\n"
         << " platemaker project rm      --workspace FILE --name NAME\n"
         << " platemaker project status  --workspace FILE --name NAME\n"
         << "      Manage named projects (input directories) within a workspace.\n"
@@ -407,23 +418,22 @@ static int cmdWorkspaceCreate(const Opts& opts)
     const int         targetWidth = opts.getInt("target-width", 800);
     const int         sliceHeight = opts.getInt("slice-height", 1280);
 
-    // Seed from the library's preset rather than assembling one here — the GUI seeds from
-    // the same table, so both produce a workspace carrying the identical preset id.
+    // Assemble an empty workspace (no canvas profiles yet).
+    Workspace ws;
+    ws.version = 2;
+
+    // Presets are not persisted — the Webtoon Standard preset is always available from the catalogue,
+    // so a plain `workspace create` leaves outputProfiles empty (quickstart resolves the preset). Only
+    // when --target-width / --slice-height move the settings away from the preset do we store the
+    // user's own profile, with a fresh id and a name of its own.
     OutputProfile op = webtoonStandardPreset();
     op.targetWidth   = targetWidth;
     op.sliceHeight   = sliceHeight;
-
-    // --target-width / --slice-height can move it away from the preset. Once it differs it
-    // is not the preset any more, so it must not keep the shared id — the user asked for
-    // different settings, which by definition makes this their own profile. Without this
-    // the CLI would emit a file violating the invariant that load() then has to repair.
-    if (outputProfileSignature(op) != outputProfileSignature(webtoonStandardPreset()))
-        op.id = makeUniqueOutputProfileId({}); // brand-new workspace: nothing taken yet
-
-    // Assemble an empty workspace (no canvas profiles yet).
-    Workspace ws;
-    ws.version        = 2;
-    ws.outputProfiles = {op};
+    if (outputProfileSignature(op) != outputProfileSignature(webtoonStandardPreset())) {
+        op.id   = makeUniqueOutputProfileId({}); // brand-new workspace: nothing taken yet
+        op.name = "Custom";
+        ws.outputProfiles = {op};
+    }
 
     try {
         const auto dir = fs::path(outputFile).parent_path();
@@ -736,18 +746,185 @@ static int cmdWorkspaceListProfiles(const Opts& opts)
     }
 
     std::cout << "\nOutput profiles:\n";
-    if (ws.outputProfiles.empty()) {
-        std::cout << "  (none)\n";
-    } else {
-        for (const auto& op : ws.outputProfiles) {
-            std::cout << "  " << op.name
-                      << "  id=" << op.id
-                      << "  target=" << op.targetWidth << "px"
-                      << "  slice=" << op.sliceHeight << "px"
-                      << '\n';
-        }
+    for (const auto& op : ws.outputProfiles) {
+        std::cout << "  " << op.name
+                  << "  id=" << op.id
+                  << "  target=" << op.targetWidth << "px"
+                  << "  slice=" << op.sliceHeight << "px"
+                  << "  (yours)\n";
+    }
+    for (const auto& op : outputProfilePresets()) {
+        std::cout << "  " << op.name
+                  << "  id=" << op.id
+                  << "  target=" << op.targetWidth << "px"
+                  << "  slice=" << op.sliceHeight << "px"
+                  << "  (preset)\n";
     }
 
+    return 0;
+}
+
+// ===========================================================================
+// platemaker workspace output-profile family (id-selected; presets are read-only)
+// ===========================================================================
+
+//! Prints one output-profile row.
+static void printOutputProfile(const OutputProfile& op, const char* tag)
+{
+    std::cout << "  " << op.id
+              << "  \"" << op.name << "\""
+              << "  " << op.targetWidth << 'x' << op.sliceHeight
+              << "  " << outputFormatExtension(op.outputFormat).substr(1)
+              << "  " << tag << '\n';
+}
+
+static int cmdWorkspaceListPresets(const Opts&)
+{
+    std::cout << "Available output-profile presets (create your own copy with --from-preset):\n";
+    for (const auto& p : outputProfilePresets())
+        printOutputProfile(p, "(preset)");
+    return 0;
+}
+
+static int cmdWorkspaceListOutputProfiles(const Opts& opts)
+{
+    if (!opts.has("workspace")) { std::cerr << "Error: --workspace FILE is required\n"; return 1; }
+
+    Workspace ws;
+    try { ws = WorkspaceSerializer{}.load(opts.get("workspace")); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n'; return 2;
+    }
+
+    std::cout << "Output profiles:\n";
+    for (const auto& op : ws.outputProfiles)  printOutputProfile(op, "(yours)");
+    for (const auto& op : outputProfilePresets()) printOutputProfile(op, "(preset)");
+    return 0;
+}
+
+static int cmdWorkspaceAddOutputProfile(const Opts& opts)
+{
+    if (!opts.has("workspace")) { std::cerr << "Error: --workspace FILE is required\n"; return 1; }
+    if (!opts.has("name"))      { std::cerr << "Error: --name NAME is required\n"; return 1; }
+
+    const std::string wsFile = opts.get("workspace");
+
+    Workspace ws;
+    try { ws = WorkspaceSerializer{}.load(wsFile); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n'; return 2;
+    }
+
+    OutputProfile op;
+    if (opts.has("from-preset")) {
+        // Instantiate a preset into an editable copy the user owns (a fresh id, below).
+        const std::string key = opts.get("from-preset");
+        const auto preset = outputProfilePresetById(key);
+        if (!preset) {
+            std::cerr << "Error: no preset with id '" << key
+                      << "'. Run 'workspace list-presets'.\n";
+            return 1;
+        }
+        op = *preset;
+    } else {
+        op.targetWidth = opts.getInt("target-width", 800);
+        op.sliceHeight = opts.getInt("slice-height", 1280);
+        if (opts.has("format")) {
+            try { op.outputFormat = parseFormat(opts.get("format")); }
+            catch (const std::exception& e) { std::cerr << "Error: " << e.what() << '\n'; return 1; }
+        }
+    }
+    op.name = opts.get("name");
+    op.id   = makeUniqueOutputProfileId(ws.outputProfiles); // always a user id, never a preset id
+
+    ws.outputProfiles.push_back(op);
+
+    try { WorkspaceSerializer{}.save(ws, wsFile); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot save workspace: " << e.what() << '\n'; return 2;
+    }
+
+    std::cout << "Output profile added: " << op.id << "  \"" << op.name << "\"\n";
+    return 0;
+}
+
+//! Shared guard: reject an operation that targets a built-in preset id.
+static bool refuseIfPreset(const std::string& id, const std::string& wsFile)
+{
+    if (!outputProfilePresetById(id)) return false;
+    std::cerr << "Error: '" << id << "' is a built-in preset and cannot be modified or removed.\n"
+              << "  Make an editable copy instead:\n"
+              << "    workspace add-output-profile --workspace " << wsFile
+              << " --name NAME --from-preset " << id << "\n";
+    return true;
+}
+
+static int cmdWorkspaceModOutputProfile(const Opts& opts)
+{
+    if (!opts.has("workspace"))      { std::cerr << "Error: --workspace FILE is required\n"; return 1; }
+    if (!opts.has("output-profile")) { std::cerr << "Error: --output-profile ID is required\n"; return 1; }
+
+    const std::string wsFile = opts.get("workspace");
+    const std::string id     = opts.get("output-profile");
+    if (refuseIfPreset(id, wsFile)) return 1;
+
+    Workspace ws;
+    try { ws = WorkspaceSerializer{}.load(wsFile); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n'; return 2;
+    }
+
+    OutputProfile* op = nullptr;
+    for (auto& p : ws.outputProfiles) if (p.id == id) { op = &p; break; }
+    if (!op) { std::cerr << "Error: output profile '" << id << "' not found\n"; return 1; }
+
+    if (opts.has("name"))         op->name        = opts.get("name");
+    if (opts.has("target-width")) op->targetWidth = opts.getInt("target-width", op->targetWidth);
+    if (opts.has("slice-height")) op->sliceHeight = opts.getInt("slice-height", op->sliceHeight);
+    if (opts.has("format")) {
+        try { op->outputFormat = parseFormat(opts.get("format")); }
+        catch (const std::exception& e) { std::cerr << "Error: " << e.what() << '\n'; return 1; }
+    }
+
+    try { WorkspaceSerializer{}.save(ws, wsFile); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot save workspace: " << e.what() << '\n'; return 2;
+    }
+
+    std::cout << "Output profile updated: " << id << '\n';
+    return 0;
+}
+
+static int cmdWorkspaceRmOutputProfile(const Opts& opts)
+{
+    if (!opts.has("workspace"))      { std::cerr << "Error: --workspace FILE is required\n"; return 1; }
+    if (!opts.has("output-profile")) { std::cerr << "Error: --output-profile ID is required\n"; return 1; }
+
+    const std::string wsFile = opts.get("workspace");
+    const std::string id     = opts.get("output-profile");
+    if (refuseIfPreset(id, wsFile)) return 1;
+
+    Workspace ws;
+    try { ws = WorkspaceSerializer{}.load(wsFile); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n'; return 2;
+    }
+
+    const auto before = ws.outputProfiles.size();
+    ws.outputProfiles.erase(
+        std::remove_if(ws.outputProfiles.begin(), ws.outputProfiles.end(),
+            [&id](const OutputProfile& p) { return p.id == id; }),
+        ws.outputProfiles.end());
+    if (ws.outputProfiles.size() == before) {
+        std::cerr << "Error: output profile '" << id << "' not found\n"; return 1;
+    }
+
+    try { WorkspaceSerializer{}.save(ws, wsFile); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot save workspace: " << e.what() << '\n'; return 2;
+    }
+
+    std::cout << "Output profile removed: " << id << '\n';
     return 0;
 }
 
@@ -1304,16 +1481,15 @@ static int cmdProjectMod(const Opts& opts)
     }
 
     if (opts.has("output-profile")) {
-        const std::string profName = opts.get("output-profile");
-        const OutputProfile* op = nullptr;
-        for (const auto& p : ws.outputProfiles)
-            if (p.name == profName) { op = &p; break; }
-        if (!op) {
-            std::cerr << "Error: output profile '" << profName
-                      << "' not found in workspace.\n"; return 1;
+        // Selected by id, resolved against the user's profiles and the preset catalogue — so a
+        // project can be pointed at a preset (by its stable id) just as at a user profile.
+        const std::string profId = opts.get("output-profile");
+        if (!Platemaker::Models::resolveOutputProfile(ws, profId)) {
+            std::cerr << "Error: no output profile or preset with id '" << profId
+                      << "'. Run 'workspace list-output-profiles'.\n"; return 1;
         }
-        pi->outputProfileId = op->id;
-        std::cerr << "Output profile '" << profName << "' assigned to project '" << pi->name << "'.\n";
+        pi->outputProfileId = profId;
+        std::cerr << "Output profile '" << profId << "' assigned to project '" << pi->name << "'.\n";
     }
 
     try {
@@ -1637,10 +1813,18 @@ static int runCli(int argc, char** argv)
                 const std::string cmd2 = argv[2];
                 Opts opts = parseOpts(argc, argv, 3);
                 if      (cmd2 == "create")         exitCode = cmdWorkspaceCreate(opts);
-                else if (cmd2 == "add-profile")    exitCode = cmdWorkspaceAddProfile(opts);
-                else if (cmd2 == "mod-profile")    exitCode = cmdWorkspaceModProfile(opts);
-                else if (cmd2 == "rm-profile")     exitCode = cmdWorkspaceRmProfile(opts);
-                else if (cmd2 == "list-profiles")  exitCode = cmdWorkspaceListProfiles(opts);
+                // Canvas profiles. The canonical names are *-canvas-profile; the older *-profile
+                // names remain as aliases.
+                else if (cmd2 == "add-canvas-profile"   || cmd2 == "add-profile")   exitCode = cmdWorkspaceAddProfile(opts);
+                else if (cmd2 == "mod-canvas-profile"   || cmd2 == "mod-profile")   exitCode = cmdWorkspaceModProfile(opts);
+                else if (cmd2 == "rm-canvas-profile"    || cmd2 == "rm-profile")    exitCode = cmdWorkspaceRmProfile(opts);
+                else if (cmd2 == "list-canvas-profiles" || cmd2 == "list-profiles") exitCode = cmdWorkspaceListProfiles(opts);
+                // Output profiles (id-selected; presets are read-only, instantiate with --from-preset).
+                else if (cmd2 == "add-output-profile")   exitCode = cmdWorkspaceAddOutputProfile(opts);
+                else if (cmd2 == "mod-output-profile")   exitCode = cmdWorkspaceModOutputProfile(opts);
+                else if (cmd2 == "rm-output-profile")    exitCode = cmdWorkspaceRmOutputProfile(opts);
+                else if (cmd2 == "list-output-profiles") exitCode = cmdWorkspaceListOutputProfiles(opts);
+                else if (cmd2 == "list-presets")         exitCode = cmdWorkspaceListPresets(opts);
                 else if (cmd2 == "list-projects")  exitCode = cmdWorkspaceListProjects(opts);
                 else {
                     std::cerr << "Unknown workspace subcommand '" << cmd2

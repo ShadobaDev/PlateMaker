@@ -1,14 +1,14 @@
 /**
  * \file
- * \brief Unit tests for the output-profile preset catalogue and the invariants load() keeps.
+ * \brief Unit tests for the output-profile preset catalogue and the "presets are never persisted" model.
  *
- * A preset identifier is shared by every workspace, which is what lets a preset stay
- * recognisable across files and app updates. That only holds while the id cannot come to
- * mean something else, so load() adopts, forks and guarantees presence. These tests pin
- * all three, plus the preset definition itself.
+ * Presets are baked into the build and resolved from the catalogue at runtime; they are not written
+ * into a workspace. These tests pin the catalogue and the membership test, the resolver that unions
+ * user profiles with presets, the load-time migration (collapse a stored preset copy into a reference,
+ * strip a diverged preset id), and the save-path guard that keeps a preset out of the JSON.
  *
  * \author ShadobaDev <shadobadev@gmail.com>
- * \date 2026-07-19
+ * \date 2026-07-26
  *
  * \copyright Copyright (c) 2026 ShadobaDev
  */
@@ -70,7 +70,7 @@ std::string projectJson(const std::string& outputProfileId)
     })";
 }
 
-/// A profile whose every field matches the Webtoon Standard preset, with a chosen id/name.
+/// A profile whose every field matches the Webtoon Standard preset, with a chosen id/name/format.
 std::string presetShapedJson(const std::string& idField,
                              const std::string& name,
                              const std::string& outputFormat = "PNG")
@@ -86,27 +86,24 @@ std::string presetShapedJson(const std::string& idField,
     })";
 }
 
-//! Index of the profile carrying the canonical preset id, or -1.
-int presetIndex(const Models::Workspace& ws)
+Models::OutputProfile userProfile(std::string id, std::string name)
 {
-    for (std::size_t i = 0; i < ws.outputProfiles.size(); ++i)
-        if (ws.outputProfiles[i].id == Models::k_webtoonStandardPresetId)
-            return static_cast<int>(i);
-    return -1;
+    Models::OutputProfile op;
+    op.id   = std::move(id);
+    op.name = std::move(name);
+    return op;
 }
 
 } // namespace
 
 // ===========================================================================
-// The catalogue
+// The catalogue and the membership test
 // ===========================================================================
 
 TEST(OutputPresetTest, DefinitionIsPinnedIndependentlyOfStructDefaults)
 {
-    // The preset currently happens to coincide with OutputProfile's field defaults. That
-    // coincidence is the hazard: changing a default would silently redefine the preset and
-    // desynchronise it from every workspace already on disk. This pins the definition, so
-    // such a change fails here instead of in a user's file.
+    // The preset currently coincides with OutputProfile's field defaults. That coincidence is the
+    // hazard: changing a default would silently redefine the preset. This pins the definition.
     const auto preset = Models::webtoonStandardPreset();
 
     EXPECT_EQ(preset.id,   Models::k_webtoonStandardPresetId);
@@ -115,116 +112,138 @@ TEST(OutputPresetTest, DefinitionIsPinnedIndependentlyOfStructDefaults)
               "w800h1280p2f0i1;jpeg90,0,1,0;png6,0;webp80,0,4");
 }
 
-TEST(OutputPresetTest, PresetIdsAreRecognisedAndGeneratedOnesAreNot)
+TEST(OutputPresetTest, ByIdIsTheMembershipTest)
 {
-    EXPECT_TRUE(Models::isOutputProfilePresetId(Models::k_webtoonStandardPresetId));
+    // outputProfilePresetById is the discriminator for a bare id: a preset id resolves to its
+    // definition, anything else to nothing.
+    const auto found = Models::outputProfilePresetById(Models::k_webtoonStandardPresetId);
+    ASSERT_TRUE(found.has_value());
+    EXPECT_EQ(Models::outputProfileSignature(*found),
+              Models::outputProfileSignature(Models::webtoonStandardPreset()));
 
-    // Generated ids are hex after the prefix, so they can never land in the reserved
-    // namespace — the two id spaces are disjoint by construction.
     for (int i = 0; i < 100; ++i)
-        EXPECT_FALSE(Models::isOutputProfilePresetId(Infrastructure::makeId("op")));
+        EXPECT_FALSE(Models::outputProfilePresetById(Infrastructure::makeId("op")).has_value());
 
-    EXPECT_FALSE(Models::isOutputProfilePresetId("op-Webtoon Standard"));
-    EXPECT_FALSE(Models::isOutputProfilePresetId(""));
+    EXPECT_FALSE(Models::outputProfilePresetById("op-Webtoon Standard").has_value());
+    EXPECT_FALSE(Models::outputProfilePresetById("").has_value());
 }
 
-TEST(OutputPresetTest, LookupTableAndByIdAgree)
+TEST(OutputPresetTest, EveryCatalogueEntryResolvesById)
 {
     const auto presets = Models::outputProfilePresets();
     ASSERT_FALSE(presets.empty());
-
     for (const auto& preset : presets) {
         const auto found = Models::outputProfilePresetById(preset.id);
         ASSERT_TRUE(found.has_value());
-        EXPECT_EQ(Models::outputProfileSignature(*found),
-                  Models::outputProfileSignature(preset));
+        EXPECT_EQ(Models::outputProfileSignature(*found), Models::outputProfileSignature(preset));
     }
-
-    EXPECT_FALSE(Models::outputProfilePresetById("op-not-a-preset").has_value());
 }
 
 // ===========================================================================
-// load() — presence
+// resolveOutputProfile — user profiles ∪ presets, with provenance
 // ===========================================================================
 
-TEST(OutputPresetLoadTest, MissingPresetIsAddedSilently)
+TEST(ResolveOutputProfileTest, FindsPresetsUserProfilesAndReportsOrigin)
 {
-    const TempWorkspace ws("absent", workspaceJson(""));
+    Models::Workspace ws;
+    ws.outputProfiles.push_back(userProfile("op-user1", "Mine"));
+
+    const auto preset = Models::resolveOutputProfile(ws, Models::k_webtoonStandardPresetId);
+    ASSERT_TRUE(preset.has_value());
+    EXPECT_TRUE(preset->isPreset);
+    EXPECT_EQ(preset->profile.name, "Webtoon Standard");
+
+    const auto user = Models::resolveOutputProfile(ws, "op-user1");
+    ASSERT_TRUE(user.has_value());
+    EXPECT_FALSE(user->isPreset);
+    EXPECT_EQ(user->profile.name, "Mine");
+
+    EXPECT_FALSE(Models::resolveOutputProfile(ws, "op-nothing").has_value());
+}
+
+// ===========================================================================
+// load() — presets are not persisted
+// ===========================================================================
+
+TEST(OutputPresetLoadTest, NoPresetIsAddedToAnEmptyWorkspace)
+{
+    const TempWorkspace ws("empty", workspaceJson(""));
 
     Infrastructure::WorkspaceRepairReport report;
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
 
-    ASSERT_EQ(loaded.outputProfiles.size(), 1u);
-    EXPECT_EQ(loaded.outputProfiles[0].id, Models::k_webtoonStandardPresetId);
-
-    // Bookkeeping, not a collision — the user has no decision to make about it.
+    EXPECT_TRUE(loaded.outputProfiles.empty());
     EXPECT_FALSE(report.any());
 }
 
-TEST(OutputPresetLoadTest, PresetIsAppendedSoTheDefaultProfileDoesNotChange)
+TEST(OutputPresetLoadTest, AUserProfileIsKeptAndNoPresetAppended)
 {
-    // resolveOutputProfile() falls back to outputProfiles.front() for an unassigned project,
-    // so inserting the preset at the front would quietly change what existing workspaces
-    // render with.
-    const TempWorkspace ws("append", workspaceJson(
+    const TempWorkspace ws("userkept", workspaceJson(
         presetShapedJson(R"("id": "op-mine", )", "My Profile", "WebP")));
 
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path());
 
-    ASSERT_EQ(loaded.outputProfiles.size(), 2u);
+    ASSERT_EQ(loaded.outputProfiles.size(), 1u);
     EXPECT_EQ(loaded.outputProfiles[0].id, "op-mine");
-    EXPECT_EQ(loaded.outputProfiles[1].id, Models::k_webtoonStandardPresetId);
+    EXPECT_EQ(loaded.outputProfiles[0].outputFormat, Models::OutputFormat::WebP);
 }
 
-TEST(OutputPresetLoadTest, PresentPresetIsNotDuplicated)
+TEST(OutputPresetLoadTest, StoredCanonicalPresetCopyIsDropped)
 {
-    const TempWorkspace ws("present", workspaceJson(
-        presetShapedJson(R"("id": "op-preset-webtoon-standard", )", "Webtoon Standard")));
+    // The real 0.2.x case: the preset was persisted under its canonical id. It is redundant now, so
+    // it is dropped; a project referencing that id keeps resolving through the catalogue.
+    const TempWorkspace ws("collapse", workspaceJson(
+        presetShapedJson(R"("id": "op-preset-webtoon-standard", )", "Webtoon Standard"),
+        projectJson("op-preset-webtoon-standard")));
 
-    Infrastructure::WorkspaceRepairReport report;
-    const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
+    const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path());
+
+    EXPECT_TRUE(loaded.outputProfiles.empty());
+    ASSERT_EQ(loaded.projectItems.size(), 1u);
+    EXPECT_EQ(loaded.projectItems[0].outputProfileId, Models::k_webtoonStandardPresetId);
+
+    const auto resolved =
+        Models::resolveOutputProfile(loaded, loaded.projectItems[0].outputProfileId);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_TRUE(resolved->isPreset);
+}
+
+TEST(OutputPresetLoadTest, AUserCopyOfAPresetSurvives)
+{
+    // A profile with an ordinary id whose settings happen to equal the preset is a copy the user
+    // made (e.g. via add-output-profile --from-preset). The migration must leave it alone — only a
+    // profile carrying a preset id, or the legacy op-<name> form, is collapsed.
+    const TempWorkspace ws("usercopy", workspaceJson(
+        presetShapedJson(R"("id": "op-mine", )", "My Webtoon"),
+        projectJson("op-mine")));
+
+    const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path());
 
     ASSERT_EQ(loaded.outputProfiles.size(), 1u);
-    EXPECT_EQ(loaded.outputProfiles[0].id, Models::k_webtoonStandardPresetId);
-    EXPECT_FALSE(report.any());
+    EXPECT_EQ(loaded.outputProfiles[0].id, "op-mine");
+    EXPECT_EQ(loaded.projectItems[0].outputProfileId, "op-mine");
 }
 
-// ===========================================================================
-// load() — fork of a diverged preset
-// ===========================================================================
-
-TEST(OutputPresetLoadTest, DivergedPresetIsForkedAndTheRealPresetReturns)
+TEST(OutputPresetLoadTest, DivergedPresetIdProfileIsStrippedToAUserProfile)
 {
-    // Edited by an older build, or by hand in the JSON: it carries the preset id but no
-    // longer produces what the preset produces.
+    // Carries a preset id but no longer matches it (edited by an older build or by hand). It is the
+    // user's, so it survives with its settings under a fresh, non-preset id, and the project follows.
     const TempWorkspace ws("diverged", workspaceJson(
         presetShapedJson(R"("id": "op-preset-webtoon-standard", )", "Webtoon Standard", "WebP"),
         projectJson("op-preset-webtoon-standard")));
 
-    Infrastructure::WorkspaceRepairReport report;
-    const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
+    const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path());
 
-    // The user's version survives with its settings intact, under an id of its own...
-    ASSERT_EQ(loaded.outputProfiles.size(), 2u);
-    EXPECT_FALSE(Models::isOutputProfilePresetId(loaded.outputProfiles[0].id));
+    ASSERT_EQ(loaded.outputProfiles.size(), 1u);
+    EXPECT_FALSE(Models::outputProfilePresetById(loaded.outputProfiles[0].id).has_value());
     EXPECT_EQ(loaded.outputProfiles[0].outputFormat, Models::OutputFormat::WebP);
-
-    // ...the project follows it, because that is the profile it was actually using...
     EXPECT_EQ(loaded.projectItems[0].outputProfileId, loaded.outputProfiles[0].id);
-
-    // ...and the fork freed the canonical id, so the genuine preset comes back beside it.
-    const int idx = presetIndex(loaded);
-    ASSERT_NE(idx, -1);
-    EXPECT_EQ(loaded.outputProfiles[static_cast<std::size_t>(idx)].outputFormat,
-              Models::OutputFormat::PNG);
-
-    EXPECT_FALSE(report.any());
 }
 
-TEST(OutputPresetLoadTest, RepairIsIdempotent)
+TEST(OutputPresetLoadTest, MigrationIsIdempotent)
 {
-    // Loading, saving and loading again must not keep churning ids — otherwise every open
-    // would look like a change and the GUI would keep offering to save.
+    // A legacy name-derived id that matches the preset collapses to the canonical reference; loading,
+    // saving and loading again must not keep churning ids.
     const TempWorkspace ws("idempotent", workspaceJson(
         presetShapedJson(R"("id": "op-Webtoon Standard", )", "Webtoon Standard"),
         projectJson("op-Webtoon Standard")));
@@ -234,12 +253,28 @@ TEST(OutputPresetLoadTest, RepairIsIdempotent)
     ser.save(first, ws.path());
     const auto second = ser.load(ws.path());
 
-    ASSERT_EQ(first.outputProfiles.size(), second.outputProfiles.size());
-    for (std::size_t i = 0; i < first.outputProfiles.size(); ++i)
-        EXPECT_EQ(first.outputProfiles[i].id, second.outputProfiles[i].id);
+    EXPECT_EQ(first.outputProfiles.size(), second.outputProfiles.size());
+    ASSERT_EQ(first.projectItems.size(), 1u);
+    ASSERT_EQ(second.projectItems.size(), 1u);
+    EXPECT_EQ(first.projectItems[0].outputProfileId, Models::k_webtoonStandardPresetId);
+    EXPECT_EQ(second.projectItems[0].outputProfileId, Models::k_webtoonStandardPresetId);
+}
 
-    EXPECT_EQ(first.projectItems[0].outputProfileId,
-              second.projectItems[0].outputProfileId);
+// ===========================================================================
+// save() — the lib refuses to persist a preset, whatever the consumer does
+// ===========================================================================
+
+TEST(OutputPresetSaveTest, PresetIdProfileIsNeverWritten)
+{
+    // A misbehaving consumer stuffs a preset into outputProfiles. The serializer must drop it.
+    Models::Workspace ws;
+    ws.outputProfiles.push_back(Models::webtoonStandardPreset());  // preset id
+    ws.outputProfiles.push_back(userProfile("op-user1", "Mine"));
+
+    const std::string json = Infrastructure::WorkspaceSerializer{}.serialize(ws);
+
+    EXPECT_EQ(json.find(std::string(Models::k_webtoonStandardPresetId)), std::string::npos);
+    EXPECT_NE(json.find("op-user1"), std::string::npos);
 }
 
 } // namespace Platemaker

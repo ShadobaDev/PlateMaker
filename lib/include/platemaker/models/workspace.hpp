@@ -16,7 +16,9 @@
 #ifndef PLATEMAKER_MODELS_WORKSPACE_HPP
 #define PLATEMAKER_MODELS_WORKSPACE_HPP
 
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 #include "platemaker/platemaker_export.h"
 #include <platemaker/models/canvas_profile.hpp>
@@ -84,6 +86,38 @@ public:
      */
     bool stripDirty = false;
 };
+
+/**
+ * \brief An output profile resolved from an id, together with where it came from.
+ */
+struct ResolvedOutputProfile {
+    OutputProfile profile;   //!< The resolved profile (a copy).
+    bool          isPreset;  //!< True when it came from the baked-in preset catalogue.
+};
+
+/**
+ * \brief Resolves an output-profile id against the workspace's user profiles and the baked-in
+ *        preset catalogue.
+ *
+ * Presets take precedence — a preset id is reserved and must not be shadowed by a user profile — and
+ * the scan is linear: the catalogue holds a handful of entries and a workspace a few profiles, so no
+ * index is warranted.  \c isPreset on the result is the provenance a consumer needs to block editing
+ * or removing a preset; it is irrelevant to rendering, where a preset and a user profile are
+ * equivalent.  This is the one place both the CLI and the GUI should resolve through, so the union of
+ * user profiles and presets is defined once.
+ *
+ * \return The resolved profile and its origin, or \c std::nullopt if \p id names neither.
+ */
+[[nodiscard]] inline std::optional<ResolvedOutputProfile>
+resolveOutputProfile(const Workspace& ws, std::string_view id)
+{
+    if (auto preset = outputProfilePresetById(id))
+        return ResolvedOutputProfile{*preset, true};
+    for (const auto& op : ws.outputProfiles)
+        if (op.id == id)
+            return ResolvedOutputProfile{op, false};
+    return std::nullopt;
+}
 
 } // namespace Platemaker::Models
 
