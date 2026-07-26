@@ -17,14 +17,17 @@ work happens in.
   baseline — ship a MINOR before the pending PATCH and that patch becomes `0.3.1`, the next MINOR
   becomes `0.4.0`.
 
-Baseline: **0.2.1 released, 0.2.2 in progress** (`CMakeLists.txt`).
+Baseline: **0.2.1 released, 0.3.0 in progress** (`CMakeLists.txt`). The additive `0.2.2` work
+(buildInfo, SBOM) was folded into `0.3.0`, which also makes breaking preset/CLI changes — so the
+release is a minor, and `0.2.2` never ships on its own.
 
 ---
 
-## PATCH — next: 0.2.2
+## PATCH — next: 0.3.1
 
-Fixes and additive changes — nothing a consumer must react to. Code built against 0.2.1 keeps
-compiling.
+Fixes and additive changes — nothing a consumer must react to. Code built against 0.3.0 keeps
+compiling. (These ride `0.3.1` now that `0.3.0` takes the minor slot; per the cascade rule above,
+anything finished in time may still be bundled into `0.3.0` before it ships.)
 
 ### Persist last render log
 
@@ -78,7 +81,7 @@ done together.
 
 ### Third-party notices: extend the SBOM to the full bundled DLL graph
 
-**Foundation shipped in 0.2.2.** The package now emits `credits/sbom.spdx.json` (an SPDX 2.3 SBOM)
+**Foundation shipped in 0.3.0.** The package now emits `credits/sbom.spdx.json` (an SPDX 2.3 SBOM)
 plus `credits/licenses/` — but only for the **direct** dependencies (libvips, nlohmann/json). The
 Windows packages still ship the whole libvips dependency graph (~90 DLLs: glib, libpng, libjpeg,
 zlib, expat, …), several LGPL, and distributing them carries notice obligations that listing only
@@ -453,7 +456,8 @@ helper that calls `vips_init()`/`vips_shutdown()` in a `SetUpTestSuite` /
 **Shipped:** `0.1.0` → `0.1.1` → `0.2.0` → `0.2.1` (lib); GUI `1.0.0` → `1.0.1` → `1.1.0`.
 `0.2.0` broke the API against `0.1.1` (`ProjectItem::sanitize()` gained a required parameter,
 `applyProcessingResults()` two) — breaking, hence the minor, not `0.1.2`. `0.2.1` was additive
-plus fixes, so a patch. **In progress: `0.2.2`.**
+plus fixes, so a patch. `0.2.2`'s additive work (buildInfo, SBOM) was folded into `0.3.0`, which
+also removes/changes the preset & CLI API — breaking, hence the minor. **In progress: `0.3.0`.**
 
 **Order is forced: lib first.** The GUI pins `LIBPLATEMAKER_VERSION`, which also builds the
 FetchContent URL, so until a lib version is on GitHub Releases anyone without a local

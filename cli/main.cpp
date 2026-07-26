@@ -4,14 +4,27 @@
  *
  * Supported subcommands:
  *   platemaker --version
- *   platemaker workspace create         [--output FILE] [--target-width N] [--slice-height N]
- *   platemaker workspace add-profile    --workspace FILE --name NAME --canvas WxH --margins T,R,B,L
- *   platemaker workspace mod-profile    --workspace FILE --name NAME [--canvas WxH] [--margins T,R,B,L]
- *   platemaker workspace rm-profile     --workspace FILE --name NAME
- *   platemaker workspace list-profiles  --workspace FILE
+ *   platemaker workspace create               [--output FILE] [--target-width N] [--slice-height N]
+ *
+ *   Canvas profiles (selected by name):
+ *   platemaker workspace add-canvas-profile   --workspace FILE --name NAME --canvas WxH --margins T,R,B,L
+ *   platemaker workspace mod-canvas-profile   --workspace FILE --name NAME [--canvas WxH] [--margins T,R,B,L]
+ *   platemaker workspace rm-canvas-profile    --workspace FILE --name NAME
+ *   platemaker workspace list-canvas-profiles --workspace FILE
+ *
+ *   Output profiles (selected by id — names may repeat, ids do not):
+ *   platemaker workspace list-presets         --workspace FILE
+ *   platemaker workspace add-output-profile   --workspace FILE --name NAME
+ *                       { --from-preset PRESET_ID | [--target-width N] [--slice-height N] [--format png|jpg|webp] }
+ *   platemaker workspace mod-output-profile   --workspace FILE --output-profile ID [--name N] [--target-width N] [--slice-height N] [--format png|jpg|webp]
+ *   platemaker workspace rm-output-profile    --workspace FILE --output-profile ID
+ *   platemaker workspace list-output-profiles --workspace FILE
+ *
+ *   platemaker workspace list-all-profiles    --workspace FILE   (alias: list-profiles; canvas + output)
  *   platemaker workspace list-projects  --workspace FILE
  *   platemaker project create  --workspace FILE --name NAME [--input DIR] [--output DIR]
  *   platemaker project mod     --workspace FILE --name NAME [--new-name N] [--input DIR] [--output DIR]
+ *                              [--add-canvas-profile NAME] [--rm-canvas-profile NAME] [--output-profile ID]
  *   platemaker project rm      --workspace FILE --name NAME
  *   platemaker project status  --workspace FILE --name NAME
  *   platemaker process --workspace FILE
@@ -340,7 +353,6 @@ static int cmdHelp(const std::string& prog)
         << "      Modify an existing canvas profile.\n"
         << "  workspace rm-canvas-profile   --workspace FILE --name NAME\n"
         << "  workspace list-canvas-profiles --workspace FILE\n"
-        << "      (The older add-profile / mod-profile / rm-profile / list-profiles names still work.)\n"
         << "\n"
         << "  Output profiles are selected by id (names may repeat, ids do not):\n"
         << "  workspace list-presets\n"
@@ -353,6 +365,9 @@ static int cmdHelp(const std::string& prog)
         << "  workspace rm-output-profile   --workspace FILE --output-profile ID\n"
         << "  workspace list-output-profiles --workspace FILE\n"
         << "      (Presets are read-only; copy one with add-output-profile --from-preset.)\n"
+        << "\n"
+        << "  workspace list-all-profiles --workspace FILE   (alias: list-profiles)\n"
+        << "      List canvas profiles and output profiles together in one view.\n"
         << "\n"
         << "  process --workspace FILE\n"
         << "          { --input DIR | --project NAME }  [--output DIR]\n"
@@ -432,13 +447,13 @@ static int cmdWorkspaceCreate(const Opts& opts)
 
     std::cerr << "Workspace created: " << fs::absolute(outputFile).string() << '\n';
     std::cerr << "Tip: add canvas profiles with:\n"
-              << "  workspace add-profile --workspace " << outputFile
+              << "  workspace add-canvas-profile --workspace " << outputFile
               << " --name NAME --canvas WxH --margins T,R,B,L\n";
     return 0;
 }
 
 // ===========================================================================
-// platemaker workspace add-profile
+// platemaker workspace add-canvas-profile
 // ===========================================================================
 
 static int cmdWorkspaceAddProfile(const Opts& opts)
@@ -481,7 +496,7 @@ static int cmdWorkspaceAddProfile(const Opts& opts)
     for (const auto& cp : ws.canvasProfiles) {
         if (cp.name == name) {
             std::cerr << "Error: profile '" << name
-                      << "' already exists. Use mod-profile to modify it.\n";
+                      << "' already exists. Use mod-canvas-profile to modify it.\n";
             return 1;
         }
     }
@@ -544,7 +559,7 @@ static int cmdWorkspaceAddProfile(const Opts& opts)
 }
 
 // ===========================================================================
-// platemaker workspace mod-profile
+// platemaker workspace mod-canvas-profile
 // ===========================================================================
 
 static int cmdWorkspaceModProfile(const Opts& opts)
@@ -645,7 +660,7 @@ static int cmdWorkspaceModProfile(const Opts& opts)
 }
 
 // ===========================================================================
-// platemaker workspace rm-profile
+// platemaker workspace rm-canvas-profile
 // ===========================================================================
 
 static int cmdWorkspaceRmProfile(const Opts& opts)
@@ -690,8 +705,33 @@ static int cmdWorkspaceRmProfile(const Opts& opts)
 }
 
 // ===========================================================================
-// platemaker workspace list-profiles
+// platemaker workspace list-canvas-profiles
 // ===========================================================================
+
+//! Prints the "Canvas profiles:" section (with an add tip when the workspace has none).
+static void printCanvasProfilesSection(const Workspace& ws)
+{
+    if (ws.canvasProfiles.empty()) {
+        std::cout << "Canvas profiles: (none)\n";
+        std::cout << "  Tip: workspace add-canvas-profile --workspace FILE"
+                  << " --name NAME --canvas WxH --margins T,R,B,L\n";
+        return;
+    }
+    std::cout << "Canvas profiles:\n";
+    for (const auto& cp : ws.canvasProfiles) {
+        const int safeW = cp.canvasSize.width  - cp.margins.left - cp.margins.right;
+        const int safeH = cp.canvasSize.height - cp.margins.top  - cp.margins.bottom;
+        std::cout << "  " << cp.name
+                  << "  id=" << cp.id
+                  << "  canvas=" << cp.canvasSize.width << 'x' << cp.canvasSize.height
+                  << "  margins=" << cp.margins.top    << ','
+                                  << cp.margins.right  << ','
+                                  << cp.margins.bottom << ','
+                                  << cp.margins.left
+                  << "  safe-area=" << safeW << 'x' << safeH
+                  << '\n';
+    }
+}
 
 static int cmdWorkspaceListProfiles(const Opts& opts)
 {
@@ -707,46 +747,7 @@ static int cmdWorkspaceListProfiles(const Opts& opts)
         return 2;
     }
 
-    if (ws.canvasProfiles.empty()) {
-        std::cout << "Canvas profiles: (none)\n";
-        std::cout << "  Tip: workspace add-profile --workspace FILE"
-                  << " --name NAME --canvas WxH --margins T,R,B,L\n";
-    } else {
-        std::cout << "Canvas profiles:\n";
-        for (const auto& cp : ws.canvasProfiles) {
-            const int safeW = cp.canvasSize.width
-                              - cp.margins.left - cp.margins.right;
-            const int safeH = cp.canvasSize.height
-                              - cp.margins.top  - cp.margins.bottom;
-            std::cout << "  " << cp.name
-                      << "  id=" << cp.id
-                      << "  canvas=" << cp.canvasSize.width << 'x'
-                                     << cp.canvasSize.height
-                      << "  margins=" << cp.margins.top    << ','
-                                      << cp.margins.right  << ','
-                                      << cp.margins.bottom << ','
-                                      << cp.margins.left
-                      << "  safe-area=" << safeW << 'x' << safeH
-                      << '\n';
-        }
-    }
-
-    std::cout << "\nOutput profiles:\n";
-    for (const auto& op : ws.outputProfiles) {
-        std::cout << "  " << op.name
-                  << "  id=" << op.id
-                  << "  target=" << op.targetWidth << "px"
-                  << "  slice=" << op.sliceHeight << "px"
-                  << "  (yours)\n";
-    }
-    for (const auto& op : outputProfilePresets()) {
-        std::cout << "  " << op.name
-                  << "  id=" << op.id
-                  << "  target=" << op.targetWidth << "px"
-                  << "  slice=" << op.sliceHeight << "px"
-                  << "  (preset)\n";
-    }
-
+    printCanvasProfilesSection(ws);
     return 0;
 }
 
@@ -764,11 +765,23 @@ static void printOutputProfile(const OutputProfile& op, const char* tag)
               << "  " << tag << '\n';
 }
 
+//! Prints the "Output profiles:" section — the user's own profiles, then the built-in presets.
+static void printOutputProfilesSection(const Workspace& ws)
+{
+    std::cout << "Output profiles:\n";
+    for (const auto& op : ws.outputProfiles)      printOutputProfile(op, "(yours)");
+    for (const auto& op : outputProfilePresets()) printOutputProfile(op, "(preset)");
+}
+
 static int cmdWorkspaceListPresets(const Opts&)
 {
-    std::cout << "Available output-profile presets (create your own copy with --from-preset):\n";
+    std::cout << "Available output-profile presets:\n" ;
     for (const auto& p : outputProfilePresets())
         printOutputProfile(p, "(preset)");
+
+    std::cout << "\nCreate your own copy with :\n" <<
+                 "   workspace add-output-profile --workspace FILE --name NAME\n" << 
+                 "   { --from-preset PRESET_ID | [--target-width N] [--slice-height N] [--format png|jpg|webp] }\n";
     return 0;
 }
 
@@ -782,9 +795,24 @@ static int cmdWorkspaceListOutputProfiles(const Opts& opts)
         std::cerr << "Error: cannot load workspace: " << e.what() << '\n'; return 2;
     }
 
-    std::cout << "Output profiles:\n";
-    for (const auto& op : ws.outputProfiles)  printOutputProfile(op, "(yours)");
-    for (const auto& op : outputProfilePresets()) printOutputProfile(op, "(preset)");
+    printOutputProfilesSection(ws);
+    return 0;
+}
+
+// platemaker workspace list-all-profiles (alias: list-profiles) — canvas and output in one view.
+static int cmdWorkspaceListAllProfiles(const Opts& opts)
+{
+    if (!opts.has("workspace")) { std::cerr << "Error: --workspace FILE is required\n"; return 1; }
+
+    Workspace ws;
+    try { ws = WorkspaceSerializer{}.load(opts.get("workspace")); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n'; return 2;
+    }
+
+    printCanvasProfilesSection(ws);
+    std::cout << '\n';
+    printOutputProfilesSection(ws);
     return 0;
 }
 
@@ -1737,7 +1765,7 @@ static int cmdTemplate(const Opts& opts)
     if (!profilePtr) {
         std::cerr << "Error: canvas profile '" << profileName
                   << "' not found in workspace.\n"
-                  << "  Use 'workspace list-profiles --workspace " << wsFile
+                  << "  Use 'workspace list-canvas-profiles --workspace " << wsFile
                   << "' to see available profiles.\n";
         return 1;
     }
@@ -1827,19 +1855,21 @@ static int runCli(int argc, char** argv)
             } else {
                 const std::string cmd2 = argv[2];
                 Opts opts = parseOpts(argc, argv, 3);
-                if      (cmd2 == "create")         exitCode = cmdWorkspaceCreate(opts);
-                // Canvas profiles. The canonical names are *-canvas-profile; the older *-profile
-                // names remain as aliases.
-                else if (cmd2 == "add-canvas-profile"   || cmd2 == "add-profile")   exitCode = cmdWorkspaceAddProfile(opts);
-                else if (cmd2 == "mod-canvas-profile"   || cmd2 == "mod-profile")   exitCode = cmdWorkspaceModProfile(opts);
-                else if (cmd2 == "rm-canvas-profile"    || cmd2 == "rm-profile")    exitCode = cmdWorkspaceRmProfile(opts);
-                else if (cmd2 == "list-canvas-profiles" || cmd2 == "list-profiles") exitCode = cmdWorkspaceListProfiles(opts);
+                if      (cmd2 == "create")              exitCode = cmdWorkspaceCreate(opts);
+                // Canvas profiles.
+                else if (cmd2 == "add-canvas-profile")   exitCode = cmdWorkspaceAddProfile(opts);
+                else if (cmd2 == "mod-canvas-profile")   exitCode = cmdWorkspaceModProfile(opts);
+                else if (cmd2 == "rm-canvas-profile")    exitCode = cmdWorkspaceRmProfile(opts);
+                else if (cmd2 == "list-canvas-profiles") exitCode = cmdWorkspaceListProfiles(opts);
                 // Output profiles (id-selected; presets are read-only, instantiate with --from-preset).
                 else if (cmd2 == "add-output-profile")   exitCode = cmdWorkspaceAddOutputProfile(opts);
                 else if (cmd2 == "mod-output-profile")   exitCode = cmdWorkspaceModOutputProfile(opts);
                 else if (cmd2 == "rm-output-profile")    exitCode = cmdWorkspaceRmOutputProfile(opts);
                 else if (cmd2 == "list-output-profiles") exitCode = cmdWorkspaceListOutputProfiles(opts);
                 else if (cmd2 == "list-presets")         exitCode = cmdWorkspaceListPresets(opts);
+                // Combined view: both families in one listing.
+                else if (cmd2 == "list-all-profiles" || cmd2 == "list-profiles")
+                    exitCode = cmdWorkspaceListAllProfiles(opts);
                 else if (cmd2 == "list-projects")  exitCode = cmdWorkspaceListProjects(opts);
                 else {
                     std::cerr << "Unknown workspace subcommand '" << cmd2

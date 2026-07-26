@@ -71,9 +71,11 @@ std::string projectJson(const std::string& outputProfileId)
 }
 
 /// A profile whose every field matches the Webtoon Standard preset, with a chosen id/name/format.
+/// The default format is the preset's own (JPEG), so a caller that omits it produces a profile that
+/// matches the preset outright; pass another format to model a diverged/unrelated profile.
 std::string presetShapedJson(const std::string& idField,
                              const std::string& name,
-                             const std::string& outputFormat = "PNG")
+                             const std::string& outputFormat = "JPEG")
 {
     return R"({)" + idField + R"("name": ")" + name + R"(",
         "targetWidth": 800, "sliceHeight": 1280,
@@ -102,14 +104,14 @@ Models::OutputProfile userProfile(std::string id, std::string name)
 
 TEST(OutputPresetTest, DefinitionIsPinnedIndependentlyOfStructDefaults)
 {
-    // The preset currently coincides with OutputProfile's field defaults. That coincidence is the
-    // hazard: changing a default would silently redefine the preset. This pins the definition.
+    // Pin the definition independently of OutputProfile's field defaults: the preset must not silently
+    // track a change to a struct default. (The format now diverges from the PNG default outright.)
     const auto preset = Models::webtoonStandardPreset();
 
     EXPECT_EQ(preset.id,   Models::k_webtoonStandardPresetId);
     EXPECT_EQ(preset.name, "Webtoon Standard");
     EXPECT_EQ(Models::outputProfileSignature(preset),
-              "w800h1280p2f0i1;jpeg90,0,1,0;png6,0;webp80,0,4");
+              "w800h1280p2f1i1;jpeg90,0,1,0;png6,0;webp80,0,4");
 }
 
 TEST(OutputPresetTest, ByIdIsTheMembershipTest)

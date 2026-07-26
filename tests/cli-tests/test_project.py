@@ -280,9 +280,12 @@ def test_process_with_project_flag(tmp_path, platemaker_bin):
          "--input", str(pages),
          "--output", str(out_dir))
 
+    # Pin PNG: the ad-hoc profile defaults to JPEG (Webtoon Standard preset), but
+    # this test asserts on output_*.png and only cares that slices were produced.
     r = _run(platemaker_bin, "process",
              "--workspace", str(ws),
-             "--project", "Ch01")
+             "--project", "Ch01",
+             "--format", "png")
     assert r.returncode == 0, r.stderr
     output_files = list(out_dir.glob("output_*.png"))
     assert len(output_files) > 0
@@ -360,8 +363,11 @@ def test_process_multi_input_per_output_provenance(tmp_path, platemaker_bin):
          "--input", str(pages),
          "--output", str(out_dir))
 
+    # Pin PNG (default profile is the JPEG Webtoon Standard preset); this test
+    # asserts on output_001.png and verifies source provenance, not the format.
     r = _run(platemaker_bin, "process",
-             "--workspace", str(ws), "--project", "Ch01")
+             "--workspace", str(ws), "--project", "Ch01",
+             "--format", "png")
     assert r.returncode == 0, r.stderr
 
     # --- Parse saved workspace JSON and inspect provenance data ---

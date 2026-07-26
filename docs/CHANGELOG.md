@@ -39,10 +39,12 @@ a consumer that used the removed preset internals must adapt.
 - **CLI output-profile family, id-selected** — `workspace list-presets`, `add-output-profile`
   (`--from-preset ID`, or from scratch with `--target-width/--slice-height/--format`),
   `mod-/rm-/list-output-profiles`, and `--output-profile ID` on `process` and `project`. The canvas
-  commands are renamed `*-canvas-profile` (the older `*-profile` names remain as aliases). `process`
-  uses a selected or project-assigned profile exactly as stored, or builds an **ad-hoc** profile from
-  the inline options when none is selected — the two never mix, so an override cannot silently edit a
-  stored profile or a preset.
+  commands are renamed `*-canvas-profile`; the old `add-/mod-/rm-/list-profiles` names are removed
+  (**breaking**). `list-canvas-profiles` and `list-output-profiles` each list only their own family;
+  the combined view is `list-all-profiles` (alias `list-profiles`). `process` uses a selected or
+  project-assigned profile exactly as stored, or builds an **ad-hoc** profile from the inline options
+  when none is selected — the two never mix, so an override cannot silently edit a stored profile or a
+  preset.
 - **`Infrastructure::buildInfo()` and `BuildInfo`**
   (`platemaker/infrastructure/build_info/build_info.hpp`) — the library's own version, SPDX licence,
   compiler and target read back **at runtime** from the loaded DLL. The runtime twin of the

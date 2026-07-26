@@ -29,11 +29,19 @@ def _run_process(
     output_dir:     pathlib.Path,
     extra_args:     list[str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``platemaker process`` and return the CompletedProcess result."""
+    """Run ``platemaker process`` and return the CompletedProcess result.
+
+    These tests assert on ``output_*.png`` filenames because they verify slice
+    counts, numbering, and incremental behaviour — not the container format.
+    The default output profile is JPEG (the Webtoon Standard preset), so the
+    format is pinned to PNG here; a caller that passes its own ``--format`` in
+    *extra_args* overrides it (flags are last-wins).
+    """
     cmd = [
         str(platemaker_bin), "process",
         "--workspace", str(workspace),
         "--output",    str(output_dir),
+        "--format",    "png",
     ]
     if extra_args:
         cmd.extend(extra_args)

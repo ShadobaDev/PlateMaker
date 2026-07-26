@@ -273,19 +273,32 @@ Standalone binary. All commands operate on a workspace JSON file.
 platemaker [--help | -h | help]
 platemaker --version
 
-platemaker workspace create         [--output FILE] [--target-width N] [--slice-height N]
-platemaker workspace add-profile    --workspace FILE --name NAME --canvas WxH --margins T,R,B,L
-platemaker workspace mod-profile    --workspace FILE --name NAME [--canvas WxH] [--margins T,R,B,L]
-platemaker workspace rm-profile     --workspace FILE --name NAME
-platemaker workspace list-profiles  --workspace FILE
-platemaker workspace list-projects  --workspace FILE
+platemaker workspace create               [--output FILE] [--target-width N] [--slice-height N]
+
+# Canvas profiles (selected by name):
+platemaker workspace add-canvas-profile    --workspace FILE --name NAME --canvas WxH --margins T,R,B,L
+platemaker workspace mod-canvas-profile    --workspace FILE --name NAME [--canvas WxH] [--margins T,R,B,L]
+platemaker workspace rm-canvas-profile     --workspace FILE --name NAME
+platemaker workspace list-canvas-profiles  --workspace FILE
+
+# Output profiles (selected by id — names may repeat, ids do not):
+platemaker workspace list-presets          --workspace FILE
+platemaker workspace add-output-profile    --workspace FILE --name NAME
+                      { --from-preset PRESET_ID | [--target-width N] [--slice-height N] [--format png|jpg|webp] }
+platemaker workspace mod-output-profile    --workspace FILE --output-profile ID [--name N] [--target-width N] [--slice-height N] [--format png|jpg|webp]
+platemaker workspace rm-output-profile     --workspace FILE --output-profile ID
+platemaker workspace list-output-profiles  --workspace FILE
+
+platemaker workspace list-all-profiles     --workspace FILE   # alias: list-profiles — canvas + output
+platemaker workspace list-projects         --workspace FILE
 platemaker project create  --workspace FILE --name NAME [--input DIR] [--output DIR]
 platemaker project mod     --workspace FILE --name NAME [--new-name N] [--input DIR] [--output DIR]
+                      [--add-canvas-profile NAME] [--rm-canvas-profile NAME] [--output-profile ID]
 platemaker project rm      --workspace FILE --name NAME
 platemaker project status  --workspace FILE --name NAME
 platemaker process --workspace FILE
                       { --input DIR | --project NAME }
-                      [--output DIR] [--format png|jpg|webp] [--start-index N]
+                      [--output DIR] [--output-profile ID] [--format png|jpg|webp] [--start-index N]
                       [--target-width N] [--slice-height N]
                       [--no-profile] [--json]
 platemaker template --workspace FILE --profile NAME --output FILE
@@ -298,13 +311,24 @@ so it need not be written to the file.  `--target-width` / `--slice-height` that
 preset store a custom profile instead.  No canvas profiles are created at this point.  `--output`
 is optional (default: `./project.platemaker.json`).
 
-**workspace add-profile** — Adds a `CanvasProfile` entry that describes one physical
+**workspace add-canvas-profile** — Adds a `CanvasProfile` entry that describes one physical
 canvas size + margins used by the artist.  A workspace can hold multiple profiles (e.g.
 one per canvas height variant).  Files are matched to profiles at processing time by
-their pixel width.
+their pixel width.  Canvas profiles are selected by name.
 
-**workspace mod-profile / rm-profile** — Modify or remove a named canvas profile.
-Use `list-profiles` to discover profile names.
+**workspace mod-canvas-profile / rm-canvas-profile** — Modify or remove a named canvas profile.
+Use `list-canvas-profiles` to discover profile names.
+
+**workspace output-profile family** — `add-/mod-/rm-/list-output-profiles` and `list-presets`
+manage the output profiles.  Output profiles are selected **by id** (names may repeat, ids do not).
+`add-output-profile` either copies a preset (`--from-preset PRESET_ID`) or builds one from scratch;
+it prints the new id.  Presets are read-only and never persisted — `mod-/rm-output-profile` on a
+preset id is refused with a hint to duplicate it.  `list-output-profiles` shows the user's own
+profiles `(yours)` and the built-in presets `(preset)`.
+
+**workspace list-all-profiles** (alias `list-profiles`) — Prints the canvas-profile and
+output-profile listings together in one view; `list-canvas-profiles` and `list-output-profiles`
+each show only their own family.
 
 **Canvas profile matching during `process`:**  
 See §7.5 for the full algorithm.  In summary: for each input image the library searches

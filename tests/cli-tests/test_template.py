@@ -8,7 +8,7 @@ Covers:
   - Non-existent profile produces exit code 1 with a useful message.
   - --margins-tpl-color / --background-tpl-color override colours at runtime
     (bad colour strings are silently ignored; generation still succeeds).
-  - Colours stored on the profile via add-profile --margins-tpl-color
+  - Colours stored on the profile via add-canvas-profile --margins-tpl-color
     are persisted to the workspace JSON and used by template generation.
 """
 
@@ -386,7 +386,7 @@ class TestTemplateColours:
 # ---------------------------------------------------------------------------
 
 class TestProfileColourStorage:
-    """Tests that colour options are persisted to the workspace via add/mod-profile."""
+    """Tests that colour options are persisted to the workspace via add/mod-canvas-profile."""
 
     def test_add_profile_with_margins_tpl_color(
         self,
@@ -394,14 +394,14 @@ class TestProfileColourStorage:
         tmp_workspace: pathlib.Path,
     ) -> None:
         """
-        workspace add-profile --margins-tpl-color stores the colour in the JSON.
+        workspace add-canvas-profile --margins-tpl-color stores the colour in the JSON.
         """
         ws_path = tmp_workspace / "project.platemaker.json"
         create_workspace(platemaker_bin, ws_path)
         result = subprocess.run(
             [
                 str(platemaker_bin),
-                "workspace", "add-profile",
+                "workspace", "add-canvas-profile",
                 "--workspace",         str(ws_path),
                 "--name",              "ColourTest",
                 "--canvas",            "800x2560",
@@ -412,7 +412,7 @@ class TestProfileColourStorage:
             text=True,
         )
         assert result.returncode == 0, (
-            f"add-profile with --margins-tpl-color failed:\nstderr: {result.stderr}"
+            f"add-canvas-profile with --margins-tpl-color failed:\nstderr: {result.stderr}"
         )
 
         ws_json = json.loads(ws_path.read_text())
@@ -432,14 +432,14 @@ class TestProfileColourStorage:
         tmp_workspace: pathlib.Path,
     ) -> None:
         """
-        workspace add-profile --background-tpl-color stores backgroundColour.
+        workspace add-canvas-profile --background-tpl-color stores backgroundColour.
         """
         ws_path = tmp_workspace / "project.platemaker.json"
         create_workspace(platemaker_bin, ws_path)
         subprocess.run(
             [
                 str(platemaker_bin),
-                "workspace", "add-profile",
+                "workspace", "add-canvas-profile",
                 "--workspace",             str(ws_path),
                 "--name",                  "BgTest",
                 "--canvas",                "800x2560",
@@ -466,7 +466,7 @@ class TestProfileColourStorage:
         tmp_workspace: pathlib.Path,
     ) -> None:
         """
-        workspace mod-profile --margins-tpl-color updates visualColour in JSON.
+        workspace mod-canvas-profile --margins-tpl-color updates visualColour in JSON.
         """
         ws_path = tmp_workspace / "project.platemaker.json"
         create_workspace(platemaker_bin, ws_path)
@@ -481,7 +481,7 @@ class TestProfileColourStorage:
         subprocess.run(
             [
                 str(platemaker_bin),
-                "workspace", "mod-profile",
+                "workspace", "mod-canvas-profile",
                 "--workspace",         str(ws_path),
                 "--name",              "ModTest",
                 "--margins-tpl-color", "0,0,255,128",
@@ -517,7 +517,7 @@ class TestProfileColourStorage:
         subprocess.run(
             [
                 str(platemaker_bin),
-                "workspace", "add-profile",
+                "workspace", "add-canvas-profile",
                 "--workspace",             str(ws_path),
                 "--name",                  "StoredColour",
                 "--canvas",                "800x5120",

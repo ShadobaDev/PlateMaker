@@ -3,10 +3,10 @@ Integration tests: ``platemaker workspace`` subcommands.
 
 Covers:
   * workspace create  — produces a valid JSON workspace with a default output profile.
-  * workspace add-profile — adds a CanvasProfile entry to the workspace.
-  * workspace mod-profile — modifies an existing canvas profile.
-  * workspace rm-profile  — removes a canvas profile.
-  * workspace list-profiles — prints profile information, exits 0.
+  * workspace add-canvas-profile — adds a CanvasProfile entry to the workspace.
+  * workspace mod-canvas-profile — modifies an existing canvas profile.
+  * workspace rm-canvas-profile  — removes a canvas profile.
+  * workspace list-canvas-profiles — prints profile information, exits 0.
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def test_workspace_create_no_canvas_profiles_by_default(
 ) -> None:
     """
     A freshly created workspace must have an empty ``canvasProfiles`` list.
-    Canvas profiles are added explicitly via ``workspace add-profile``.
+    Canvas profiles are added explicitly via ``workspace add-canvas-profile``.
     """
     out = tmp_workspace / "empty.platemaker.json"
     create_workspace(platemaker_bin, out)
@@ -89,7 +89,7 @@ def test_workspace_create_no_canvas_profiles_by_default(
 
 
 # ---------------------------------------------------------------------------
-# workspace add-profile
+# workspace add-canvas-profile
 # ---------------------------------------------------------------------------
 
 def test_workspace_add_profile_sets_canvas(
@@ -97,7 +97,7 @@ def test_workspace_add_profile_sets_canvas(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    ``workspace add-profile`` must persist the canvas size and margins in
+    ``workspace add-canvas-profile`` must persist the canvas size and margins in
     the ``canvasProfiles`` list of the workspace JSON.
     """
     ws = tmp_workspace / "canvas_test.platemaker.json"
@@ -128,7 +128,7 @@ def test_workspace_add_profile_multiple_profiles(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    Multiple calls to ``add-profile`` must accumulate all profiles.
+    Multiple calls to ``add-canvas-profile`` must accumulate all profiles.
     """
     ws = tmp_workspace / "multi.platemaker.json"
     create_workspace(platemaker_bin, ws)
@@ -155,7 +155,7 @@ def test_workspace_add_profile_rejects_duplicate_name(
     add_profile(platemaker_bin, ws, name="Dup", canvas="800x2560", margins="0,0,0,0")
 
     result = subprocess.run(
-        [str(platemaker_bin), "workspace", "add-profile",
+        [str(platemaker_bin), "workspace", "add-canvas-profile",
          "--workspace", str(ws),
          "--name", "Dup", "--canvas", "800x2560", "--margins", "0,0,0,0"],
         capture_output=True, text=True,
@@ -173,7 +173,7 @@ def test_workspace_add_profile_requires_canvas(
     create_workspace(platemaker_bin, ws)
 
     result = subprocess.run(
-        [str(platemaker_bin), "workspace", "add-profile",
+        [str(platemaker_bin), "workspace", "add-canvas-profile",
          "--workspace", str(ws),
          "--name", "TestProfile",
          "--margins", "0,0,0,0"],  # --canvas intentionally omitted
@@ -184,7 +184,7 @@ def test_workspace_add_profile_requires_canvas(
 
 
 # ---------------------------------------------------------------------------
-# workspace mod-profile
+# workspace mod-canvas-profile
 # ---------------------------------------------------------------------------
 
 def test_workspace_mod_profile_updates_margins(
@@ -192,7 +192,7 @@ def test_workspace_mod_profile_updates_margins(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    ``workspace mod-profile --margins`` must update the stored margins without
+    ``workspace mod-canvas-profile --margins`` must update the stored margins without
     touching the canvas size.
     """
     ws = tmp_workspace / "mod.platemaker.json"
@@ -200,13 +200,13 @@ def test_workspace_mod_profile_updates_margins(
     add_profile(platemaker_bin, ws, name="Mod", canvas="1600x10240", margins="0,0,0,0")
 
     result = subprocess.run(
-        [str(platemaker_bin), "workspace", "mod-profile",
+        [str(platemaker_bin), "workspace", "mod-canvas-profile",
          "--workspace", str(ws),
          "--name", "Mod",
          "--margins", "50,50,50,50"],
         capture_output=True, text=True,
     )
-    assert result.returncode == 0, f"mod-profile failed:\n{result.stderr}"
+    assert result.returncode == 0, f"mod-canvas-profile failed:\n{result.stderr}"
 
     with ws.open() as fh:
         data = json.load(fh)
@@ -227,7 +227,7 @@ def test_workspace_mod_profile_nonexistent_name_exits_1(
     create_workspace(platemaker_bin, ws)
 
     result = subprocess.run(
-        [str(platemaker_bin), "workspace", "mod-profile",
+        [str(platemaker_bin), "workspace", "mod-canvas-profile",
          "--workspace", str(ws),
          "--name", "DoesNotExist",
          "--margins", "10,10,10,10"],
@@ -237,7 +237,7 @@ def test_workspace_mod_profile_nonexistent_name_exits_1(
 
 
 # ---------------------------------------------------------------------------
-# workspace rm-profile
+# workspace rm-canvas-profile
 # ---------------------------------------------------------------------------
 
 def test_workspace_rm_profile_removes_profile(
@@ -245,7 +245,7 @@ def test_workspace_rm_profile_removes_profile(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    ``workspace rm-profile`` must remove the named profile from the workspace.
+    ``workspace rm-canvas-profile`` must remove the named profile from the workspace.
     """
     ws = tmp_workspace / "rm.platemaker.json"
     create_workspace(platemaker_bin, ws)
@@ -253,12 +253,12 @@ def test_workspace_rm_profile_removes_profile(
     add_profile(platemaker_bin, ws, name="KeepMe",   canvas="1600x5120", margins="0,0,0,0")
 
     result = subprocess.run(
-        [str(platemaker_bin), "workspace", "rm-profile",
+        [str(platemaker_bin), "workspace", "rm-canvas-profile",
          "--workspace", str(ws),
          "--name", "ToRemove"],
         capture_output=True, text=True,
     )
-    assert result.returncode == 0, f"rm-profile failed:\n{result.stderr}"
+    assert result.returncode == 0, f"rm-canvas-profile failed:\n{result.stderr}"
 
     with ws.open() as fh:
         data = json.load(fh)
@@ -277,7 +277,7 @@ def test_workspace_rm_profile_nonexistent_exits_1(
     create_workspace(platemaker_bin, ws)
 
     result = subprocess.run(
-        [str(platemaker_bin), "workspace", "rm-profile",
+        [str(platemaker_bin), "workspace", "rm-canvas-profile",
          "--workspace", str(ws),
          "--name", "Ghost"],
         capture_output=True, text=True,
@@ -286,7 +286,7 @@ def test_workspace_rm_profile_nonexistent_exits_1(
 
 
 # ---------------------------------------------------------------------------
-# workspace list-profiles
+# workspace list-canvas-profiles
 # ---------------------------------------------------------------------------
 
 def test_workspace_list_profiles(
@@ -294,7 +294,7 @@ def test_workspace_list_profiles(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    ``workspace list-profiles`` must exit 0 and print the profile name in
+    ``workspace list-canvas-profiles`` must exit 0 and print the profile name in
     its output.
     """
     ws = tmp_workspace / "list_test.platemaker.json"
@@ -302,7 +302,7 @@ def test_workspace_list_profiles(
     add_profile(platemaker_bin, ws, name="Webtoon", canvas="800x2560", margins="0,0,0,0")
 
     result = subprocess.run(
-        [str(platemaker_bin), "workspace", "list-profiles",
+        [str(platemaker_bin), "workspace", "list-canvas-profiles",
          "--workspace", str(ws)],
         capture_output=True, text=True,
     )
@@ -315,14 +315,14 @@ def test_workspace_list_profiles_empty_workspace(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    ``workspace list-profiles`` on a workspace with no canvas profiles must
+    ``workspace list-canvas-profiles`` on a workspace with no canvas profiles must
     exit 0 and print a message indicating no profiles exist.
     """
     ws = tmp_workspace / "empty_list.platemaker.json"
     create_workspace(platemaker_bin, ws)
 
     result = subprocess.run(
-        [str(platemaker_bin), "workspace", "list-profiles",
+        [str(platemaker_bin), "workspace", "list-canvas-profiles",
          "--workspace", str(ws)],
         capture_output=True, text=True,
     )
@@ -336,7 +336,7 @@ def test_workspace_list_profiles_missing_workspace(
 ) -> None:
     """Missing workspace file must exit with error code != 0."""
     result = subprocess.run(
-        [str(platemaker_bin), "workspace", "list-profiles",
+        [str(platemaker_bin), "workspace", "list-canvas-profiles",
          "--workspace", str(tmp_workspace / "does_not_exist.json")],
         capture_output=True, text=True,
     )
@@ -344,7 +344,7 @@ def test_workspace_list_profiles_missing_workspace(
 
 
 # ---------------------------------------------------------------------------
-# workspace add-profile / mod-profile — --canvas-safe-area
+# workspace add-canvas-profile / mod-canvas-profile — --canvas-safe-area
 # ---------------------------------------------------------------------------
 
 def test_canvas_safe_area_stores_computed_canvas_size(
@@ -414,7 +414,7 @@ def test_canvas_safe_area_and_canvas_are_mutually_exclusive_add(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    Providing both ``--canvas`` and ``--canvas-safe-area`` to add-profile
+    Providing both ``--canvas`` and ``--canvas-safe-area`` to add-canvas-profile
     must exit with code 1 and an informative error message.
     """
     ws = tmp_workspace / "sa_mutex.platemaker.json"
@@ -422,7 +422,7 @@ def test_canvas_safe_area_and_canvas_are_mutually_exclusive_add(
 
     result = subprocess.run(
         [
-            str(platemaker_bin), "workspace", "add-profile",
+            str(platemaker_bin), "workspace", "add-canvas-profile",
             "--workspace",        str(ws),
             "--name",             "Conflict",
             "--canvas",           "1600x10240",
@@ -443,7 +443,7 @@ def test_canvas_safe_area_and_canvas_are_mutually_exclusive_mod(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    Providing both ``--canvas`` and ``--canvas-safe-area`` to mod-profile
+    Providing both ``--canvas`` and ``--canvas-safe-area`` to mod-canvas-profile
     must exit with code 1.
     """
     ws = tmp_workspace / "sa_mutex_mod.platemaker.json"
@@ -452,7 +452,7 @@ def test_canvas_safe_area_and_canvas_are_mutually_exclusive_mod(
 
     result = subprocess.run(
         [
-            str(platemaker_bin), "workspace", "mod-profile",
+            str(platemaker_bin), "workspace", "mod-canvas-profile",
             "--workspace",        str(ws),
             "--name",             "P",
             "--canvas",           "1600x10240",
@@ -470,7 +470,7 @@ def test_canvas_safe_area_requires_either_canvas_or_safe_area(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    ``workspace add-profile`` without ``--canvas`` or ``--canvas-safe-area``
+    ``workspace add-canvas-profile`` without ``--canvas`` or ``--canvas-safe-area``
     must exit with code 1.
     """
     ws = tmp_workspace / "sa_required.platemaker.json"
@@ -478,7 +478,7 @@ def test_canvas_safe_area_requires_either_canvas_or_safe_area(
 
     result = subprocess.run(
         [
-            str(platemaker_bin), "workspace", "add-profile",
+            str(platemaker_bin), "workspace", "add-canvas-profile",
             "--workspace", str(ws),
             "--name",      "NoCanvas",
             "--margins",   "100,100,100,100",
@@ -494,7 +494,7 @@ def test_mod_profile_canvas_safe_area_uses_existing_margins(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    ``mod-profile --canvas-safe-area`` without ``--margins`` uses the
+    ``mod-canvas-profile --canvas-safe-area`` without ``--margins`` uses the
     profile's existing margins to compute the new absolute canvas size.
     """
     ws = tmp_workspace / "sa_mod_existing.platemaker.json"
@@ -512,7 +512,7 @@ def test_mod_profile_canvas_safe_area_uses_existing_margins(
     # Now resize safe-area to 1000×3000 keeping margins=50.
     subprocess.run(
         [
-            str(platemaker_bin), "workspace", "mod-profile",
+            str(platemaker_bin), "workspace", "mod-canvas-profile",
             "--workspace",        str(ws),
             "--name",             "UseExisting",
             "--canvas-safe-area", "1000x3000",
@@ -539,7 +539,7 @@ def test_mod_profile_canvas_safe_area_with_new_margins(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    ``mod-profile --canvas-safe-area --margins`` updates both the canvas size
+    ``mod-canvas-profile --canvas-safe-area --margins`` updates both the canvas size
     and the margins in a single command.
     """
     ws = tmp_workspace / "sa_mod_new.platemaker.json"
@@ -553,7 +553,7 @@ def test_mod_profile_canvas_safe_area_with_new_margins(
 
     subprocess.run(
         [
-            str(platemaker_bin), "workspace", "mod-profile",
+            str(platemaker_bin), "workspace", "mod-canvas-profile",
             "--workspace",        str(ws),
             "--name",             "UpdateBoth",
             "--canvas-safe-area", "700x2360",

@@ -107,7 +107,7 @@ def add_profile(
     margins: str = "0,0,0,0",
 ) -> None:
     """
-    Call ``platemaker workspace add-profile`` and assert success.
+    Call ``platemaker workspace add-canvas-profile`` and assert success.
 
     Exactly one of *canvas* or *canvas_safe_area* must be provided (passing
     neither raises :class:`ValueError`; passing both is also an error because
@@ -142,7 +142,7 @@ def add_profile(
     result = subprocess.run(
         [
             str(platemaker_bin),
-            "workspace", "add-profile",
+            "workspace", "add-canvas-profile",
             "--workspace", str(workspace_path),
             "--name",      name,
             canvas_flag,   canvas_val,
@@ -152,6 +152,6 @@ def add_profile(
         text=True,
     )
     assert result.returncode == 0, (
-        f"workspace add-profile failed (rc={result.returncode}):\n"
+        f"workspace add-canvas-profile failed (rc={result.returncode}):\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
