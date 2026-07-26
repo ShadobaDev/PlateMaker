@@ -20,13 +20,13 @@
 #ifndef PLATEMAKER_CORE_PROCESSING_PIPELINE_HPP
 #define PLATEMAKER_CORE_PROCESSING_PIPELINE_HPP
 
-#include <functional>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
 #include "platemaker/platemaker_export.h"
 
+#include <platemaker/core/processing_callbacks/processing_callbacks.hpp>
 #include <platemaker/infrastructure/control/cancellation_token.hpp>
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/output_profile.hpp>
@@ -34,15 +34,8 @@
 
 namespace Platemaker::Core {
 
-/// Progress report emitted after each slice is saved.
-struct ProcessingProgress {
-    int         sliceDone  = 0; //!< Number of slices saved so far (1-based count).
-    int         sliceTotal = 0; //!< Expected total slice count for this run.
-    std::string sliceName;      //!< Filename of the slice just saved, e.g. "output_003.png".
-};
-
-/// Severity of a pipeline log line.
-enum class ProcessingLogLevel { Info, Warning, Error };
+// ProcessingProgress, ProcessingLogLevel and the ProcessingCallbacks set live in
+// processing_callbacks.hpp (included above), keeping this header focused on the pipeline.
 
 /// Result of a pipeline run.  The caller applies \c records to the project.
 struct ProcessingOutcome {
@@ -58,19 +51,13 @@ struct ProcessingOutcome {
  * \class ProcessingPipeline
  * \brief Stateless runner for the scale → strip → slice → save pipeline.
  *
- * \c run() operates on a **copy** of the input file list (never the live
- * \c ProjectItem), so it is safe to invoke from a worker thread while the GUI
- * holds the workspace.  Callbacks fire on the calling thread.
+ * Holds no state — \c run() is \c static; call it as \c ProcessingPipeline::run(...) without
+ * constructing an instance. It operates on a **copy** of the input file list (never the live
+ * \c ProjectItem), so it is safe to invoke from a worker thread while the GUI holds the workspace.
+ * Callbacks fire on the calling thread.
  */
 class PLATEMAKER_EXPORT ProcessingPipeline {
 public:
-    using ProgressFn   = std::function<void(const ProcessingProgress&)>;
-    using LogFn        = std::function<void(ProcessingLogLevel, const std::string&)>;
-    using SliceSavedFn = std::function<void(const std::string& name,
-                                            const std::string& fullPath)>;
-
-    ProcessingPipeline() = default;
-
     /**
      * \brief Builds the virtual strip from \p inputs, slices it, and saves every slice.
      *
@@ -82,26 +69,23 @@ public:
      * \param canvasProfileIds Project-linked profile ids (empty → accept all).
      * \param outputDir        Existing directory where slice files are written.
      * \param cancel           Polled between slices; a partial result is returned on cancel.
-     * \param onProgress       Invoked after each slice is saved (may be empty).
-     * \param onLog            Invoked for informational / warning / error lines (may be empty).
-     * \param onSliceSaved     Invoked with (filename, full path) after each save (may be empty).
+     * \param callbacks        Optional progress/event callbacks (see \c ProcessingCallbacks); any
+     *                         field may be null. Invoked synchronously on the calling thread.
      * \param onlySlices       Optional partial-render filter.  When non-null, only slices whose
      *                         output file name is in the set are encoded, hashed, saved and
      *                         recorded; all others are skipped (the strip is still assembled and
      *                         sliced once).  Null → render every slice (full render).
      * \return A \c ProcessingOutcome with per-slice records, skipped pages and flags.
      */
-    [[nodiscard]] ProcessingOutcome run(
+    [[nodiscard]] static ProcessingOutcome run(
         const std::vector<Models::InputFile>&      inputs,
         const Models::OutputProfile&               outProfile,
         const std::vector<Models::CanvasProfile>&  canvasProfiles,
         const std::vector<std::string>&            canvasProfileIds,
         const std::string&                         outputDir,
         const Infrastructure::CancellationToken&   cancel,
-        const ProgressFn&                          onProgress   = {},
-        const LogFn&                               onLog        = {},
-        const SliceSavedFn&                        onSliceSaved = {},
-        const std::unordered_set<std::string>*     onlySlices   = nullptr) const;
+        const ProcessingCallbacks&                 callbacks    = {},
+        const std::unordered_set<std::string>*     onlySlices   = nullptr);
 };
 
 } // namespace Platemaker::Core

@@ -31,11 +31,28 @@ a consumer that used the removed preset internals must adapt.
   (presets take precedence). Replaces per-consumer resolution.
 - **`Models::outputProfilePresets()`** now returns `const std::vector<OutputProfile>&` (built once) and
   **`Models::outputProfilePresetById()`** materialises from the compile-time catalogue.
+- **`ProcessingPipeline::run()` groups its callbacks into a `Core::ProcessingCallbacks` struct.** The
+  three loose trailing callback parameters (`onProgress`, `onLog`, `onSliceSaved`) are replaced by a
+  single `const ProcessingCallbacks& callbacks = {}` (before `onlySlices`); each field is an optional
+  `std::function`, so a caller wires only what it needs. The per-slice `onSliceSaved` now reports a
+  `SliceSaved{sliceIndex, name, fullPath}` (was `(name, fullPath)`) — the absolute 0-based slice index
+  lets a consumer address the output by position. `ProcessingProgress` and `ProcessingLogLevel` move
+  from `processing_pipeline.hpp` to the new `processing_callbacks.hpp` (a transitive include, so existing
+  users are unaffected). `cancel` stays a separate parameter. `run()` is also now **`static`** — the
+  pipeline is stateless, so call `ProcessingPipeline::run(...)` without constructing an instance.
 
 ### Added
 
 - **`Models::outputPresetDefById()`, `OutputPresetDef`, `k_outputPresetDefs`** — the compile-time preset
   catalogue (single source of truth) and its zero-copy membership test.
+- **`Core::ProcessingCallbacks` and its event payloads** (`core/processing_callbacks/processing_callbacks.hpp`)
+  — the pipeline now reports, in addition to progress/log/slice-saved: **`onInput(InputResult)`** once per
+  input (Appended, or Skipped with a reason — `SkippedMissing` / `SkippedNoProfile` /
+  `SkippedProfileNotLinked` with the matching-but-unlinked workspace profile ids / `SkippedError`);
+  **`onSlicingStarted(SlicingStarted)`** at the phase-1→phase-2 boundary with the expected slice count;
+  and **`onSliceSkipped(SliceSkipped)`** for a clean slice a partial re-render leaves untouched. All are
+  optional. Callbacks fire synchronously on the calling thread; the library remains thread- and
+  GUI-agnostic.
 - **CLI output-profile family, id-selected** — `workspace list-presets`, `add-output-profile`
   (`--from-preset ID`, or from scratch with `--target-width/--slice-height/--format`),
   `mod-/rm-/list-output-profiles`, and `--output-profile ID` on `process` and `project`. The canvas

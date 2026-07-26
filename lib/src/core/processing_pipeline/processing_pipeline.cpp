@@ -21,6 +21,7 @@
 
 #include <vips/vips.h>
 
+#include <functional>
 #include <iomanip>
 #include <sstream>
 
@@ -60,7 +61,7 @@ std::string fmtExt(Models::OutputFormat fmt)
     return ".png";
 }
 
-void emitLog(const ProcessingPipeline::LogFn& onLog,
+void emitLog(const std::function<void(ProcessingLogLevel, const std::string&)>& onLog,
              ProcessingLogLevel level, const std::string& msg)
 {
     if (onLog) onLog(level, msg);
@@ -75,10 +76,8 @@ ProcessingOutcome ProcessingPipeline::run(
     const std::vector<std::string>&           canvasProfileIds,
     const std::string&                        outputDir,
     const Infrastructure::CancellationToken&  cancel,
-    const ProgressFn&                         onProgress,
-    const LogFn&                              onLog,
-    const SliceSavedFn&                       onSliceSaved,
-    const std::unordered_set<std::string>*    onlySlices) const
+    const ProcessingCallbacks&                callbacks,
+    const std::unordered_set<std::string>*    onlySlices)
 {
     using namespace Platemaker::Models;
     using Platemaker::Infrastructure::FileMetaData;
@@ -101,9 +100,11 @@ ProcessingOutcome ProcessingPipeline::run(
         if (cancel.isCancelled()) { outcome.cancelled = true; return outcome; }
 
         if (file.status == FileStatus::Missing) {
-            emitLog(onLog, ProcessingLogLevel::Warning,
+            emitLog(callbacks.onLog, ProcessingLogLevel::Warning,
                     "Skipping missing file: " + file.filePath);
             outcome.skippedPages.push_back(file.filePath);
+            if (callbacks.onInput)
+                callbacks.onInput({file.filePath, InputStatus::SkippedMissing, {}, {}});
             continue;
         }
 
@@ -117,11 +118,26 @@ ProcessingOutcome ProcessingPipeline::run(
 
                 const auto result = matcher.resolve(w, h);
                 if (result.status != ProfileMatchResult::Status::Matched) {
-                    emitLog(onLog, ProcessingLogLevel::Warning,
-                            "Skipping (no matching canvas profile for "
+                    // A profile of this size may exist in the workspace but not be linked to the
+                    // project (FoundInWorkspaceOnly) — a distinct, actionable case from "no profile
+                    // anywhere". Surface the difference (and the candidate ids) to onInput.
+                    InputStatus              inputStatus  = InputStatus::SkippedNoProfile;
+                    std::vector<std::string> candidateIds;
+                    std::string              reason       = "no matching canvas profile";
+                    if (result.status == ProfileMatchResult::Status::FoundInWorkspaceOnly) {
+                        inputStatus = InputStatus::SkippedProfileNotLinked;
+                        reason      = "a canvas profile matches but is not linked to this project";
+                        candidateIds.reserve(result.workspaceCandidates.size());
+                        for (const auto* cand : result.workspaceCandidates)
+                            candidateIds.push_back(cand->id);
+                    }
+                    emitLog(callbacks.onLog, ProcessingLogLevel::Warning,
+                            "Skipping (" + reason + " for "
                             + std::to_string(w) + "x" + std::to_string(h) + "): "
                             + file.filePath);
                     outcome.skippedPages.push_back(file.filePath);
+                    if (callbacks.onInput)
+                        callbacks.onInput({file.filePath, inputStatus, std::move(candidateIds), {}});
                     continue;
                 }
                 matchedProfile = result.profile;
@@ -153,17 +169,21 @@ ProcessingOutcome ProcessingPipeline::run(
                 auto scaled = scaler.scale(file.filePath, outProfile.targetWidth);
                 strip.append(std::move(scaled));
             }
+            if (callbacks.onInput)
+                callbacks.onInput({file.filePath, InputStatus::Appended, {}, {}});
         } catch (const std::exception& e) {
-            emitLog(onLog, ProcessingLogLevel::Warning,
+            emitLog(callbacks.onLog, ProcessingLogLevel::Warning,
                     std::string("Skipping (") + e.what() + "): " + file.filePath);
             outcome.skippedPages.push_back(file.filePath);
+            if (callbacks.onInput)
+                callbacks.onInput({file.filePath, InputStatus::SkippedError, {}, e.what()});
         }
     }
 
     if (strip.totalHeight() == 0) {
         outcome.failed       = true;
         outcome.errorMessage = "No pages were loaded successfully.";
-        emitLog(onLog, ProcessingLogLevel::Error, outcome.errorMessage);
+        emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.errorMessage);
         return outcome;
     }
 
@@ -174,6 +194,11 @@ ProcessingOutcome ProcessingPipeline::run(
     const int remainder = totalH % outProfile.sliceHeight;
     const int expectedTotal = fullCount +
         ((remainder > 0 && outProfile.lastSlicePolicy != LastSlicePolicy::Crop) ? 1 : 0);
+
+    // The strip is assembled; the phase-1 → phase-2 boundary. Report how many slices it will
+    // produce (all of them, before any partial filter) so a consumer can lay out output rows.
+    if (callbacks.onSlicingStarted)
+        callbacks.onSlicingStarted({expectedTotal});
 
     // -----------------------------------------------------------------------
     // 2. Slice and save in one pass.
@@ -205,8 +230,11 @@ ProcessingOutcome ProcessingPipeline::run(
         const std::string outName = sliceName(slice.index);
 
         // Skip clean slices when a partial-render filter is supplied.
-        if (onlySlices && onlySlices->count(outName) == 0)
+        if (onlySlices && onlySlices->count(outName) == 0) {
+            if (callbacks.onSliceSkipped)
+                callbacks.onSliceSkipped({slice.index, outName});
             return true;
+        }
 
         const std::string outPath = outputDir + "/" + outName;
 
@@ -215,7 +243,7 @@ ProcessingOutcome ProcessingPipeline::run(
         } catch (const std::exception& e) {
             outcome.failed       = true;
             outcome.errorMessage = "Failed to save '" + outName + "': " + e.what();
-            emitLog(onLog, ProcessingLogLevel::Error, outcome.errorMessage);
+            emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.errorMessage);
             return false;   // stop slicing
         }
 
@@ -226,11 +254,11 @@ ProcessingOutcome ProcessingPipeline::run(
         outcome.records.push_back(std::move(rec));
 
         ++savedCount;
-        emitLog(onLog, ProcessingLogLevel::Info, "Saved " + outName);
-        if (onProgress)
-            onProgress({savedCount, renderTotal, outName});
-        if (onSliceSaved)
-            onSliceSaved(outName, outPath);
+        emitLog(callbacks.onLog, ProcessingLogLevel::Info, "Saved " + outName);
+        if (callbacks.onProgress)
+            callbacks.onProgress({savedCount, renderTotal, outName});
+        if (callbacks.onSliceSaved)
+            callbacks.onSliceSaved({slice.index, outName, outPath});
 
         return true;
     };
@@ -241,7 +269,7 @@ ProcessingOutcome ProcessingPipeline::run(
     } catch (const std::exception& e) {
         outcome.failed       = true;
         outcome.errorMessage = std::string("Slicing failed: ") + e.what();
-        emitLog(onLog, ProcessingLogLevel::Error, outcome.errorMessage);
+        emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.errorMessage);
         return outcome;
     }
 

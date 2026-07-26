@@ -1204,24 +1204,25 @@ static int cmdProcess(const Opts& opts)
     // The CLI never cancels, so it uses a token that stays unset.
     Platemaker::Infrastructure::CancellationToken cancelToken;
 
-    const auto outcome = Platemaker::Core::ProcessingPipeline{}.run(
+    Platemaker::Core::ProcessingCallbacks callbacks;
+    callbacks.onLog = [&](Platemaker::Core::ProcessingLogLevel level, const std::string& msg) {
+        using L = Platemaker::Core::ProcessingLogLevel;
+        if (level == L::Info) {
+            if (!jsonMode) std::cerr << "  " << msg << '\n';
+        } else {
+            std::cerr << (level == L::Error ? "Error: " : "Warning: ")
+                      << msg << '\n';
+        }
+    };
+
+    const auto outcome = Platemaker::Core::ProcessingPipeline::run(
         project.getInputImages(),
         outProfile,
         effectiveProfiles,
         project.canvasProfileIds,
         outputDir,
         cancelToken,
-        /*onProgress*/ {},
-        /*onLog*/ [&](Platemaker::Core::ProcessingLogLevel level, const std::string& msg) {
-            using L = Platemaker::Core::ProcessingLogLevel;
-            if (level == L::Info) {
-                if (!jsonMode) std::cerr << "  " << msg << '\n';
-            } else {
-                std::cerr << (level == L::Error ? "Error: " : "Warning: ")
-                          << msg << '\n';
-            }
-        },
-        /*onSliceSaved*/ {},
+        callbacks,
         /*onlySlices*/ partial ? &dirtySlices : nullptr);
 
     if (outcome.failed)

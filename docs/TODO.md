@@ -142,38 +142,6 @@ CMakePresets).
 Breaking changes — a consumer must rebuild or adapt. These ship together, and the GUI pins the
 version in lockstep.
 
-### Aggregate `ProcessingPipeline::run()` parameters into a callbacks struct — **breaking, 0.3.0**
-
-`run()` already takes 10 parameters. The next feature (live per-input status for the GUI,
-see the GUI TODO) needs an 11th — a per-input callback — which is the tipping point.
-
-Replace the loose trailing parameters with one aggregate:
-
-```cpp
-struct ProcessingCallbacks {
-    ProgressFn   onProgress;     //!< after each slice is saved
-    LogFn        onLog;
-    SliceSavedFn onSliceSaved;
-    InputDoneFn  onInputDone;    //!< NEW: per input, as the strip is built or it is skipped
-};
-
-ProcessingOutcome run(inputs, outProfile, canvasProfiles, canvasProfileIds, outputDir,
-                      const CancellationToken& cancel,
-                      const ProcessingCallbacks& callbacks = {},
-                      const std::unordered_set<std::string>* onlySlices = nullptr) const;
-```
-
-Whether the cancellation token joins the struct is open: it is not a callback, and grouping
-it would blur "what the caller wants told" with "how the caller stops the run". Leaning
-towards keeping it a separate parameter.
-
-Why `onInputDone` is needed at all: inputs are consumed in phase 1 (strip building) before
-the first slice exists, and the pipeline currently reports nothing per input, so a GUI cannot
-show input progress live no matter what it does on its side.
-
-**This is an API/ABI break → lib 0.3.0**, and the GUI must move in lockstep (it will pin
-`find_package(platemaker 0.3.0 …)`).
-
 ### Structured error system
 
 The pipeline currently reports failures as ad-hoc strings via the
