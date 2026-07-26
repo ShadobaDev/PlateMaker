@@ -26,47 +26,6 @@ Baseline: **0.2.1 released, 0.2.2 in progress** (`CMakeLists.txt`).
 Fixes and additive changes — nothing a consumer must react to. Code built against 0.2.1 keeps
 compiling.
 
-### CLI `process` applies overrides onto a resolved profile that may be a preset
-
-`cmdProcess` does:
-
-```cpp
-outProfile = resolveOutputProfile(ws, project);
-if (opts.has("format"))       outProfile.outputFormat = parseFormat(opts.get("format"));
-if (opts.has("start-index"))  outProfile.startIndex   = opts.getInt("start-index", 1);
-if (opts.has("target-width")) outProfile.targetWidth  = opts.getInt("target-width", 800);
-if (opts.has("slice-height")) outProfile.sliceHeight  = opts.getInt("slice-height", 1280);
-```
-
-`outProfile` is a value copy, so mutating it does **not** corrupt the preset — but the flags are
-written on unconditionally, including when the resolved profile is a **preset**. That produces a
-one-off, un-persisted, ad-hoc edit of a preset for a single render, which sidesteps the
-"duplicate to customise" model the whole redesign is built on, and the project's stored reference /
-`outputProfileSignature` does not reflect what was actually rendered (incremental-cache implications).
-
-Decide the intended behaviour and make it explicit: either (a) document these as render-only ad-hoc
-overrides that never touch the stored profile (probably fine for a CLI, but say so and make sure
-staleness is computed from the effective profile), (b) refuse overriding a preset and point the user
-at `add-output-profile --from-preset`, or (c) materialise the override into a transient user profile.
-
-### `resolveOutputProfile` copies an `OutputProfile` several times per lookup
-
-One resolution currently constructs/copies the value repeatedly:
-
-- `outputProfilePresetById(id)` calls `outputProfilePresets()`, which **rebuilds the whole catalogue
-  by value on every call** (each entry constructed via `webtoonStandardPreset()`), then returns
-  `std::optional<OutputProfile>` — another copy.
-- `Models::resolveOutputProfile` (`workspace.hpp`) copies again into `ResolvedOutputProfile{*preset, …}`.
-- the CLI's own `resolveOutputProfile` (`main.cpp`) then copies once more via `r->profile`.
-
-So ~3–4 `OutputProfile` constructions/copies for a single lookup. With ≤5 presets it is cheap, but it
-is wasteful and scales badly if the catalogue grows or resolution runs in a loop. Options: back the
-catalogue with a `static` (value comparison for membership does **not** need per-instance identity, so
-the MinGW DLL-duplication hazard that motivated returning the catalogue by value does not apply to a
-lookup-only path); have `outputProfilePresetById` return a pointer/reference into that static; drop the
-intermediate `optional<OutputProfile>` copy; and use move/`string_view` throughout. Weigh against the
-existing by-value rationale documented in `output_profile.hpp`.
-
 ### Persist last render log
 
 The GUI render log is in-memory only (cleared on exit). Optionally persist the
@@ -295,10 +254,10 @@ Documented as-is in the GUI wiki (`Manual-Canvas-Profiles`, `Manual-Rendering`,
 ### WorkspaceEditor — enforce workspace invariants in one place — **0.3.0 window**
 
 **Problem.** `Models::Workspace` is a bare struct — public vectors, no mutating methods. Every
-invariant (unique profile ids, no duplicate canvas dimensions, presets present, `templateInfo`
+invariant (unique profile ids, no duplicate canvas dimensions, no persisted presets, `templateInfo`
 preserved) lives only in `WorkspaceSerializer::load()`, in the anonymous namespace of
 `workspace_serializer.cpp` (`mintMissingProfileIds`, `deduplicateIds`,
-`enforceOutputProfilePresets`, `relinkProfileId`), reachable **only through a save→load round
+`migrateOutputProfilePresets`, `relinkProfileId`), reachable **only through a save→load round
 trip**. There is no in-memory editing API, so the GUI has no choice but to mutate the vectors
 directly and then re-establish the invariants by hand — which means the same edit made in a
 running session is *not* validated the way a loaded file is. A duplicate id or duplicate
@@ -345,7 +304,7 @@ intent-level operations that enforce invariants with the *same* code `load()` us
 - (consider at implementation) input reorder, directory setters.
 
 **Necessary precondition, not cosmetics:** lift `mintMissingProfileIds` / `deduplicateIds` /
-`enforceOutputProfilePresets` / `relinkProfileId` out of the serializer's anonymous namespace
+`migrateOutputProfilePresets` / `relinkProfileId` out of the serializer's anonymous namespace
 into a shared internal header, so `load()` and `WorkspaceEditor` call **one** copy of the
 rules. Without that the facade merely duplicates what the GUI duplicates today — the problem is
 moved, not solved.
@@ -358,69 +317,9 @@ The **class** is additive, but its purpose is to take away the GUI's direct acce
 hence a MINOR (0.3.0), not a patch. It ships alongside `ProcessingCallbacks`; the GUI adopts it
 in **1.2.0**, dropping its direct `m_workspace` mutations. See the GUI TODO for the call-site map.
 
-### Presets become code-defined templates, never persisted — **breaking, 0.3.0**
-
-A preset is currently an `OutputProfile` with a reserved `op-preset-*` id that the loader writes into
-the workspace JSON (`enforceOutputProfilePresets()` adopt/fork/presence). Persisting them couples a
-preset's identity to stored data — the root of the name-collision bug and of the "can't change a
-preset without desyncing every saved workspace" constraint in the entry below.
-
-Redesign: a preset is a **baked-in template that lives only in code and is never serialized**. It is
-still shown in the **same output-profile list** as the user's own and is **fully equivalent for
-rendering** — it differs only in being immutable, baked-in, and marked as a preset.
-`outputProfilePresets()` / `webtoonStandardPreset()` remain as that catalogue.
-
-**Discriminator = provenance, not a field.** The API hands presets and user profiles as **two
-separate vectors** (`outputProfilePresets()` vs `workspace.outputProfiles`); the source *is* the
-information. For a lone id, `outputProfilePresetById(id)` is the membership test, and
-`resolveOutputProfile()` returns the origin alongside the profile (linear scan, presets first — ≤5,
-and a preset id wins — then user profiles; no map — premature at this scale). So **no `m_preset`
-field** and **no `op-preset-` prefix-as-type**: remove `isOutputProfilePresetId` and
-`k_outputPresetPrefix`, keep the preset id constants only as stable reference ids. (A `bool m_preset`
-and a polymorphic `UserDef`/`Preset` hierarchy were both weighed and rejected — the field re-encodes
-what the source vector already says and must be scrubbed on duplication; polymorphism is overkill when
-the render data is identical and only *management* differs.)
-
-**Consumers** merge the two vectors into one list, remembering origin to disable edit/remove on
-presets; customising a preset is a **duplicate** into a user profile. The GUI greys out edit/remove
-for presets; the CLI gains the output-profile family it lacks (referencing **by id**):
-`add-output-profile --name N (--from-preset KEY | --target-width … [opts])`,
-`mod-/rm-/list-output-profiles`, `--output-profile <id>` on `process`/`project`, and — for symmetry —
-the canvas family renamed `*-profile` → `*-canvas-profile`. `mod`/`rm` on a preset id returns a polite
-error offering a duplicate.
-
-**Immutability is the lib's guarantee, not consumer goodwill.** A third-party integrator must not be
-able to modify a preset even by misusing the API, so the enforcement lives in the lib, below the
-CLI/GUI. Two mechanisms make it airtight. There is **no shared mutable preset state**:
-`outputProfilePresets()` rebuilds the catalogue from code on every call, so mutating a returned copy
-changes only that copy — the canonical definition is source, not data, and cannot be redefined at
-runtime. And the **write path refuses preset identity**: the serializer never emits an `outputProfiles`
-entry whose id is in the catalogue (a preset id stuffed into the user list is stripped on save,
-migrated on load), and WorkspaceEditor (0.3.0) rejects add/edit/remove targeting a preset id with a
-structured error. A preset can therefore be neither redefined nor smuggled into a workspace; the
-CLI/GUI errors are courtesy on top of that guarantee.
-
-**Reference is live; staleness is the safeguard.** A project may reference a preset id;
-`resolveOutputProfile()` resolves against user profiles ∪ presets. If the developer changes a preset,
-`outputProfileSignature()` changes and the existing staleness check flags the affected projects
-(re-render prompt). The user's own (duplicated) profiles are separate data and are never altered —
-that is the "a preset change must not affect user output profiles" guarantee. Growth (Tapas and other
-publishers) is a pure catalogue append: no migration, no stored-workspace impact.
-
-Removes `enforceOutputProfilePresets()`, `isOutputProfilePresetId()`, `k_outputPresetPrefix` and the
-"always present" invariant → breaking, hence 0.3.0. The serializer stops writing presets; on load it
-**migrates** any persisted `op-preset-*` profile — dropped if it still matches the baked-in preset,
-converted to a user profile (fresh id + `relinkProfileId`) if diverged; `WorkspaceRepairReport` loses
-its preset-collision fields; `resolveOutputProfile()` learns to search the catalogue. Blunt migration
-is fine — no user base yet.
-
-**Closes** the "Preset adoption can leave two profiles with the same visible name" item. **Unblocks**
-the PNG-preset entry below (content changes are now safe). **Simplifies** the WorkspaceEditor entry
-(the "presets present" invariant disappears).
-
 ### The "Webtoon Standard" preset is PNG, which cannot meet the platform it is named after
 
-`webtoonStandardPreset()` (`output_profile.hpp:164-184`) sets `outputFormat = PNG`. The preset
+the Webtoon Standard row in `k_outputPresetDefs` (`output_profile.hpp`) sets `outputFormat = PNG`. The preset
 is named after a platform whose published limits are roughly **2 MB per slice and ~20 MB per
 chapter** — and a chapter is easily 80+ slices at 800×1280. PNG of comic artwork will not fit
 that budget in the general case. The first chapter actually published from this project was
@@ -430,10 +329,10 @@ preset does not describe the workflow it claims to.
 So the preset asserts "this is what that platform wants" while specifying a format that will
 usually violate the platform's cap. Either the format is wrong or the name is.
 
-Once presets are code-defined templates that are never persisted (see *Presets become code-defined
-templates* above), changing a preset's content is safe: it no longer redefines an `op-preset-*` id
-sitting in saved workspaces, and any project referencing it is covered by the ordinary
-`outputProfileSignature()` staleness signal, not a special migration. What remains here is therefore a
+Now that presets are code-defined templates that are never persisted (0.3.0), changing a preset's
+content is safe: it no longer redefines an `op-preset-*` id sitting in saved workspaces, and any
+project referencing it is covered by the ordinary `outputProfileSignature()` staleness signal, not a
+special migration. What remains here is therefore a
 pure **content decision**:
 
 - **Change the preset to JPEG** — decide the quality/subsampling (the real-world profile in use is

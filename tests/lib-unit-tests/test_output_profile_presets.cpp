@@ -126,6 +126,10 @@ TEST(OutputPresetTest, ByIdIsTheMembershipTest)
 
     EXPECT_FALSE(Models::outputProfilePresetById("op-Webtoon Standard").has_value());
     EXPECT_FALSE(Models::outputProfilePresetById("").has_value());
+
+    // outputPresetDefById is the same test without constructing an OutputProfile.
+    EXPECT_NE(Models::outputPresetDefById(Models::k_webtoonStandardPresetId), nullptr);
+    EXPECT_EQ(Models::outputPresetDefById("op-not-a-preset"), nullptr);
 }
 
 TEST(OutputPresetTest, EveryCatalogueEntryResolvesById)
@@ -143,20 +147,20 @@ TEST(OutputPresetTest, EveryCatalogueEntryResolvesById)
 // resolveOutputProfile — user profiles ∪ presets, with provenance
 // ===========================================================================
 
-TEST(ResolveOutputProfileTest, FindsPresetsUserProfilesAndReportsOrigin)
+TEST(ResolveOutputProfileTest, FindsPresetsAndUserProfiles)
 {
     Models::Workspace ws;
     ws.outputProfiles.push_back(userProfile("op-user1", "Mine"));
 
     const auto preset = Models::resolveOutputProfile(ws, Models::k_webtoonStandardPresetId);
     ASSERT_TRUE(preset.has_value());
-    EXPECT_TRUE(preset->isPreset);
-    EXPECT_EQ(preset->profile.name, "Webtoon Standard");
+    EXPECT_EQ(preset->name, "Webtoon Standard");
+    EXPECT_NE(Models::outputPresetDefById(preset->id), nullptr);   // provenance: a preset
 
     const auto user = Models::resolveOutputProfile(ws, "op-user1");
     ASSERT_TRUE(user.has_value());
-    EXPECT_FALSE(user->isPreset);
-    EXPECT_EQ(user->profile.name, "Mine");
+    EXPECT_EQ(user->name, "Mine");
+    EXPECT_EQ(Models::outputPresetDefById(user->id), nullptr);     // provenance: a user profile
 
     EXPECT_FALSE(Models::resolveOutputProfile(ws, "op-nothing").has_value());
 }
@@ -205,7 +209,7 @@ TEST(OutputPresetLoadTest, StoredCanonicalPresetCopyIsDropped)
     const auto resolved =
         Models::resolveOutputProfile(loaded, loaded.projectItems[0].outputProfileId);
     ASSERT_TRUE(resolved.has_value());
-    EXPECT_TRUE(resolved->isPreset);
+    EXPECT_NE(Models::outputPresetDefById(loaded.projectItems[0].outputProfileId), nullptr);
 }
 
 TEST(OutputPresetLoadTest, AUserCopyOfAPresetSurvives)

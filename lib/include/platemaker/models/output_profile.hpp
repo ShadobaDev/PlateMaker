@@ -14,6 +14,8 @@
 #ifndef PLATEMAKER_MODELS_OUTPUT_PROFILE_HPP
 #define PLATEMAKER_MODELS_OUTPUT_PROFILE_HPP
 
+#include <array>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -131,85 +133,132 @@ public:
 // ---------------------------------------------------------------------------
 // Presets
 //
-// A preset is an ordinary OutputProfile that libplatemaker defines in code and ships baked into the
-// build — not a distinct type, and carrying no "is a preset" field.  Preset-ness is *provenance*: a
-// profile is a preset exactly when it comes from this catalogue.  A consumer listing profiles knows
-// that from which vector it asked (outputProfilePresets() vs Workspace::outputProfiles); for a bare
-// id, outputProfilePresetById() answers it.
+// A preset is an ordinary OutputProfile that libplatemaker defines in code — not a distinct type, and
+// carrying no "is a preset" field. Preset-ness is *provenance*: a profile is a preset exactly when it
+// comes from the catalogue below. A consumer holding a whole vector knows that from which one it asked
+// (outputProfilePresets() vs Workspace::outputProfiles); for a bare id, outputPresetDefById() answers
+// it with no OutputProfile constructed at all.
+//
+// The single source of truth is a **compile-time table** of definitions (k_outputPresetDefs): trivial
+// fields plus string_view id/name over string literals, so the whole array is constexpr. Full
+// OutputProfile objects (which own std::string) are *materialised* from a definition only when a caller
+// needs the object; the membership test needs none. All comparisons are by value (string_view ==), so
+// even if the constexpr table is duplicated between the DLL and the exe on MinGW nothing relies on its
+// address — the table stays header-only with no DLL-boundary concern.
 //
 // Presets are never serialised (WorkspaceSerializer strips any that reach outputProfiles, and drops
-// preset copies on load).  They are identical in every build so a ProjectItem::outputProfileId can
-// reference one by its stable id, which resolveOutputProfile() resolves against this catalogue at
-// runtime.  Because the catalogue is rebuilt from code on every call, a preset's definition cannot be
-// mutated at runtime — the source is the single source of truth; a user who wants to change one
-// duplicates it into an ordinary profile.
-//
-// These live in the model header as inline free functions next to outputProfileSignature():
-// OutputProfile is header-only and not PLATEMAKER_EXPORT, so keeping the catalogue inline adds nothing
-// to the DLL boundary.
+// preset copies on load). They are identical in every build, so a ProjectItem::outputProfileId can
+// reference one by its stable id, which resolveOutputProfile() resolves against this catalogue. A user
+// who wants to change a preset duplicates it into an ordinary profile.
 // ---------------------------------------------------------------------------
 
-//! Canonical id of the Webtoon Standard preset.  Stable across builds and sessions so a stored
+/**
+ * \brief Compile-time definition of one output preset — the source a preset is materialised from.
+ *
+ * Every field is a literal type (string_view over a string literal; ints, enums, and aggregates of
+ * those), so an array of these is \c constexpr.
+ */
+struct OutputPresetDef {
+    std::string_view id;
+    std::string_view name;
+    int              targetWidth;
+    int              sliceHeight;
+    LastSlicePolicy  lastSlicePolicy;
+    OutputFormat     outputFormat;
+    JpegOptions      jpegOptions;
+    PngOptions       pngOptions;
+    WebpOptions      webpOptions;
+    int              startIndex;
+};
+
+//! Canonical id of the Webtoon Standard preset. Stable across builds and sessions so a stored
 //! ProjectItem::outputProfileId can reference it; resolved from the catalogue, never persisted.
 inline constexpr std::string_view k_webtoonStandardPresetId = "op-preset-webtoon-standard";
 
-/**
- * \brief The Webtoon Standard preset: 800 px wide, 1280 px slices, PNG.
- *
- * Every field is set **explicitly** rather than left to the struct's defaults. The defaults
- * happen to match today, which is precisely the hazard: changing one would silently
- * redefine the preset and desynchronise it from every workspace already on disk.
- */
-[[nodiscard]] inline OutputProfile webtoonStandardPreset()
+//! The preset catalogue — the single, compile-time source of truth. Add a preset by adding a row.
+inline constexpr std::array<OutputPresetDef, 1> k_outputPresetDefs = {{
+    { k_webtoonStandardPresetId, "Webtoon Standard", 800, 1280,
+      LastSlicePolicy::KeepAsIs, OutputFormat::JPEG,
+      JpegOptions{90, JpegSubsampling::YUV_444, true, false},
+      PngOptions{6, false},
+      WebpOptions{80, false, 4},
+      1 },
+}};
+
+//! Materialises a full OutputProfile from a compile-time definition.
+[[nodiscard]] inline OutputProfile toOutputProfile(const OutputPresetDef& d)
 {
     OutputProfile p;
-    p.id                       = std::string{k_webtoonStandardPresetId};
-    p.name                     = "Webtoon Standard";
-    p.targetWidth              = 800;
-    p.sliceHeight              = 1280;
-    p.lastSlicePolicy          = LastSlicePolicy::KeepAsIs;
-    p.outputFormat             = OutputFormat::PNG;
-    p.startIndex               = 1;
-    p.jpegOptions.quality      = 90;
-    p.jpegOptions.subsampling  = JpegSubsampling::YUV_444;
-    p.jpegOptions.optimize     = true;
-    p.jpegOptions.progressive  = false;
-    p.pngOptions.compression   = 6;
-    p.pngOptions.interlaced    = false;
-    p.webpOptions.quality      = 80;
-    p.webpOptions.lossless     = false;
-    p.webpOptions.effort       = 4;
+    p.id              = std::string(d.id);
+    p.name            = std::string(d.name);
+    p.targetWidth     = d.targetWidth;
+    p.sliceHeight     = d.sliceHeight;
+    p.lastSlicePolicy = d.lastSlicePolicy;
+    p.outputFormat    = d.outputFormat;
+    p.jpegOptions     = d.jpegOptions;
+    p.pngOptions      = d.pngOptions;
+    p.webpOptions     = d.webpOptions;
+    p.startIndex      = d.startIndex;
     return p;
 }
 
 /**
- * \brief Every preset this build ships — the lookup table.
+ * \brief The preset definition with \p id, or \c nullptr — the membership test for preset-ness.
  *
- * The single source of truth for seeding a new workspace, for guaranteeing presets are
- * present when one is loaded, and for marking them in the GUI.
- *
- * \note Returned **by value**, not as a reference to a function-local static: in an inline
- *       function such an object can be duplicated between the DLL and the executable on
- *       MinGW, which would quietly break identity comparisons. With a handful of presets the
- *       copy costs nothing and the hazard disappears.
+ * The zero-copy discriminator for a bare id: it scans the compile-time table and constructs no
+ * OutputProfile. Callers that only ask "is this a preset?" (the GUI's read-only guard, the
+ * serializer's write guard) use this; callers that need the object materialise it (below).
  */
-[[nodiscard]] inline std::vector<OutputProfile> outputProfilePresets()
+[[nodiscard]] inline const OutputPresetDef* outputPresetDefById(std::string_view id)
 {
-    return { webtoonStandardPreset() };
+    for (const auto& d : k_outputPresetDefs)
+        if (d.id == id) return &d;
+    return nullptr;
+}
+
+//! Index of the Webtoon Standard preset within k_outputPresetDefs (pinned by the static_assert).
+inline constexpr std::size_t k_webtoonStandardPresetIndex = 0;
+static_assert(k_outputPresetDefs[k_webtoonStandardPresetIndex].id == k_webtoonStandardPresetId,
+              "k_webtoonStandardPresetIndex must point at the Webtoon Standard row");
+
+//! The Webtoon Standard preset as a full OutputProfile (materialised from the catalogue).
+[[nodiscard]] inline OutputProfile webtoonStandardPreset()
+{
+    return toOutputProfile(k_outputPresetDefs[k_webtoonStandardPresetIndex]);
 }
 
 /**
- * \brief The preset named by \p id, if \p id is one — the membership test that decides preset-ness.
+ * \brief Every preset this build ships, materialised — for listing and for the GUI's merged view.
  *
- * The discriminator for a bare id (a consumer holding a whole vector already knows preset-ness from
- * its provenance). Returns the canonical preset so the caller can also render or compare against it:
- * the GUI uses it to disable edit/remove on a preset row, and the serializer uses it to keep presets
- * out of persisted output profiles.
+ * Built once into a function-local static and returned by const reference, so repeated calls do not
+ * re-materialise the vector. Safe as an inline function despite the earlier by-value note: the table is
+ * rebuilt from code on every app start (never persisted, so no drift across app updates), and callers
+ * only read fields / compare ids by value — nothing relies on the static's address, so a possible
+ * per-module duplicate on MinGW is harmless.
+ */
+[[nodiscard]] inline const std::vector<OutputProfile>& outputProfilePresets()
+{
+    static const std::vector<OutputProfile> cache = [] {
+        std::vector<OutputProfile> out;
+        out.reserve(k_outputPresetDefs.size());
+        for (const auto& d : k_outputPresetDefs)
+            out.push_back(toOutputProfile(d));
+        return out;
+    }();
+    return cache;
+}
+
+/**
+ * \brief The preset named by \p id as a full OutputProfile, if \p id is one.
+ *
+ * The materialising counterpart to outputPresetDefById() — one copy, for a caller that needs the whole
+ * object (render, or comparing against a stored profile). Prefer outputPresetDefById() for a pure
+ * membership check.
  */
 [[nodiscard]] inline std::optional<OutputProfile> outputProfilePresetById(std::string_view id)
 {
-    for (auto& preset : outputProfilePresets())
-        if (preset.id == id) return preset;
+    if (const auto* d = outputPresetDefById(id))
+        return toOutputProfile(*d);
     return std::nullopt;
 }
 

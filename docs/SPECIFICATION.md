@@ -292,9 +292,11 @@ platemaker template --workspace FILE --profile NAME --output FILE
                       [--margins-tpl-color R,G,B[,A]] [--background-tpl-color R,G,B[,A]]
 ```
 
-**workspace create** — Creates an empty workspace with a default "Webtoon Standard"
-output profile (800 px target, 1280 px slice).  No canvas profiles are created at this
-point.  `--output` is optional (default: `./project.platemaker.json`).
+**workspace create** — Creates an empty workspace.  No output profiles are stored: the
+"Webtoon Standard" preset (800 px target, 1280 px slice) is always available from the catalogue,
+so it need not be written to the file.  `--target-width` / `--slice-height` that differ from the
+preset store a custom profile instead.  No canvas profiles are created at this point.  `--output`
+is optional (default: `./project.platemaker.json`).
 
 **workspace add-profile** — Adds a `CanvasProfile` entry that describes one physical
 canvas size + margins used by the artist.  A workspace can hold multiple profiles (e.g.
@@ -594,8 +596,10 @@ offending entry.
 `CanvasProfile::id` and `OutputProfile::id` are **random and unique within a workspace**.
 They are minted by `Infrastructure::makeUniqueCanvasProfileId()` / `makeUniqueOutputProfileId()`
 (`platemaker/infrastructure/id_generator/id_generator.hpp`), which draw 128 random bits and
-re-draw on collision with an existing id.  An identifier is opaque: nothing may parse it or
-derive meaning from it, with the single exception of the preset prefix described below.
+re-draw on collision with an existing id.  An identifier is opaque: nothing parses it or derives
+meaning from it.  Presets carry fixed, well-known ids so a project can reference one across
+sessions, but preset-ness is not derived from the id — it is provenance (catalogue membership),
+see below.
 
 The generator lives in **Infrastructure**, not Models or Core.  It is not part of the data
 model — it produces values rather than describing them — and it is not Core either, because
@@ -626,39 +630,47 @@ comparing the `canvasRenderFingerprint()` recorded per input at render time.
 
 ##### Output profile presets
 
-Presets are the one deliberate exception to "an identifier carries no meaning".  They use
-the reserved prefix `op-preset-` and their ids are **identical in every workspace** — that
-is what lets a future partial import/export of settings recognise *the shared preset* rather
-than *a profile that happens to look similar*, and what keeps a preset stable across app
-updates.  Generated ids are hex after their prefix, so the two id spaces cannot overlap.
+Presets are **baked into the build and never written to a workspace**.  The single source of
+truth is a compile-time table, `Models::k_outputPresetDefs` in
+`platemaker/models/output_profile.hpp`, from which full `OutputProfile` objects are materialised
+on demand (`webtoonStandardPreset()`, `outputProfilePresets()`).  Each preset has a fixed,
+well-known id (e.g. `op-preset-webtoon-standard`) so a `ProjectItem::outputProfileId` can
+reference one across sessions and app updates; the id is resolved against the catalogue at
+runtime by `Models::resolveOutputProfile()`, which unions the workspace's own profiles with the
+presets.
 
-The catalogue is `Models::outputProfilePresets()` in `platemaker/models/output_profile.hpp`
-— inline free functions beside `outputProfileSignature()`, deliberately not a separate class.
-A preset *is* an `OutputProfile`; a distinct type would force conversions everywhere and
-invite storing "is a preset" as a field, when it must stay **derivable** from the id and the
-signature.  Every field is set explicitly rather than left to the struct's defaults, so
-changing a default cannot silently redefine a preset already written to disk.
+A preset *is* an `OutputProfile` — not a distinct type, and carrying **no "is a preset" field**.
+Preset-ness is *provenance*: a profile is a preset exactly when it comes from the catalogue.  A
+consumer holding a bare id asks `Models::outputPresetDefById(id)` (a zero-copy membership test
+over the compile-time table); a consumer listing profiles knows it from which source it read them
+(`outputProfilePresets()` vs `Workspace::outputProfiles`).  That is the deliberate reason the two
+are **kept separate** rather than merged into one list, and why no flag or reserved id-prefix is
+needed to tell them apart.
 
-A shared id is only true while it cannot come to mean something else, so **presets are
-read-only** — the GUI offers Duplicate instead of Edit or Delete — and `load()` enforces the
-invariant regardless of which path wrote the file:
+Because presets are code, not data:
 
-- **Adoption.** A profile that *is* the preset (matched on the legacy `"op-<name>"` id or on
-  the name, and in both cases only when the signature matches) takes the canonical id, with
-  references relinked.  A profile the user changed is left exactly as it is: promoting it
-  would make the shared id assert something false.
-- **Fork.** A profile carrying a preset id whose signature does **not** match was edited by
-  an older build or by hand; it is given a fresh random id.  Its settings are never
-  overwritten with the canonical ones — that would destroy the user's work.
-- **Presence.** Any preset missing from the workspace is **appended**.  Appended, never
-  prepended: `outputProfiles.front()` is the fallback for a project with no assignment, so
-  inserting at the front would silently change what an existing workspace renders with.
+- **Immutability is the library's own guarantee**, not consumer discipline.  There is no shared
+  mutable preset state to corrupt (the catalogue is rebuilt from code every run), and the write
+  path refuses preset identity — `WorkspaceSerializer` never serialises an `outputProfiles` entry
+  whose id is a preset id, so a preset can be neither redefined nor smuggled into a workspace
+  regardless of how a consumer drives the library.  The GUI additionally disables Edit/Delete on a
+  preset row and offers **Duplicate**; the CLI refuses `mod`/`rm` on a preset id.
+- **The developer may change a preset's (experimental) content** in a later release without
+  affecting a user's own profiles — those are separate persisted data.  A project that referenced
+  a preset directly renders with the new definition, and the existing `outputProfileSignature()`
+  staleness check flags its on-disk output as out of date; nothing changes silently.
+- **Growth is a pure code change**: add a row to `k_outputPresetDefs`.  No migration, no
+  stored-workspace impact.
 
-The three compose.  A diverged profile is forked, which frees the canonical id, and the
-presence pass then restores the genuine preset beside it — the user keeps their customised
-profile and regains the preset, without being asked anything.  All three are unambiguous
-bookkeeping and are therefore **not** reported in `WorkspaceRepairReport`, which stays
-reserved for genuine collisions.
+Customising a preset is a **duplicate** into an ordinary, user-owned profile (a fresh random id).
+
+`load()` migrates workspaces written by older builds that *did* persist presets: a stored profile
+carrying a preset id (or the legacy `"op-<name>"` form) that still matches the preset is dropped,
+and any project referencing it is relinked to the canonical id (resolved from the catalogue); a
+profile that kept a preset id but has diverged is given a fresh id so no user profile can
+masquerade as a preset.  A user profile whose settings merely coincide with a preset is left
+untouched.  This migration is silent — unambiguous bookkeeping, not a collision — so it is **not**
+reported in `WorkspaceRepairReport`.
 
 **Planned API:**
 ```cpp

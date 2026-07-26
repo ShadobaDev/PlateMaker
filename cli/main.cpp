@@ -16,7 +16,8 @@
  *   platemaker project status  --workspace FILE --name NAME
  *   platemaker process --workspace FILE
  *                      { --input DIR | --project NAME }
- *                      [--output DIR] [--format png|jpg|webp] [--start-index N]
+ *                      [--output DIR] [--output-profile ID]
+ *                      [--format png|jpg|webp] [--start-index N]
  *                      [--target-width N] [--slice-height N]
  *                      [--no-profile] [--json]
  *   platemaker template --workspace FILE --profile NAME --output FILE
@@ -245,25 +246,6 @@ static std::vector<fs::path> scanImageDir(const fs::path& dir)
     return files;
 }
 
-/// Returns the OutputProfile for \p project, resolving its id against the user profiles and the
-/// baked-in preset catalogue, then falling back to a sensible default.
-static OutputProfile resolveOutputProfile(const Workspace& ws, const ProjectItem& project)
-{
-    if (!project.outputProfileId.empty()) {
-        if (auto r = Platemaker::Models::resolveOutputProfile(ws, project.outputProfileId))
-            return r->profile;
-    }
-    // Unassigned (or a dangling reference): the user's first profile if any, otherwise a preset so a
-    // fresh workspace renders straight away — the quickstart the presets exist for.
-    if (!ws.outputProfiles.empty()) return ws.outputProfiles.front();
-    const auto presets = Platemaker::Models::outputProfilePresets();
-    if (!presets.empty()) return presets.front();
-    OutputProfile def;
-    def.name = "Default";
-    return def;
-}
-
-
 /**
  * \brief Returns the current UTC time as an ISO 8601 string (e.g. "2026-06-02T14:30:00Z").
  */
@@ -373,11 +355,15 @@ static int cmdHelp(const std::string& prog)
         << "      (Presets are read-only; copy one with add-output-profile --from-preset.)\n"
         << "\n"
         << "  process --workspace FILE\n"
-        << "          [--input DIR]  [--output DIR]\n"
+        << "          { --input DIR | --project NAME }  [--output DIR]\n"
+        << "          [--output-profile ID]\n"
         << "          [--format png|jpg|webp]  [--start-index N]\n"
         << "          [--target-width N]  [--slice-height N]\n"
         << "          [--json]\n"
         << "      Scale and slice all pages in the workspace.\n"
+        << "      Output profile: --output-profile ID (or the project's assigned one) is used as\n"
+        << "        stored; otherwise the --format/--start-index/--target-width/--slice-height flags\n"
+        << "        define an ad-hoc profile. The two do not mix — a stored profile is not edited here.\n"
         << "      If canvas profiles are defined, each file is matched by width+height.\n"
         << "      Files not matching any profile are reported as incompatible.\n"
         << "      --no-profile: ignore canvas profiles; process all files with the\n"
@@ -1020,13 +1006,42 @@ static int cmdProcess(const Opts& opts)
 
     ProjectItem& project = ws.projectItems[static_cast<std::size_t>(projectIdx)];
 
-    // Resolve output profile now that we know which project we're processing,
-    // then let explicit CLI flags override individual fields.
-    outProfile = resolveOutputProfile(ws, project);
-    if (opts.has("format"))       outProfile.outputFormat = parseFormat(opts.get("format"));
-    if (opts.has("start-index"))  outProfile.startIndex   = opts.getInt("start-index", 1);
-    if (opts.has("target-width")) outProfile.targetWidth  = opts.getInt("target-width", 800);
-    if (opts.has("slice-height")) outProfile.sliceHeight  = opts.getInt("slice-height", 1280);
+    // Choose the output profile. A *selected* profile — named with --output-profile, or the one the
+    // project is assigned — is used exactly as stored (a preset included); it is never edited here.
+    // The inline --format / --target-width / --slice-height / --start-index flags instead build an
+    // *ad-hoc* profile, used only when nothing is selected — so an override can never silently mutate
+    // a stored profile or a preset (that is what duplicating a profile is for).
+    std::optional<OutputProfile> selected;
+    if (opts.has("output-profile")) {
+        selected = Platemaker::Models::resolveOutputProfile(ws, opts.get("output-profile"));
+        if (!selected) {
+            std::cerr << "Error: no output profile or preset with id '" << opts.get("output-profile")
+                      << "'. Run 'workspace list-output-profiles'.\n";
+            return 1;
+        }
+    } else if (!project.outputProfileId.empty()) {
+        selected = Platemaker::Models::resolveOutputProfile(ws, project.outputProfileId);
+    }
+
+    const bool hasInlineOverrides = opts.has("format") || opts.has("start-index")
+                                 || opts.has("target-width") || opts.has("slice-height");
+
+    if (selected) {
+        if (hasInlineOverrides)
+            std::cerr << "Note: --format/--start-index/--target-width/--slice-height ignored — an "
+                         "output profile is selected. Edit that profile, or omit it to render ad-hoc.\n";
+        outProfile = *selected;
+    } else {
+        // Ad-hoc: seed from the workspace's first user profile if any, else the Webtoon preset, then
+        // apply the inline flags. This is the "process this directory with these settings" path.
+        outProfile = ws.outputProfiles.empty()
+                         ? Platemaker::Models::webtoonStandardPreset()
+                         : ws.outputProfiles.front();
+        if (opts.has("format"))       outProfile.outputFormat = parseFormat(opts.get("format"));
+        if (opts.has("start-index"))  outProfile.startIndex   = opts.getInt("start-index", 1);
+        if (opts.has("target-width")) outProfile.targetWidth  = opts.getInt("target-width", 800);
+        if (opts.has("slice-height")) outProfile.sliceHeight  = opts.getInt("slice-height", 1280);
+    }
 
     if (project.getInputImages().empty()) {
         std::cerr << "Error: project '" << project.name

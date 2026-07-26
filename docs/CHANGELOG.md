@@ -1,11 +1,48 @@
 # Changelog
 
-## [Unreleased] — 0.2.2
+## [Unreleased] — 0.3.0
 
-Additive API only: nothing removed or changed, so code written against 0.2.1 still compiles.
+**Breaking** (pre-1.0 shifted scale: a breaking change bumps the minor). The output-profile **preset
+model changed** and some symbols were removed. Workspace files stay readable and are migrated on load;
+a consumer that used the removed preset internals must adapt.
+
+### Removed
+
+- **`Models::isOutputProfilePresetId()` and `Models::k_outputPresetPrefix`** — preset-ness is no longer
+  derived from an id prefix. Use `Models::outputPresetDefById(id)` (returns a definition pointer, or
+  `nullptr`) instead.
+- **`WorkspaceSerializer`'s adopt/fork/presence preset handling** (`enforceOutputProfilePresets`), the
+  "a preset is always present in the workspace" invariant, and `WorkspaceRepairReport`'s
+  preset-collision fields. Presets are no longer written into a workspace.
+
+### Changed (breaking)
+
+- **Presets are code-defined and never persisted.** A preset is a baked-in template — a compile-time
+  catalogue (`Models::k_outputPresetDefs` / `OutputPresetDef`) materialised on demand — never
+  serialised into `outputProfiles`. Preset-ness is **provenance**, tested zero-copy by
+  `Models::outputPresetDefById(id)`; there is no "is a preset" field and no reserved id prefix.
+  Immutability is the library's own guarantee: the serializer refuses to write a preset-id profile, and
+  `load()` migrates older files (a persisted copy of a preset is dropped and its references relinked to
+  the canonical id; a diverged preset-id profile is given a fresh id; a user profile that merely
+  resembles a preset is untouched). Customising a preset means **duplicating** it. A future change to a
+  preset's content therefore no longer desyncs stored workspaces.
+- **`Models::resolveOutputProfile(workspace, id)`** — new shared resolver returning
+  `std::optional<OutputProfile>`, unioning the workspace's own profiles with the preset catalogue
+  (presets take precedence). Replaces per-consumer resolution.
+- **`Models::outputProfilePresets()`** now returns `const std::vector<OutputProfile>&` (built once) and
+  **`Models::outputProfilePresetById()`** materialises from the compile-time catalogue.
 
 ### Added
 
+- **`Models::outputPresetDefById()`, `OutputPresetDef`, `k_outputPresetDefs`** — the compile-time preset
+  catalogue (single source of truth) and its zero-copy membership test.
+- **CLI output-profile family, id-selected** — `workspace list-presets`, `add-output-profile`
+  (`--from-preset ID`, or from scratch with `--target-width/--slice-height/--format`),
+  `mod-/rm-/list-output-profiles`, and `--output-profile ID` on `process` and `project`. The canvas
+  commands are renamed `*-canvas-profile` (the older `*-profile` names remain as aliases). `process`
+  uses a selected or project-assigned profile exactly as stored, or builds an **ad-hoc** profile from
+  the inline options when none is selected — the two never mix, so an override cannot silently edit a
+  stored profile or a preset.
 - **`Infrastructure::buildInfo()` and `BuildInfo`**
   (`platemaker/infrastructure/build_info/build_info.hpp`) — the library's own version, SPDX licence,
   compiler and target read back **at runtime** from the loaded DLL. The runtime twin of the

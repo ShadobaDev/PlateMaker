@@ -88,34 +88,27 @@ public:
 };
 
 /**
- * \brief An output profile resolved from an id, together with where it came from.
- */
-struct ResolvedOutputProfile {
-    OutputProfile profile;   //!< The resolved profile (a copy).
-    bool          isPreset;  //!< True when it came from the baked-in preset catalogue.
-};
-
-/**
  * \brief Resolves an output-profile id against the workspace's user profiles and the baked-in
  *        preset catalogue.
  *
  * Presets take precedence — a preset id is reserved and must not be shadowed by a user profile — and
  * the scan is linear: the catalogue holds a handful of entries and a workspace a few profiles, so no
- * index is warranted.  \c isPreset on the result is the provenance a consumer needs to block editing
- * or removing a preset; it is irrelevant to rendering, where a preset and a user profile are
- * equivalent.  This is the one place both the CLI and the GUI should resolve through, so the union of
- * user profiles and presets is defined once.
+ * index is warranted. This is the one place both the CLI and the GUI should resolve through, so the
+ * union of user profiles and presets is defined once. Whether the result *is* a preset is a separate
+ * question — irrelevant to rendering, and answered without a copy by
+ * \c outputPresetDefById(id) where a consumer needs it (to block editing or removing a preset).
  *
- * \return The resolved profile and its origin, or \c std::nullopt if \p id names neither.
+ * \return The resolved profile, or \c std::nullopt if \p id names neither. One copy: the returned
+ *         optional owns its OutputProfile (C++20 optional cannot hold a reference).
  */
-[[nodiscard]] inline std::optional<ResolvedOutputProfile>
+[[nodiscard]] inline std::optional<OutputProfile>
 resolveOutputProfile(const Workspace& ws, std::string_view id)
 {
     if (auto preset = outputProfilePresetById(id))
-        return ResolvedOutputProfile{*preset, true};
+        return preset;
     for (const auto& op : ws.outputProfiles)
         if (op.id == id)
-            return ResolvedOutputProfile{op, false};
+            return op;
     return std::nullopt;
 }
 
