@@ -190,17 +190,17 @@ TEST(WorkspaceIdRepairTest, FirstProfileKeepsTheIdAndTheDuplicateGetsANewOne)
     Infrastructure::WorkspaceRepairReport report;
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
 
-    ASSERT_EQ(loaded.canvasProfiles.size(), 2u);
+    ASSERT_EQ(loaded.canvasProfiles().size(), 2u);
 
     // First one keeps it, so every reference that already existed still resolves.
-    EXPECT_EQ(loaded.canvasProfiles[0].id, "cp-collide");
-    EXPECT_NE(loaded.canvasProfiles[1].id, "cp-collide");
-    EXPECT_FALSE(loaded.canvasProfiles[1].id.empty());
+    EXPECT_EQ(loaded.canvasProfiles()[0].id, "cp-collide");
+    EXPECT_NE(loaded.canvasProfiles()[1].id, "cp-collide");
+    EXPECT_FALSE(loaded.canvasProfiles()[1].id.empty());
 
     ASSERT_EQ(report.canvasProfiles.size(), 1u);
     EXPECT_EQ(report.canvasProfiles[0].name,  "Webtoon-2s");
     EXPECT_EQ(report.canvasProfiles[0].oldId, "cp-collide");
-    EXPECT_EQ(report.canvasProfiles[0].newId, loaded.canvasProfiles[1].id);
+    EXPECT_EQ(report.canvasProfiles[0].newId, loaded.canvasProfiles()[1].id);
     EXPECT_TRUE(report.any());
 }
 
@@ -214,8 +214,8 @@ TEST(WorkspaceIdRepairTest, ProjectReferenceStillResolvesToTheFirstProfile)
 
     ASSERT_EQ(loaded.projectItems.size(), 1u);
     ASSERT_EQ(loaded.projectItems[0].canvasProfileIds.size(), 1u);
-    EXPECT_EQ(loaded.projectItems[0].canvasProfileIds[0], loaded.canvasProfiles[0].id);
-    EXPECT_EQ(loaded.canvasProfiles[0].name, "Webtoon-4s");
+    EXPECT_EQ(loaded.projectItems[0].canvasProfileIds[0], loaded.canvasProfiles()[0].id);
+    EXPECT_EQ(loaded.canvasProfiles()[0].name, "Webtoon-4s");
 }
 
 TEST(WorkspaceIdRepairTest, DuplicateBecomesAssignableAgain)
@@ -227,7 +227,7 @@ TEST(WorkspaceIdRepairTest, DuplicateBecomesAssignableAgain)
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path());
 
     const auto& ids = loaded.projectItems[0].canvasProfileIds;
-    EXPECT_EQ(std::find(ids.begin(), ids.end(), loaded.canvasProfiles[1].id), ids.end());
+    EXPECT_EQ(std::find(ids.begin(), ids.end(), loaded.canvasProfiles()[1].id), ids.end());
 }
 
 TEST(WorkspaceIdRepairTest, CleanWorkspaceIsReportedAsCleanAndUntouched)
@@ -241,8 +241,8 @@ TEST(WorkspaceIdRepairTest, CleanWorkspaceIsReportedAsCleanAndUntouched)
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
 
     EXPECT_FALSE(report.any());
-    EXPECT_EQ(loaded.canvasProfiles[0].id, "cp-aaa");
-    EXPECT_EQ(loaded.canvasProfiles[1].id, "cp-bbb");
+    EXPECT_EQ(loaded.canvasProfiles()[0].id, "cp-aaa");
+    EXPECT_EQ(loaded.canvasProfiles()[1].id, "cp-bbb");
 }
 
 TEST(WorkspaceIdRepairTest, OutputProfileDuplicatesAreRepairedToo)
@@ -258,15 +258,15 @@ TEST(WorkspaceIdRepairTest, OutputProfileDuplicatesAreRepairedToo)
 
     // Both come from the file; the duplicate id is repaired. Neither is preset-shaped, so neither
     // collapses into a catalogue reference.
-    ASSERT_EQ(loaded.outputProfiles.size(), 2u);
-    EXPECT_EQ(loaded.outputProfiles[0].id, "op-collide");
-    EXPECT_NE(loaded.outputProfiles[1].id, "op-collide");
+    ASSERT_EQ(loaded.outputProfiles().size(), 2u);
+    EXPECT_EQ(loaded.outputProfiles()[0].id, "op-collide");
+    EXPECT_NE(loaded.outputProfiles()[1].id, "op-collide");
 
     ASSERT_EQ(report.outputProfiles.size(), 1u);
     EXPECT_EQ(report.outputProfiles[0].name, "WEBP");
 
     // Reference keeps pointing at the profile it always resolved to.
-    EXPECT_EQ(loaded.projectItems[0].outputProfileId, loaded.outputProfiles[0].id);
+    EXPECT_EQ(loaded.projectItems[0].outputProfileId, loaded.outputProfiles()[0].id);
 }
 
 // ===========================================================================
@@ -286,11 +286,11 @@ TEST(WorkspaceIdMigrationTest, MissingIdIsMintedAndLegacyReferencesAreRelinked)
     Infrastructure::WorkspaceRepairReport report;
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
 
-    ASSERT_EQ(loaded.outputProfiles.size(), 1u);
-    EXPECT_FALSE(loaded.outputProfiles[0].id.empty());
+    ASSERT_EQ(loaded.outputProfiles().size(), 1u);
+    EXPECT_FALSE(loaded.outputProfiles()[0].id.empty());
 
     // The project follows the profile to its freshly minted id.
-    EXPECT_EQ(loaded.projectItems[0].outputProfileId, loaded.outputProfiles[0].id);
+    EXPECT_EQ(loaded.projectItems[0].outputProfileId, loaded.outputProfiles()[0].id);
 
     // Minting is unambiguous bookkeeping, not a collision — nothing to tell the user about.
     EXPECT_FALSE(report.any());
@@ -310,8 +310,8 @@ TEST(WorkspaceIdMigrationTest, TwoIdlessProfilesSharingANameGetDistinctIds)
 
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path());
 
-    ASSERT_EQ(loaded.canvasProfiles.size(), 2u);
-    EXPECT_NE(loaded.canvasProfiles[0].id, loaded.canvasProfiles[1].id);
+    ASSERT_EQ(loaded.canvasProfiles().size(), 2u);
+    EXPECT_NE(loaded.canvasProfiles()[0].id, loaded.canvasProfiles()[1].id);
 }
 
 } // namespace Platemaker

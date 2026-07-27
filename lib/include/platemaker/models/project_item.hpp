@@ -225,11 +225,11 @@ struct ScanMergeResult {
  *
  * ### Typical usage (incremental processing)
  * \code
- * project.sanitize(ws.canvasProfiles);      // refresh statuses (disk + config)
+ * project.sanitize(ws.canvasProfiles());    // refresh statuses (disk + config)
  * if (!project.isUpToDate()) {
  *     auto outcome = pipeline.run(...);     // Core layer
  *     project.applyProcessingResults(outcome.records, outcome.appliedProfiles,
- *                                    ws.canvasProfiles, outDir, now);
+ *                                    ws.canvasProfiles(), outDir, now);
  * }
  * \endcode
  *

@@ -70,6 +70,7 @@
 #include <platemaker/infrastructure/control/cancellation_token.hpp>
 #include <platemaker/infrastructure/id_generator/id_generator.hpp>
 #include <platemaker/infrastructure/image_io/image_io.hpp>
+#include <platemaker/infrastructure/workspace_editor/workspace_editor.hpp>
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/models/canvas_profile.hpp>
@@ -431,9 +432,8 @@ static int cmdWorkspaceCreate(const Opts& opts)
     op.targetWidth   = targetWidth;
     op.sliceHeight   = sliceHeight;
     if (outputProfileSignature(op) != outputProfileSignature(webtoonStandardPreset())) {
-        op.id   = makeUniqueOutputProfileId({}); // brand-new workspace: nothing taken yet
         op.name = "Custom";
-        ws.outputProfiles = {op};
+        WorkspaceEditor(ws).addOutputProfile(std::move(op)); // mints a fresh user id
     }
 
     try {
@@ -493,7 +493,7 @@ static int cmdWorkspaceAddProfile(const Opts& opts)
     }
 
     // Duplicate name check.
-    for (const auto& cp : ws.canvasProfiles) {
+    for (const auto& cp : ws.canvasProfiles()) {
         if (cp.name == name) {
             std::cerr << "Error: profile '" << name
                       << "' already exists. Use mod-canvas-profile to modify it.\n";
@@ -522,7 +522,6 @@ static int cmdWorkspaceAddProfile(const Opts& opts)
     }
 
     CanvasProfile cp;
-    cp.id           = makeUniqueCanvasProfileId(ws.canvasProfiles);
     cp.name         = name;
     cp.canvasSize   = canvasSize;
     cp.margins      = margins;
@@ -545,7 +544,7 @@ static int cmdWorkspaceAddProfile(const Opts& opts)
                       << opts.get("background-tpl-color") << "'\n";
     }
 
-    ws.canvasProfiles.push_back(cp);
+    WorkspaceEditor(ws).addCanvasProfile(std::move(cp)); // mints a fresh unique id
 
     try {
         WorkspaceSerializer{}.save(ws, wsFile);
@@ -582,8 +581,11 @@ static int cmdWorkspaceModProfile(const Opts& opts)
         return 2;
     }
 
-    CanvasProfile* cp = nullptr;
-    for (auto& p : ws.canvasProfiles)
+    // The palette is edited through WorkspaceEditor, which owns its invariants; mutate a copy in
+    // place, then hand the whole list back via replaceCanvasProfiles (it preserves ids/templateInfo).
+    auto           profiles = ws.canvasProfiles(); // copy
+    CanvasProfile* cp        = nullptr;
+    for (auto& p : profiles)
         if (p.name == name) { cp = &p; break; }
     if (!cp) {
         std::cerr << "Error: profile '" << name << "' not found\n"; return 1;
@@ -648,6 +650,8 @@ static int cmdWorkspaceModProfile(const Opts& opts)
                       << opts.get("background-tpl-color") << "'\n";
     }
 
+    WorkspaceEditor(ws).replaceCanvasProfiles(std::move(profiles));
+
     try {
         WorkspaceSerializer{}.save(ws, wsFile);
     } catch (const std::exception& e) {
@@ -683,15 +687,17 @@ static int cmdWorkspaceRmProfile(const Opts& opts)
         return 2;
     }
 
-    const auto sizeBefore = ws.canvasProfiles.size();
-    ws.canvasProfiles.erase(
-        std::remove_if(ws.canvasProfiles.begin(), ws.canvasProfiles.end(),
-            [&name](const CanvasProfile& p) { return p.name == name; }),
-        ws.canvasProfiles.end());
+    // Names may repeat, so remove every profile carrying this name (by its id, through the editor).
+    std::vector<std::string> toRemove;
+    for (const auto& p : ws.canvasProfiles())
+        if (p.name == name) toRemove.push_back(p.id);
 
-    if (ws.canvasProfiles.size() == sizeBefore) {
+    if (toRemove.empty()) {
         std::cerr << "Error: profile '" << name << "' not found\n"; return 1;
     }
+
+    WorkspaceEditor ed(ws);
+    for (const auto& id : toRemove) ed.removeCanvasProfile(id);
 
     try {
         WorkspaceSerializer{}.save(ws, wsFile);
@@ -711,14 +717,14 @@ static int cmdWorkspaceRmProfile(const Opts& opts)
 //! Prints the "Canvas profiles:" section (with an add tip when the workspace has none).
 static void printCanvasProfilesSection(const Workspace& ws)
 {
-    if (ws.canvasProfiles.empty()) {
+    if (ws.canvasProfiles().empty()) {
         std::cout << "Canvas profiles: (none)\n";
         std::cout << "  Tip: workspace add-canvas-profile --workspace FILE"
                   << " --name NAME --canvas WxH --margins T,R,B,L\n";
         return;
     }
     std::cout << "Canvas profiles:\n";
-    for (const auto& cp : ws.canvasProfiles) {
+    for (const auto& cp : ws.canvasProfiles()) {
         const int safeW = cp.canvasSize.width  - cp.margins.left - cp.margins.right;
         const int safeH = cp.canvasSize.height - cp.margins.top  - cp.margins.bottom;
         std::cout << "  " << cp.name
@@ -769,7 +775,7 @@ static void printOutputProfile(const OutputProfile& op, const char* tag)
 static void printOutputProfilesSection(const Workspace& ws)
 {
     std::cout << "Output profiles:\n";
-    for (const auto& op : ws.outputProfiles)      printOutputProfile(op, "(yours)");
+    for (const auto& op : ws.outputProfiles())    printOutputProfile(op, "(yours)");
     for (const auto& op : outputProfilePresets()) printOutputProfile(op, "(preset)");
 }
 
@@ -849,16 +855,15 @@ static int cmdWorkspaceAddOutputProfile(const Opts& opts)
         }
     }
     op.name = opts.get("name");
-    op.id   = makeUniqueOutputProfileId(ws.outputProfiles); // always a user id, never a preset id
-
-    ws.outputProfiles.push_back(op);
+    // The editor mints a fresh user id (never a preset id) and appends it to the palette.
+    const std::string newId = WorkspaceEditor(ws).addOutputProfile(std::move(op));
 
     try { WorkspaceSerializer{}.save(ws, wsFile); }
     catch (const std::exception& e) {
         std::cerr << "Error: cannot save workspace: " << e.what() << '\n'; return 2;
     }
 
-    std::cout << "Output profile added: " << op.id << "  \"" << op.name << "\"\n";
+    std::cout << "Output profile added: " << newId << "  \"" << opts.get("name") << "\"\n";
     return 0;
 }
 
@@ -888,8 +893,10 @@ static int cmdWorkspaceModOutputProfile(const Opts& opts)
         std::cerr << "Error: cannot load workspace: " << e.what() << '\n'; return 2;
     }
 
-    OutputProfile* op = nullptr;
-    for (auto& p : ws.outputProfiles) if (p.id == id) { op = &p; break; }
+    // Mutate a copy of the palette, then hand it back through the editor (preset-strip / dedup safe).
+    auto           profiles = ws.outputProfiles(); // copy
+    OutputProfile* op        = nullptr;
+    for (auto& p : profiles) if (p.id == id) { op = &p; break; }
     if (!op) { std::cerr << "Error: output profile '" << id << "' not found\n"; return 1; }
 
     if (opts.has("name"))         op->name        = opts.get("name");
@@ -899,6 +906,8 @@ static int cmdWorkspaceModOutputProfile(const Opts& opts)
         try { op->outputFormat = parseFormat(opts.get("format")); }
         catch (const std::exception& e) { std::cerr << "Error: " << e.what() << '\n'; return 1; }
     }
+
+    WorkspaceEditor(ws).replaceOutputProfiles(std::move(profiles));
 
     try { WorkspaceSerializer{}.save(ws, wsFile); }
     catch (const std::exception& e) {
@@ -924,12 +933,7 @@ static int cmdWorkspaceRmOutputProfile(const Opts& opts)
         std::cerr << "Error: cannot load workspace: " << e.what() << '\n'; return 2;
     }
 
-    const auto before = ws.outputProfiles.size();
-    ws.outputProfiles.erase(
-        std::remove_if(ws.outputProfiles.begin(), ws.outputProfiles.end(),
-            [&id](const OutputProfile& p) { return p.id == id; }),
-        ws.outputProfiles.end());
-    if (ws.outputProfiles.size() == before) {
+    if (!WorkspaceEditor(ws).removeOutputProfile(id)) {
         std::cerr << "Error: output profile '" << id << "' not found\n"; return 1;
     }
 
@@ -978,7 +982,7 @@ static int cmdProcess(const Opts& opts)
 
     const bool jsonMode    = opts.has("json");
     const bool noProfile   = opts.has("no-profile");
-    const bool hasProfiles = !ws.canvasProfiles.empty() && !noProfile;
+    const bool hasProfiles = !ws.canvasProfiles().empty() && !noProfile;
 
     int projectIdx = -1; // index into ws.projectItems; -1 = new project
 
@@ -1062,9 +1066,9 @@ static int cmdProcess(const Opts& opts)
     } else {
         // Ad-hoc: seed from the workspace's first user profile if any, else the Webtoon preset, then
         // apply the inline flags. This is the "process this directory with these settings" path.
-        outProfile = ws.outputProfiles.empty()
+        outProfile = ws.outputProfiles().empty()
                          ? Platemaker::Models::webtoonStandardPreset()
-                         : ws.outputProfiles.front();
+                         : ws.outputProfiles().front();
         if (opts.has("format"))       outProfile.outputFormat = parseFormat(opts.get("format"));
         if (opts.has("start-index"))  outProfile.startIndex   = opts.getInt("start-index", 1);
         if (opts.has("target-width")) outProfile.targetWidth  = opts.getInt("target-width", 800);
@@ -1082,7 +1086,7 @@ static int cmdProcess(const Opts& opts)
     // and the pipeline run must all agree on which palette is in effect.
     const std::vector<CanvasProfile> noProfiles;
     const std::vector<CanvasProfile>& effectiveProfiles =
-        noProfile ? noProfiles : ws.canvasProfiles;
+        noProfile ? noProfiles : ws.canvasProfiles();
 
     // --- Sanitize — update file statuses (disk + config) and check if reprocess is needed ---
     project.sanitize(effectiveProfiles);
@@ -1196,7 +1200,7 @@ static int cmdProcess(const Opts& opts)
         if (noProfile)
             std::cerr << " [--no-profile: canvas profiles ignored]";
         else if (hasProfiles)
-            std::cerr << " [" << ws.canvasProfiles.size()
+            std::cerr << " [" << ws.canvasProfiles().size()
                       << " canvas profile(s), matching by width+height]";
         std::cerr << " ...\n";
     }
@@ -1490,13 +1494,13 @@ static int cmdProjectMod(const Opts& opts)
         const std::string profName = opts.get("add-canvas-profile");
         // Resolve name → ID
         const CanvasProfile* cp = nullptr;
-        for (const auto& p : ws.canvasProfiles)
+        for (const auto& p : ws.canvasProfiles())
             if (p.name == profName) { cp = &p; break; }
         if (!cp) {
             std::cerr << "Error: canvas profile '" << profName
                       << "' not found in workspace.\n"; return 1;
         }
-        if (!pi->addCanvasProfile(ws.canvasProfiles, cp->id)) {
+        if (!WorkspaceEditor(ws).addCanvasProfileToProject(*pi, cp->id)) {
             std::cerr << "Error: cannot link canvas profile '" << profName
                       << "' — conflict: another linked profile has the same canvas dimensions.\n";
             return 1;
@@ -1507,17 +1511,13 @@ static int cmdProjectMod(const Opts& opts)
     if (opts.has("rm-canvas-profile")) {
         const std::string profName = opts.get("rm-canvas-profile");
         const CanvasProfile* cp = nullptr;
-        for (const auto& p : ws.canvasProfiles)
+        for (const auto& p : ws.canvasProfiles())
             if (p.name == profName) { cp = &p; break; }
         if (!cp) {
             std::cerr << "Error: canvas profile '" << profName
                       << "' not found in workspace.\n"; return 1;
         }
-        const auto before = pi->canvasProfileIds.size();
-        pi->canvasProfileIds.erase(
-            std::remove(pi->canvasProfileIds.begin(), pi->canvasProfileIds.end(), cp->id),
-            pi->canvasProfileIds.end());
-        if (pi->canvasProfileIds.size() == before)
+        if (!WorkspaceEditor(ws).removeCanvasProfileFromProject(*pi, cp->id))
             std::cerr << "Warning: profile '" << profName
                       << "' was not linked to project '" << pi->name << "'.\n";
         else
@@ -1528,11 +1528,10 @@ static int cmdProjectMod(const Opts& opts)
         // Selected by id, resolved against the user's profiles and the preset catalogue — so a
         // project can be pointed at a preset (by its stable id) just as at a user profile.
         const std::string profId = opts.get("output-profile");
-        if (!Platemaker::Models::resolveOutputProfile(ws, profId)) {
+        if (!WorkspaceEditor(ws).setProjectOutputProfile(*pi, profId)) {
             std::cerr << "Error: no output profile or preset with id '" << profId
                       << "'. Run 'workspace list-output-profiles'.\n"; return 1;
         }
-        pi->outputProfileId = profId;
         std::cerr << "Output profile '" << profId << "' assigned to project '" << pi->name << "'.\n";
     }
 
@@ -1634,7 +1633,7 @@ static int cmdProjectStatus(const Opts& opts)
     // Sanitize updates file statuses from disk hashes and from the canvas profiles in
     // effect, so pages whose profile changed since their render report DESYNCHRONIZED
     // rather than a misleading PROCESSED.
-    const bool upToDate = pi->sanitize(ws.canvasProfiles);
+    const bool upToDate = pi->sanitize(ws.canvasProfiles());
 
     static const auto statusStr = [](FileStatus s) -> const char* {
         switch (s) {
@@ -1656,18 +1655,18 @@ static int cmdProjectStatus(const Opts& opts)
         for (const auto& id : pi->canvasProfileIds) {
             if (!canvasProfilesSummary.empty()) canvasProfilesSummary += ", ";
             bool found = false;
-            for (const auto& cp : ws.canvasProfiles)
+            for (const auto& cp : ws.canvasProfiles())
                 if (cp.id == id) { canvasProfilesSummary += cp.name; found = true; break; }
             if (!found) canvasProfilesSummary += id + " (missing)";
         }
     }
     std::string outputProfileSummary;
     if (pi->outputProfileId.empty()) {
-        outputProfileSummary = ws.outputProfiles.empty()
+        outputProfileSummary = ws.outputProfiles().empty()
             ? "(none — using built-in default)"
-            : ws.outputProfiles.front().name + " (workspace default)";
+            : ws.outputProfiles().front().name + " (workspace default)";
     } else {
-        for (const auto& op : ws.outputProfiles)
+        for (const auto& op : ws.outputProfiles())
             if (op.id == pi->outputProfileId) { outputProfileSummary = op.name; break; }
         if (outputProfileSummary.empty())
             outputProfileSummary = pi->outputProfileId + " (missing)";
@@ -1760,7 +1759,7 @@ static int cmdTemplate(const Opts& opts)
 
     // --- Find the requested canvas profile ---
     const CanvasProfile* profilePtr = nullptr;
-    for (const auto& cp : ws.canvasProfiles)
+    for (const auto& cp : ws.canvasProfiles())
         if (cp.name == profileName) { profilePtr = &cp; break; }
 
     if (!profilePtr) {
@@ -1772,8 +1771,8 @@ static int cmdTemplate(const Opts& opts)
     }
 
     // --- Resolve output profile (for slice guide positions) ---
-    const OutputProfile outProfile = ws.outputProfiles.empty()
-        ? OutputProfile{} : ws.outputProfiles.front();
+    const OutputProfile outProfile = ws.outputProfiles().empty()
+        ? OutputProfile{} : ws.outputProfiles().front();
 
     // --- Apply optional CLI colour overrides (priority: CLI > profile > default) ---
     // We copy the profile so we can modify colours without touching the workspace.

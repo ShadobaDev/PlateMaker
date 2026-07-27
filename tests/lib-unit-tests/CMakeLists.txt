@@ -37,6 +37,7 @@ add_executable(platemaker-lib-tests
     test_profile_ids.cpp
     test_output_profile_presets.cpp
     test_path_encoding.cpp
+    test_workspace_editor.cpp
     test_build_info.cpp
 )
 

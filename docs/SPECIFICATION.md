@@ -557,7 +557,7 @@ silent guesses.
 
 **Pre-run (once per project), inside `CanvasProfileMatcher` constructor:**
 ```
-Partition workspace.canvasProfiles into:
+Partition workspace.canvasProfiles() into:
   subA = profiles whose id ∈ project.canvasProfileIds   (preserves priority order)
   subB = all remaining workspace profiles               (fallback pool)
 ```
@@ -696,23 +696,24 @@ masquerade as a preset.  A user profile whose settings merely coincide with a pr
 untouched.  This migration is silent — unambiguous bookkeeping, not a collision — so it is **not**
 reported in `WorkspaceRepairReport`.
 
-**Planned API:**
+**Implemented API.** The "future WorkspaceEditor / ProjectEditor type" anticipated here now exists as
+`Infrastructure::WorkspaceEditor` — the single authority that mutates the workspace profile palettes
+(`Workspace::canvasProfiles` / `outputProfiles` are private, read through const accessors). Linking a
+profile to a project is `WorkspaceEditor::addCanvasProfileToProject(project, profileId)`, which delegates
+to `ProjectItem::addCanvasProfile()` and applies the dimension-collision guard. It currently returns
+`bool` (linked / rejected); the richer result below — naming the specific conflicting profile — remains a
+possible enhancement rather than a shipped shape:
 ```cpp
-struct AddCanvasProfileResult {
+struct AddCanvasProfileResult {          // possible future enrichment of the bool return
     enum class Status { Ok, Conflict };
     Status status;
     // Non-null only when status == Conflict.
-    // Points into the allWorkspaceProfiles vector passed to the call.
     const CanvasProfile* conflictingProfile = nullptr;
 };
 
-// Free function (or method on a future WorkspaceEditor / ProjectEditor type).
-// Appends profileId to project.canvasProfileIds only when there is no dimension
-// collision with any already-linked profile.
-AddCanvasProfileResult addCanvasProfileToProject(
-    ProjectItem&                          project,
-    const std::string&                    profileId,     // UUID to link
-    const std::vector<CanvasProfile>&     allWorkspaceProfiles);
+// Today: bool WorkspaceEditor::addCanvasProfileToProject(ProjectItem&, const std::string& profileId);
+//   Appends profileId to project.canvasProfileIds only when there is no dimension
+//   collision with any already-linked profile.
 ```
 
 **CLI response on `Conflict`:**
@@ -787,7 +788,7 @@ private:
 **Typical usage per processing run:**
 ```cpp
 // Constructed once per project, before the page loop.
-CanvasProfileMatcher matcher(workspace.canvasProfiles, project.canvasProfileIds);
+CanvasProfileMatcher matcher(workspace.canvasProfiles(), project.canvasProfileIds);
 
 for (const auto& page : project.pages) {
     auto [w, h] = readImageDimensions(page.filePath);

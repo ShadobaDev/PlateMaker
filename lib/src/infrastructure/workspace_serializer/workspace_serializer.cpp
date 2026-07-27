@@ -18,7 +18,7 @@
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 
 #include <platemaker/infrastructure/file/path_utf8.hpp>
-#include <platemaker/infrastructure/id_generator/id_generator.hpp>
+#include <platemaker/infrastructure/workspace_editor/workspace_editor.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -318,13 +318,13 @@ void to_json(nlohmann::json& j, const Workspace& v) {
     // the serializer the lib's own guarantee that a preset cannot be written into a workspace,
     // independent of whether the CLI/GUI played by the rules.
     nlohmann::json outputProfiles = nlohmann::json::array();
-    for (const auto& op : v.outputProfiles)
+    for (const auto& op : v.outputProfiles())
         if (!outputProfilePresetById(op.id))
             outputProfiles.push_back(op);
 
     j = nlohmann::json{
         {"version",         v.version},
-        {"canvasProfiles",  v.canvasProfiles},
+        {"canvasProfiles",  v.canvasProfiles()},
         {"outputProfiles",  outputProfiles},
         {"projectItems",    v.projectItems},
         {"outputDirectory", v.outputDirectory},
@@ -344,8 +344,11 @@ void from_json(const nlohmann::json& j, Workspace& v) {
     }
 
     j.at("version").get_to(v.version);
-    j.at("canvasProfiles").get_to(v.canvasProfiles);
-    j.at("outputProfiles").get_to(v.outputProfiles);
+    // Profile palettes are intentionally NOT read here: Workspace's vectors are private and only
+    // WorkspaceEditor may write them.  load() parses the "canvasProfiles"/"outputProfiles" arrays
+    // separately and hands them to WorkspaceEditor::installLoaded(), which enforces the invariants
+    // (unique ids, no persisted presets) a loaded file is subject to.  Anyone calling
+    // j.get<Workspace>() directly therefore gets a workspace with empty palettes by design.
     // activeCanvasProfileName / activeOutputProfileName removed in schema v2 — silently ignored.
     if (j.contains("projectItems"))    j.at("projectItems").get_to(v.projectItems);
     if (j.contains("outputDirectory")) j.at("outputDirectory").get_to(v.outputDirectory);
@@ -363,159 +366,10 @@ namespace {
     /// Current on-disk schema version.  Increment on every breaking schema change.
     constexpr int k_currentVersion = 2;
 
-// ---------------------------------------------------------------------------
-// Identifier repair helpers
-//
-// Both run on every load, for any file version.  Order matters: mint first, then
-// deduplicate — two id-less profiles sharing a name used to derive the same legacy
-// id, so minting after the dedup pass would leave that collision in place.
-// ---------------------------------------------------------------------------
-
-/**
- * \brief Rewrites every project reference to \p oldId so it points at \p newId instead.
- *
- * Covers all four places a profile id is stored on a project: the assigned canvas
- * profiles, the output profile, the canvas baseline recorded at render time, and the
- * per-input profile the page was rendered with.
- */
-void relinkProfileId(Models::Workspace&  workspace,
-                     const std::string&  oldId,
-                     const std::string&  newId)
-{
-    for (auto& pi : workspace.projectItems) {
-        for (auto& id : pi.canvasProfileIds)
-            if (id == oldId) id = newId;
-
-        for (auto& id : pi.canvasProfileIdsAtRender)
-            if (id == oldId) id = newId;
-
-        if (pi.outputProfileId == oldId)
-            pi.outputProfileId = newId;
-
-        for (auto& inf : pi.getInputImages())
-            if (inf.canvasProfileId == oldId)
-                inf.canvasProfileId = newId;
-    }
-}
-
-/**
- * \brief Gives a random unique id to every profile saved without one, migrating the
- *        references that used to rely on the id being derived from the name.
- *
- * Pre-id workspaces (and, until 0.2.1, any profile a GUI saved with an empty id) had
- * their id computed as \c "cp-<name>" / \c "op-<name>".  That was a second, parallel
- * identity scheme and it was not unique either — two profiles sharing a name shared an
- * id.  Since the old form is *deterministic*, we can compute what a profile's id would
- * have been and relink exactly those references, which turns the name-derived scheme
- * into a one-off migration instead of a permanent fixture.
- *
- * Not reported: this is unambiguous bookkeeping, not a collision the user should hear about.
- */
-void mintMissingProfileIds(Models::Workspace& workspace)
-{
-    for (auto& cp : workspace.canvasProfiles) {
-        if (!cp.id.empty()) continue;
-        cp.id = makeUniqueCanvasProfileId(workspace.canvasProfiles);
-        relinkProfileId(workspace, "cp-" + cp.name, cp.id);
-    }
-
-    for (auto& op : workspace.outputProfiles) {
-        if (!op.id.empty()) continue;
-        op.id = makeUniqueOutputProfileId(workspace.outputProfiles);
-        relinkProfileId(workspace, "op-" + op.name, op.id);
-    }
-}
-
-/**
- * \brief Migrates a loaded workspace to the "presets are never persisted" model.
- *
- * Presets used to be written into \c outputProfiles (an earlier design adopted/forked/appended them).
- * They are now baked into the build and resolved from the catalogue at runtime, so a persisted preset
- * must be removed. The key is to touch **only profiles that were persisted as presets**, identified by
- * their id — never a user's own profile, even one whose settings happen to equal a preset (that is a
- * legitimate copy the user made and must survive). Per profile:
- *
- * - **Canonical preset id** (\c op-preset-*). If its settings still match the preset it is a redundant
- *   copy → dropped; any reference keeps resolving through the catalogue. If it diverged (edited under
- *   the reserved id) it is the user's → given a fresh id so it cannot masquerade as a preset.
- * - **Legacy name-derived id** (\c "op-<presetName>") that still matches the preset by signature: a
- *   pre-adoption persisted preset → references relinked to the canonical id, then dropped.
- * - **Anything else** — including a user profile whose settings coincidentally match a preset — is left
- *   exactly as it is.
- *
- * After this, \c outputProfiles holds only user-defined profiles; the write-path guard in
- * to_json(Workspace) keeps it that way.
- */
-void migrateOutputProfilePresets(Models::Workspace& workspace)
-{
-    const auto presets = Models::outputProfilePresets();
-    auto&      ops     = workspace.outputProfiles;
-
-    for (auto it = ops.begin(); it != ops.end();) {
-        // (A) Carries a canonical preset id → it was persisted as a preset, not a user profile.
-        if (const auto preset = Models::outputProfilePresetById(it->id)) {
-            if (Models::outputProfileSignature(*it) == Models::outputProfileSignature(*preset)) {
-                it = ops.erase(it); // redundant copy; references resolve via the catalogue
-            } else {
-                const std::string oldId = it->id; // diverged → strip the reserved id
-                it->id = makeUniqueOutputProfileId(ops);
-                relinkProfileId(workspace, oldId, it->id);
-                ++it;
-            }
-            continue;
-        }
-
-        // (B) Legacy "op-<presetName>" that still matches the preset → pre-adoption persisted preset.
-        bool collapsed = false;
-        for (const auto& preset : presets) {
-            if (it->id == "op-" + preset.name &&
-                Models::outputProfileSignature(*it) == Models::outputProfileSignature(preset)) {
-                relinkProfileId(workspace, it->id, preset.id);
-                it = ops.erase(it);
-                collapsed = true;
-                break;
-            }
-        }
-        if (!collapsed) ++it; // any other profile (incl. a user copy of a preset) is left alone
-    }
-}
-
-/**
- * \brief Breaks up shared identifiers so every profile is reachable again.
- *
- * The first profile holding an id keeps it — that way every existing project reference
- * still resolves, and to the same profile it resolved to before.  Later duplicates get a
- * fresh id and become unassigned, which is what puts them back in the "assign a profile"
- * list they had silently dropped out of.
- *
- * Deliberately does **not** touch project references to the duplicated id.  We cannot know
- * which of the two profiles a project really rendered with, and guessing would be worse than
- * leaving it: ProjectItem::sanitize() settles it exactly, by comparing the canvas fingerprint
- * recorded per input at render time.
- *
- * \tparam Profiles Vector of profiles exposing \c id and \c name.
- * \tparam MakeId   Callable returning a fresh unique id for that vector.
- */
-template <typename Profiles, typename MakeId>
-void deduplicateIds(Profiles&                                              profiles,
-                    const MakeId&                                          makeFreshId,
-                    std::vector<WorkspaceRepairReport::ReassignedProfile>&  out)
-{
-    std::vector<std::string> seen;
-    seen.reserve(profiles.size());
-
-    for (auto& p : profiles) {
-        if (std::find(seen.begin(), seen.end(), p.id) == seen.end()) {
-            seen.push_back(p.id);
-            continue;
-        }
-
-        const std::string oldId = p.id;
-        p.id = makeFreshId(profiles);
-        seen.push_back(p.id);
-        out.push_back({p.name, oldId, p.id});
-    }
-}
+// The identifier-repair helpers (mintMissingProfileIds / deduplicateIds /
+// migrateOutputProfilePresets / relinkProfileId) that used to live here now belong to
+// WorkspaceEditor, so load() and every in-session edit run one copy of the rules.  load()
+// reaches them via WorkspaceEditor::installLoaded() below.
 
 } // anonymous namespace
 
@@ -561,9 +415,16 @@ Models::Workspace WorkspaceSerializer::load(const std::string&     filePath,
 
     const int fileVersion = j.at("version").get<int>();
 
-    Models::Workspace workspace;
+    Models::Workspace                  workspace;
+    std::vector<Models::CanvasProfile> canvasProfiles;
+    std::vector<Models::OutputProfile> outputProfiles;
     try {
         workspace = j.get<Models::Workspace>();
+        // The profile palettes are parsed here rather than in from_json(Workspace): the vectors
+        // are private and only WorkspaceEditor may install them, which is what enforces the
+        // load-time invariants below.
+        j.at("canvasProfiles").get_to(canvasProfiles);
+        j.at("outputProfiles").get_to(outputProfiles);
     } catch (const nlohmann::json::exception& e) {
         throw std::runtime_error(
             "WorkspaceSerializer::load() — schema error in '" +
@@ -574,27 +435,13 @@ Models::Workspace WorkspaceSerializer::load(const std::string&     filePath,
         migrate(workspace, fileVersion);
     }
 
-    // Identifier repair (runs for ANY version) — see the helpers above.
-    //
-    // Mint first, then deduplicate.  A file can arrive needing both: profiles saved
-    // without an id at all (pre-id workspaces, or a GUI that wiped the id on edit) and
-    // profiles that share one (ids used to be a millisecond timestamp, so several minted
-    // in the same loop came out identical).
-    mintMissingProfileIds(workspace);
-
-    deduplicateIds(
-        workspace.canvasProfiles,
-        [](const auto& existing) { return makeUniqueCanvasProfileId(existing); },
-        report.canvasProfiles);
-
-    deduplicateIds(
-        workspace.outputProfiles,
-        [](const auto& existing) { return makeUniqueOutputProfileId(existing); },
-        report.outputProfiles);
-
-    // Presets last: the collapse pass hands out relinks and drops copies, so it must run on a list
-    // that is already free of duplicate ids.
-    migrateOutputProfilePresets(workspace);
+    // Install the parsed palettes and run the identifier-repair pass (mint → deduplicate → drop
+    // persisted presets).  This is the single copy of the rules, shared with every WorkspaceEditor
+    // edit, so a file read from disk and a workspace edited in memory obey the same invariants.
+    // Runs for ANY file version: a file can arrive needing both a mint (profiles saved without an
+    // id) and a dedup (ids used to be a millisecond timestamp, so several came out identical).
+    WorkspaceEditor(workspace).installLoaded(
+        std::move(canvasProfiles), std::move(outputProfiles), report);
 
     // Rebuild runtime lookup tables for every project.
     // These tables are not serialised so they must always be reconstructed

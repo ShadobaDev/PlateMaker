@@ -23,6 +23,7 @@
 
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/infrastructure/file/path_utf8.hpp>
+#include <platemaker/infrastructure/workspace_editor/workspace_editor.hpp>
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 #include <platemaker/models/project_item.hpp>
 #include <platemaker/models/workspace.hpp>
@@ -199,7 +200,7 @@ TEST(NonAsciiPathTest, WorkspaceSavedUnderANonAsciiPathCanBeReopened)
     cp.name       = "Webtoon";
     cp.canvasSize = {1600, 10240};
     cp.margins    = {0, 0, 0, 0};
-    original.canvasProfiles.push_back(cp);
+    Infrastructure::WorkspaceEditor(original).replaceCanvasProfiles({cp}); // keeps the supplied id
 
     const Infrastructure::WorkspaceSerializer ser;
     ASSERT_NO_THROW(ser.save(original, wsPath));
@@ -208,9 +209,9 @@ TEST(NonAsciiPathTest, WorkspaceSavedUnderANonAsciiPathCanBeReopened)
     Models::Workspace loaded;
     ASSERT_NO_THROW(loaded = ser.load(wsPath));
 
-    ASSERT_EQ(loaded.canvasProfiles.size(), 1u);
-    EXPECT_EQ(loaded.canvasProfiles[0].id,   "cp-test");
-    EXPECT_EQ(loaded.canvasProfiles[0].name, "Webtoon");
+    ASSERT_EQ(loaded.canvasProfiles().size(), 1u);
+    EXPECT_EQ(loaded.canvasProfiles()[0].id,   "cp-test");
+    EXPECT_EQ(loaded.canvasProfiles()[0].name, "Webtoon");
 }
 
 TEST(NonAsciiPathTest, WorkspaceRemembersNonAsciiInputPathsExactly)

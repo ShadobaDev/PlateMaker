@@ -40,6 +40,14 @@ a consumer that used the removed preset internals must adapt.
   from `processing_pipeline.hpp` to the new `processing_callbacks.hpp` (a transitive include, so existing
   users are unaffected). `cancel` stays a separate parameter. `run()` is also now **`static`** — the
   pipeline is stateless, so call `ProcessingPipeline::run(...)` without constructing an instance.
+- **`Models::Workspace`'s profile palettes are now encapsulated.** `canvasProfiles` and
+  `outputProfiles` are no longer public vectors: they are read through `ws.canvasProfiles()` /
+  `ws.outputProfiles()` (const accessors) and mutated **only** through the new
+  `Infrastructure::WorkspaceEditor`. Direct writes (`ws.canvasProfiles.assign(...)`, `push_back`, …) no
+  longer compile — a consumer that edited the vectors by hand must go through the editor. Reading is
+  unchanged apart from the `()`. This closes a real hole: an edit made in a running session is now put
+  through the *same* invariant checks (unique ids, no persisted presets, `templateInfo` preserved) that
+  a loaded file is, instead of only being validated on the next open.
 
 ### Added
 
@@ -53,6 +61,17 @@ a consumer that used the removed preset internals must adapt.
   and **`onSliceSkipped(SliceSkipped)`** for a clean slice a partial re-render leaves untouched. All are
   optional. Callbacks fire synchronously on the calling thread; the library remains thread- and
   GUI-agnostic.
+- **`Infrastructure::WorkspaceEditor`** (`platemaker/infrastructure/workspace_editor/workspace_editor.hpp`)
+  — the single authority that mutates a workspace's profile palettes while enforcing its invariants.
+  Intent-level ops: `addCanvasProfile` / `removeCanvasProfile` / `replaceCanvasProfiles` (carries
+  `templateInfo`, mints ids, dedups) and the output-profile equivalents (`replaceOutputProfiles` also
+  strips persisted presets); the project-link pair `addCanvasProfileToProject` /
+  `removeCanvasProfileFromProject` (the symmetric remove the model lacked); and `setProjectOutputProfile`
+  (validates the id resolves, presets included). The identifier-repair rules that used to live inside
+  `WorkspaceSerializer::load()` now live here as one copy — `load()` runs them via
+  `WorkspaceEditor::installLoaded()`, so an in-memory edit and a loaded file obey the same rules. Lives
+  in Infrastructure (not Models) so the invariant logic can mint ids without dragging `id_generator`
+  into the model layer.
 - **CLI output-profile family, id-selected** — `workspace list-presets`, `add-output-profile`
   (`--from-preset ID`, or from scratch with `--target-width/--slice-height/--format`),
   `mod-/rm-/list-output-profiles`, and `--output-profile ID` on `process` and `project`. The canvas

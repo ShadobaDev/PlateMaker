@@ -25,6 +25,12 @@
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/project_item.hpp>
 
+// Forward declaration only — no include, so the model layer keeps its independence from
+// Infrastructure (see id_generator.hpp for why that boundary is deliberate). WorkspaceEditor
+// is the sole authority allowed to mutate the profile palettes below; it is befriended so it
+// can reach the private vectors without exposing a public non-const setter.
+namespace Platemaker::Infrastructure { class WorkspaceEditor; }
+
 namespace Platemaker::Models {
 
 /**
@@ -64,8 +70,20 @@ public:
      */
     int version = 1;
 
-    std::vector<CanvasProfile> canvasProfiles;  //!< All defined canvas profiles.
-    std::vector<OutputProfile> outputProfiles;  //!< All defined output profiles.
+    /**
+     * \brief Read-only view of the workspace's canvas profiles.
+     *
+     * The backing vector is private and mutated **only** through
+     * \c Infrastructure::WorkspaceEditor, which enforces the palette invariants (unique ids,
+     * no duplicate identifiers surviving a load, \c templateInfo carried across a replace).
+     * Direct mutation used to be possible from the CLI/GUI, which meant an in-session edit was
+     * not validated the way a loaded file is — this accessor closes that hole while keeping
+     * reads (\c .front() / \c .size() / iteration) as cheap as before.
+     */
+    [[nodiscard]] const std::vector<CanvasProfile>& canvasProfiles() const noexcept { return m_canvasProfiles; }
+
+    /// \brief Read-only view of the workspace's output profiles. \see canvasProfiles()
+    [[nodiscard]] const std::vector<OutputProfile>& outputProfiles() const noexcept { return m_outputProfiles; }
 
     std::string outputDirectory; //!< Absolute path to the directory where output slices are written.
 
@@ -85,6 +103,14 @@ public:
      * modified).  Reset to \c false after a successful full reprocess.
      */
     bool stripDirty = false;
+
+private:
+    // The sole mutation authority for the profile palettes. Lives in Infrastructure so the
+    // invariant logic can draw on id_generator without dragging it into Models.
+    friend class Platemaker::Infrastructure::WorkspaceEditor;
+
+    std::vector<CanvasProfile> m_canvasProfiles;  //!< All defined canvas profiles.
+    std::vector<OutputProfile> m_outputProfiles;  //!< All defined output profiles.
 };
 
 /**
@@ -106,7 +132,7 @@ resolveOutputProfile(const Workspace& ws, std::string_view id)
 {
     if (auto preset = outputProfilePresetById(id))
         return preset;
-    for (const auto& op : ws.outputProfiles)
+    for (const auto& op : ws.outputProfiles())
         if (op.id == id)
             return op;
     return std::nullopt;

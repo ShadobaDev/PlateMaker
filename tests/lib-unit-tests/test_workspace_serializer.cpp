@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include <platemaker/infrastructure/workspace_editor/workspace_editor.hpp>
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 #include <platemaker/models/workspace.hpp>
 #include <platemaker/models/canvas_profile.hpp>
@@ -50,10 +51,11 @@ Models::Workspace makeMinimalWorkspace()
 
     Models::Workspace ws;
     ws.version         = 2;
-    ws.canvasProfiles  = {canvas};
-    ws.outputProfiles  = {output};
     ws.outputDirectory = "/tmp/out";
     ws.stripDirty      = true;
+    WorkspaceEditor ed(ws);
+    ed.replaceCanvasProfiles({canvas}); // keeps the supplied ids (only mints when absent)
+    ed.replaceOutputProfiles({output});
     return ws;
 }
 
@@ -92,12 +94,12 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesCanvasProfile)
     ser.save(original, tmp.string());
     const auto loaded = ser.load(tmp.string());
 
-    ASSERT_EQ(loaded.canvasProfiles.size(), 1u);
-    EXPECT_EQ(loaded.canvasProfiles[0].name,              original.canvasProfiles[0].name);
-    EXPECT_EQ(loaded.canvasProfiles[0].canvasSize.width,  original.canvasProfiles[0].canvasSize.width);
-    EXPECT_EQ(loaded.canvasProfiles[0].canvasSize.height, original.canvasProfiles[0].canvasSize.height);
-    EXPECT_EQ(loaded.canvasProfiles[0].margins.top,       original.canvasProfiles[0].margins.top);
-    EXPECT_EQ(loaded.canvasProfiles[0].visualColour.r,    original.canvasProfiles[0].visualColour.r);
+    ASSERT_EQ(loaded.canvasProfiles().size(), 1u);
+    EXPECT_EQ(loaded.canvasProfiles()[0].name,              original.canvasProfiles()[0].name);
+    EXPECT_EQ(loaded.canvasProfiles()[0].canvasSize.width,  original.canvasProfiles()[0].canvasSize.width);
+    EXPECT_EQ(loaded.canvasProfiles()[0].canvasSize.height, original.canvasProfiles()[0].canvasSize.height);
+    EXPECT_EQ(loaded.canvasProfiles()[0].margins.top,       original.canvasProfiles()[0].margins.top);
+    EXPECT_EQ(loaded.canvasProfiles()[0].visualColour.r,    original.canvasProfiles()[0].visualColour.r);
 
     std::filesystem::remove(tmp);
 }
@@ -115,12 +117,12 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesOutputProfile)
 
     // A genuine user profile round-trips unchanged, and load() no longer appends a preset —
     // presets live in the catalogue, not in the workspace.
-    ASSERT_EQ(loaded.outputProfiles.size(), 1u);
-    EXPECT_EQ(loaded.outputProfiles[0].id,           original.outputProfiles[0].id);
-    EXPECT_EQ(loaded.outputProfiles[0].targetWidth,  original.outputProfiles[0].targetWidth);
-    EXPECT_EQ(loaded.outputProfiles[0].sliceHeight,  original.outputProfiles[0].sliceHeight);
-    EXPECT_EQ(loaded.outputProfiles[0].outputFormat, original.outputProfiles[0].outputFormat);
-    EXPECT_EQ(loaded.outputProfiles[0].startIndex,   original.outputProfiles[0].startIndex);
+    ASSERT_EQ(loaded.outputProfiles().size(), 1u);
+    EXPECT_EQ(loaded.outputProfiles()[0].id,           original.outputProfiles()[0].id);
+    EXPECT_EQ(loaded.outputProfiles()[0].targetWidth,  original.outputProfiles()[0].targetWidth);
+    EXPECT_EQ(loaded.outputProfiles()[0].sliceHeight,  original.outputProfiles()[0].sliceHeight);
+    EXPECT_EQ(loaded.outputProfiles()[0].outputFormat, original.outputProfiles()[0].outputFormat);
+    EXPECT_EQ(loaded.outputProfiles()[0].startIndex,   original.outputProfiles()[0].startIndex);
 
     std::filesystem::remove(tmp);
 }
@@ -179,8 +181,8 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesCanvasProfileId)
     ser.save(original, tmp.string());
     const auto loaded = ser.load(tmp.string());
 
-    ASSERT_EQ(loaded.canvasProfiles.size(), 1u);
-    EXPECT_EQ(loaded.canvasProfiles[0].id, "cp-test-001");
+    ASSERT_EQ(loaded.canvasProfiles().size(), 1u);
+    EXPECT_EQ(loaded.canvasProfiles()[0].id, "cp-test-001");
 
     std::filesystem::remove(tmp);
 }
@@ -218,10 +220,10 @@ TEST(WorkspaceSerializerTest, BackCompatLoadWithoutIdGetsAMintedId)
     Models::Workspace loaded;
     ASSERT_NO_THROW(loaded = ser.load(tmp.string()));
 
-    ASSERT_EQ(loaded.canvasProfiles.size(), 1u);
-    EXPECT_FALSE(loaded.canvasProfiles[0].id.empty());
-    EXPECT_NE(loaded.canvasProfiles[0].id, "cp-Webtoon Standard");
-    EXPECT_EQ(loaded.canvasProfiles[0].id.rfind("cp-", 0), 0u); // keeps the readable prefix
+    ASSERT_EQ(loaded.canvasProfiles().size(), 1u);
+    EXPECT_FALSE(loaded.canvasProfiles()[0].id.empty());
+    EXPECT_NE(loaded.canvasProfiles()[0].id, "cp-Webtoon Standard");
+    EXPECT_EQ(loaded.canvasProfiles()[0].id.rfind("cp-", 0), 0u); // keeps the readable prefix
 
     std::filesystem::remove(tmp);
 }

@@ -166,6 +166,21 @@ all produce the same silent loop. Whatever shape the structured errors take, a h
 fails after a successful render has to surface — at minimum the input must not be left
 claiming a state the render did not reach.
 
+**Deliver it through the `ProcessingCallbacks` structure — a typed `onError`.** The `run()`
+callbacks already exist (`onProgress` / `onLog` / `onInput` / `onSlicingStarted` / `onSliceSaved`
+/ `onSliceSkipped`), so the live half of this system is a new field: `onError(ProcessingError)`
+carrying the **typed** error (stable code + category `load`/`profile-match`/`slice`/`encode`/`io`,
+the file/slice it happened on, maybe the exception type), fired from the catch sites. It is the
+live twin of the typed errors `ProcessingOutcome` would then carry.
+
+Deliberately **not** a string `onError` "like `onLog` but stronger": that was considered and
+rejected because it duplicates what already exists — `onLog(Error)`, `outcome.errorMessage`, and
+`onInput(InputResult{SkippedError, detail})` — and no consumer needs it. Keep the fatal/non-fatal
+line the current code already draws: a **fatal** error also sets `outcome.failed` (the return is
+the authoritative "did it fail"); a **non-fatal** per-input problem stays on `onInput`, so `onError`
+is not spammed for benign skips. The typed payload is also far cleaner across a future C boundary
+than string-scraping the log.
+
 ### Unmatched pages: render them implicitly instead of dropping them — **deviates from SPECIFICATION §7.5.1**
 
 **Current behaviour, and it is deliberate.** `ProcessingPipeline::run()` sets
@@ -222,7 +237,14 @@ changed here, not a document lagging behind the code.
 Documented as-is in the GUI wiki (`Manual-Canvas-Profiles`, `Manual-Rendering`,
 `Manual-Troubleshooting`); those three need revisiting if the behaviour changes.
 
-### WorkspaceEditor — enforce workspace invariants in one place — **0.3.0 window**
+### WorkspaceEditor — enforce workspace invariants in one place — ✅ **SHIPPED (0.3.0)**
+
+> **Done in the lib.** `Infrastructure::WorkspaceEditor` is the sole mutation authority;
+> `Workspace::canvasProfiles` / `outputProfiles` are private with const accessors; the identifier-repair
+> rules live in the editor and `load()` runs them via `installLoaded()`. The CLI is migrated; lib tests
+> cover it (`test_workspace_editor.cpp`). See CHANGELOG 0.3.0. **Remaining = GUI adoption in 1.2.0**
+> (drop `m_workspace` direct mutation → `WorkspaceEditor`; the audit below is the call-site map). The
+> design write-up is kept for that round.
 
 **Problem.** `Models::Workspace` is a bare struct — public vectors, no mutating methods. Every
 invariant (unique profile ids, no duplicate canvas dimensions, no persisted presets, `templateInfo`

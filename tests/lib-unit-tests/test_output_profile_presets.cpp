@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include <platemaker/infrastructure/id_generator/id_generator.hpp>
+#include <platemaker/infrastructure/workspace_editor/workspace_editor.hpp>
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/workspace.hpp>
@@ -152,7 +153,7 @@ TEST(OutputPresetTest, EveryCatalogueEntryResolvesById)
 TEST(ResolveOutputProfileTest, FindsPresetsAndUserProfiles)
 {
     Models::Workspace ws;
-    ws.outputProfiles.push_back(userProfile("op-user1", "Mine"));
+    Infrastructure::WorkspaceEditor(ws).replaceOutputProfiles({userProfile("op-user1", "Mine")});
 
     const auto preset = Models::resolveOutputProfile(ws, Models::k_webtoonStandardPresetId);
     ASSERT_TRUE(preset.has_value());
@@ -178,7 +179,7 @@ TEST(OutputPresetLoadTest, NoPresetIsAddedToAnEmptyWorkspace)
     Infrastructure::WorkspaceRepairReport report;
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
 
-    EXPECT_TRUE(loaded.outputProfiles.empty());
+    EXPECT_TRUE(loaded.outputProfiles().empty());
     EXPECT_FALSE(report.any());
 }
 
@@ -189,9 +190,9 @@ TEST(OutputPresetLoadTest, AUserProfileIsKeptAndNoPresetAppended)
 
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path());
 
-    ASSERT_EQ(loaded.outputProfiles.size(), 1u);
-    EXPECT_EQ(loaded.outputProfiles[0].id, "op-mine");
-    EXPECT_EQ(loaded.outputProfiles[0].outputFormat, Models::OutputFormat::WebP);
+    ASSERT_EQ(loaded.outputProfiles().size(), 1u);
+    EXPECT_EQ(loaded.outputProfiles()[0].id, "op-mine");
+    EXPECT_EQ(loaded.outputProfiles()[0].outputFormat, Models::OutputFormat::WebP);
 }
 
 TEST(OutputPresetLoadTest, StoredCanonicalPresetCopyIsDropped)
@@ -204,7 +205,7 @@ TEST(OutputPresetLoadTest, StoredCanonicalPresetCopyIsDropped)
 
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path());
 
-    EXPECT_TRUE(loaded.outputProfiles.empty());
+    EXPECT_TRUE(loaded.outputProfiles().empty());
     ASSERT_EQ(loaded.projectItems.size(), 1u);
     EXPECT_EQ(loaded.projectItems[0].outputProfileId, Models::k_webtoonStandardPresetId);
 
@@ -225,8 +226,8 @@ TEST(OutputPresetLoadTest, AUserCopyOfAPresetSurvives)
 
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path());
 
-    ASSERT_EQ(loaded.outputProfiles.size(), 1u);
-    EXPECT_EQ(loaded.outputProfiles[0].id, "op-mine");
+    ASSERT_EQ(loaded.outputProfiles().size(), 1u);
+    EXPECT_EQ(loaded.outputProfiles()[0].id, "op-mine");
     EXPECT_EQ(loaded.projectItems[0].outputProfileId, "op-mine");
 }
 
@@ -240,10 +241,10 @@ TEST(OutputPresetLoadTest, DivergedPresetIdProfileIsStrippedToAUserProfile)
 
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path());
 
-    ASSERT_EQ(loaded.outputProfiles.size(), 1u);
-    EXPECT_FALSE(Models::outputProfilePresetById(loaded.outputProfiles[0].id).has_value());
-    EXPECT_EQ(loaded.outputProfiles[0].outputFormat, Models::OutputFormat::WebP);
-    EXPECT_EQ(loaded.projectItems[0].outputProfileId, loaded.outputProfiles[0].id);
+    ASSERT_EQ(loaded.outputProfiles().size(), 1u);
+    EXPECT_FALSE(Models::outputProfilePresetById(loaded.outputProfiles()[0].id).has_value());
+    EXPECT_EQ(loaded.outputProfiles()[0].outputFormat, Models::OutputFormat::WebP);
+    EXPECT_EQ(loaded.projectItems[0].outputProfileId, loaded.outputProfiles()[0].id);
 }
 
 TEST(OutputPresetLoadTest, MigrationIsIdempotent)
@@ -259,7 +260,7 @@ TEST(OutputPresetLoadTest, MigrationIsIdempotent)
     ser.save(first, ws.path());
     const auto second = ser.load(ws.path());
 
-    EXPECT_EQ(first.outputProfiles.size(), second.outputProfiles.size());
+    EXPECT_EQ(first.outputProfiles().size(), second.outputProfiles().size());
     ASSERT_EQ(first.projectItems.size(), 1u);
     ASSERT_EQ(second.projectItems.size(), 1u);
     EXPECT_EQ(first.projectItems[0].outputProfileId, Models::k_webtoonStandardPresetId);
@@ -267,18 +268,23 @@ TEST(OutputPresetLoadTest, MigrationIsIdempotent)
 }
 
 // ===========================================================================
-// save() — the lib refuses to persist a preset, whatever the consumer does
+// The lib refuses to admit a preset into the palette — and therefore never writes one
 // ===========================================================================
 
-TEST(OutputPresetSaveTest, PresetIdProfileIsNeverWritten)
+TEST(OutputPresetSaveTest, PresetIsRefusedByTheEditorAndNeverWritten)
 {
-    // A misbehaving consumer stuffs a preset into outputProfiles. The serializer must drop it.
+    // The palette is private and can only be set through WorkspaceEditor.  Hand it a preset among
+    // the profiles: the editor drops it on the way in (the front-line guarantee), so it is gone
+    // before anything can persist it — and the serializer's own guard keeps it out regardless.
     Models::Workspace ws;
-    ws.outputProfiles.push_back(Models::webtoonStandardPreset());  // preset id
-    ws.outputProfiles.push_back(userProfile("op-user1", "Mine"));
+    Infrastructure::WorkspaceEditor(ws).replaceOutputProfiles(
+        {Models::webtoonStandardPreset(),          // preset id — must be dropped
+         userProfile("op-user1", "Mine")});
+
+    ASSERT_EQ(ws.outputProfiles().size(), 1u);
+    EXPECT_EQ(ws.outputProfiles()[0].id, "op-user1");
 
     const std::string json = Infrastructure::WorkspaceSerializer{}.serialize(ws);
-
     EXPECT_EQ(json.find(std::string(Models::k_webtoonStandardPresetId)), std::string::npos);
     EXPECT_NE(json.find("op-user1"), std::string::npos);
 }
