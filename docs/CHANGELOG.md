@@ -61,6 +61,11 @@ a consumer that used the removed preset internals must adapt.
   and **`onSliceSkipped(SliceSkipped)`** for a clean slice a partial re-render leaves untouched. All are
   optional. Callbacks fire synchronously on the calling thread; the library remains thread- and
   GUI-agnostic.
+- **`Models::FileStatus::Skipped`** — a new lifecycle value for an input the last render did not
+  include (no canvas profile matched its size, one exists but is not linked to the project, or it
+  failed to load). Distinct from `Missing` (the file is present) and `Processed` (it exists but was
+  never rendered). Set by `applyProcessingResults()` (above) and reported live during a render via
+  the `onInput` callback; a consumer switching over `FileStatus` must handle the new value.
 - **`Infrastructure::WorkspaceEditor`** (`platemaker/infrastructure/workspace_editor/workspace_editor.hpp`)
   — the single authority that mutates a workspace's profile palettes while enforcing its invariants.
   Intent-level ops: `addCanvasProfile` / `removeCanvasProfile` / `replaceCanvasProfiles` (carries
@@ -184,7 +189,10 @@ directions — the new fields are additive, so older builds still open newer wor
 - **Breaking — `ProjectItem::sanitize()`** now takes the workspace canvas profiles, and
   flags config-stale files as `Desynchronized` alongside the existing on-disk checks
 - **Breaking — `ProjectItem::applyProcessingResults()`** takes the applied profiles and the
-  workspace profile list, so the canvas baseline is recorded with the render
+  workspace profile list, so the canvas baseline is recorded with the render; it now **also takes
+  `skippedInputPaths`** (`ProcessingOutcome::skippedPages`) and marks those inputs
+  `FileStatus::Skipped` instead of `Processed`, so a page the render left out (no matching/linked
+  canvas profile, or a load error) no longer masquerades as done
 - **Breaking — `ScaledStrip::sliceAll()`** streams each slice to a callback instead of
   returning them all; non-const and single-use
 - **Breaking — `Slicer` removed** — it wrapped two ints and forwarded to `ScaledStrip`,

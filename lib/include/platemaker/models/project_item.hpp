@@ -66,7 +66,10 @@ enum class FileStatus {
     Modified,       //!< File exists on disk but its content has changed since last processing.
     Missing,        //!< File was registered but cannot be found on disk.
     Desynchronized, //!< Output is out-of-sync with the current input set.
-    Done            //!< Output slice is up-to-date with the current input set and workspace config.
+    Done,           //!< Output slice is up-to-date with the current input set and workspace config.
+    Skipped         //!< Input the last render did not include — no canvas profile matched its size, or
+                    //!< one exists but is not linked to the project, or it failed to load. Distinct from
+                    //!< Missing (the file is present) and Processed (it exists but was never rendered).
 };
 
 // ---------------------------------------------------------------------------
@@ -229,7 +232,7 @@ struct ScanMergeResult {
  * if (!project.isUpToDate()) {
  *     auto outcome = pipeline.run(...);     // Core layer
  *     project.applyProcessingResults(outcome.records, outcome.appliedProfiles,
- *                                    ws.canvasProfiles(), outDir, now);
+ *                                    outcome.skippedPages, ws.canvasProfiles(), outDir, now);
  * }
  * \endcode
  *
@@ -465,6 +468,11 @@ public:
      *
      * \param records           One record per saved output file, in order.
      * \param appliedProfiles   One entry per input the run considered.
+     * \param skippedInputPaths Absolute paths the run did not include (no matching/linked canvas
+     *                          profile, or a load error — i.e. \c ProcessingOutcome::skippedPages).
+     *                          These inputs are marked \c FileStatus::Skipped instead of
+     *                          \c Processed, so a page the render left out does not masquerade as
+     *                          done.
      * \param workspaceProfiles The full workspace palette, to capture
      *                          \c canvasProfileIdsAtRender via
      *                          \c effectiveCanvasProfileIds().
@@ -474,6 +482,7 @@ public:
     void applyProcessingResults(
         const std::vector<ProcessingSliceRecord>& records,
         const std::vector<AppliedCanvasProfile>&  appliedProfiles,
+        const std::vector<std::string>&           skippedInputPaths,
         const std::vector<CanvasProfile>&         workspaceProfiles,
         const std::string&                        outputDirectory,
         const std::string&                        timestamp);

@@ -1237,6 +1237,7 @@ static int cmdProcess(const Opts& opts)
         project.applyPartialResults(outcome.records);
     } else {
         project.applyProcessingResults(outcome.records, outcome.appliedProfiles,
+                                       outcome.skippedPages,
                                        effectiveProfiles, outputDir, nowIso8601());
 
         // Remove outputs the new configuration no longer produces (e.g. old-format
@@ -1643,6 +1644,7 @@ static int cmdProjectStatus(const Opts& opts)
             case FileStatus::Missing:        return "MISSING";
             case FileStatus::Desynchronized: return "DESYNC";
             case FileStatus::Done:           return "DONE";
+            case FileStatus::Skipped:        return "SKIPPED";
         }
         return "UNKNOWN";
     };

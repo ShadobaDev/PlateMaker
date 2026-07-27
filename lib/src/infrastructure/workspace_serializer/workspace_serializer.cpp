@@ -99,7 +99,8 @@ NLOHMANN_JSON_SERIALIZE_ENUM(FileStatus, {
     {FileStatus::Modified,       "Modified"},
     {FileStatus::Missing,        "Missing"},
     {FileStatus::Desynchronized, "Desynchronized"},
-    {FileStatus::Done,           "Done"}
+    {FileStatus::Done,           "Done"},
+    {FileStatus::Skipped,        "Skipped"}
 })
 
 // --- JpegOptions ---

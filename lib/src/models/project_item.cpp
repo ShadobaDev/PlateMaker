@@ -340,6 +340,7 @@ void ProjectItem::rebuildLookupTables()
 void ProjectItem::applyProcessingResults(
     const std::vector<ProcessingSliceRecord>& records,
     const std::vector<AppliedCanvasProfile>&  appliedProfiles,
+    const std::vector<std::string>&           skippedInputPaths,
     const std::vector<CanvasProfile>&         workspaceProfiles,
     const std::string&                        outputDirectory,
     const std::string&                        timestamp)
@@ -356,8 +357,23 @@ void ProjectItem::applyProcessingResults(
     for (const auto& ap : appliedProfiles)
         applied[ap.sourceFilePath] = &ap;
 
+    // Paths the run did not include (no matching/linked canvas profile, or a load error).
+    const std::unordered_set<std::string> skipped(
+        skippedInputPaths.begin(), skippedInputPaths.end());
+
     // Update each InputFile: hash, status, timestamp, contributesTo, canvas baseline.
     for (auto& inf : m_input_images) {
+        // A skipped page was not rendered, so it must not claim to be Processed (that is the
+        // "skipped pages silently go green" bug). Mark it Skipped and leave its hash/timestamp
+        // untouched — nothing was produced for it, and it contributes to no output.
+        if (skipped.count(inf.filePath)) {
+            inf.status = FileStatus::Skipped;
+            inf.contributesTo.clear();
+            inf.canvasProfileId.clear();
+            inf.canvasFingerprint.clear();
+            continue;
+        }
+
         const std::string h =
             Infrastructure::FileMetaData::computeFileSha256(inf.filePath);
         if (!h.empty()) {

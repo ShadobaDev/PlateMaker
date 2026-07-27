@@ -310,7 +310,7 @@ The **class** is additive, but its purpose is to take away the GUI's direct acce
 hence a MINOR (0.3.0), not a patch. It ships alongside `ProcessingCallbacks`; the GUI adopts it
 in **1.2.0**, dropping its direct `m_workspace` mutations. See the GUI TODO for the call-site map.
 
-### The "Webtoon Standard" preset is PNG, which cannot meet the platform it is named after
+### The "Webtoon Standard" preset is PNG, which cannot meet the platform it is named after — ✅ **SHIPPED (0.3.0)**
 
 the Webtoon Standard row in `k_outputPresetDefs` (`output_profile.hpp`) sets `outputFormat = PNG`. The preset
 is named after a platform whose published limits are roughly **2 MB per slice and ~20 MB per
