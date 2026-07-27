@@ -86,6 +86,20 @@ public:
      */
     WorkspaceRepairReport replaceCanvasProfiles(std::vector<Models::CanvasProfile> incoming);
 
+    /**
+     * \brief Sets (or clears) the generated-template metadata of one canvas profile.
+     *
+     * The precise counterpart to \c replaceCanvasProfiles's "carry templateInfo across a dialog
+     * round trip": template generation and deletion need to write an *exact* value — including an
+     * empty one to clear it — which a carry heuristic cannot express (a cleared field looks the same
+     * as a dropped one). Touches only \c templateInfo; every other field is left as-is.
+     *
+     * \param id   Profile to update.
+     * \param info The new template metadata (default-constructed to clear it).
+     * \return \c true if a profile with \p id was found and updated, \c false otherwise.
+     */
+    bool setCanvasProfileTemplateInfo(const std::string& id, Models::CanvasTemplateInfo info);
+
     // -----------------------------------------------------------------------
     // Output profile palette
     // -----------------------------------------------------------------------

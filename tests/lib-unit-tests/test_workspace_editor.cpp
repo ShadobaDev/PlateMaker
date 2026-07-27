@@ -145,6 +145,25 @@ TEST(WorkspaceEditorTest, ReplaceCanvasProfilesMintsMissingIdsAndDeduplicates)
     EXPECT_EQ(report.canvasProfiles[0].oldId, "cp-dup");
 }
 
+TEST(WorkspaceEditorTest, SetCanvasProfileTemplateInfoSetsAndClearsExactly)
+{
+    Models::Workspace ws;
+    Infrastructure::WorkspaceEditor ed(ws);
+    const std::string id = ed.addCanvasProfile(canvas("", "A", 800, 1000));
+
+    Models::CanvasTemplateInfo info;
+    info.path = "templates/a.png";
+    EXPECT_TRUE(ed.setCanvasProfileTemplateInfo(id, info));
+    EXPECT_EQ(ws.canvasProfiles()[0].templateInfo.path, "templates/a.png");
+
+    // Clearing sets an exactly-empty value — a carry heuristic could not express this.
+    EXPECT_TRUE(ed.setCanvasProfileTemplateInfo(id, Models::CanvasTemplateInfo{}));
+    EXPECT_TRUE(ws.canvasProfiles()[0].templateInfo.path.empty());
+
+    // Unknown id is a no-op failure.
+    EXPECT_FALSE(ed.setCanvasProfileTemplateInfo("cp-nope", info));
+}
+
 // ---------------------------------------------------------------------------
 // Output palette
 // ---------------------------------------------------------------------------

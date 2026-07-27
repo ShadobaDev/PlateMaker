@@ -185,6 +185,18 @@ WorkspaceRepairReport WorkspaceEditor::replaceCanvasProfiles(
     return report;
 }
 
+bool WorkspaceEditor::setCanvasProfileTemplateInfo(const std::string& id,
+                                                   Models::CanvasTemplateInfo info)
+{
+    for (auto& cp : m_ws.m_canvasProfiles) {
+        if (cp.id == id) {
+            cp.templateInfo = std::move(info);
+            return true;
+        }
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Output profile palette
 // ---------------------------------------------------------------------------
