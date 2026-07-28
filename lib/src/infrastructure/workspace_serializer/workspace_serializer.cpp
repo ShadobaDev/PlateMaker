@@ -18,6 +18,7 @@
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 
 #include <platemaker/infrastructure/file/path_utf8.hpp>
+#include <platemaker/infrastructure/id_generator/id_generator.hpp>
 #include <platemaker/infrastructure/workspace_editor/workspace_editor.hpp>
 
 #include <nlohmann/json.hpp>
@@ -221,7 +222,7 @@ void from_json(const nlohmann::json& j, OutputProfile& v) {
 // --- InputFile ---
 void to_json(nlohmann::json& j, const InputFile& v) {
     j = nlohmann::json{
-        {"uuid", v.uuid},
+        {"uid", v.uid},
         {"filePath", v.filePath},
         {"sha256", v.sha256},
         {"order", v.order},
@@ -235,7 +236,9 @@ void to_json(nlohmann::json& j, const InputFile& v) {
 }
 
 void from_json(const nlohmann::json& j, InputFile& v) {
-    j.at("uuid").get_to(v.uuid);
+    // uid: absent in workspaces written under the old "uuid" key (no longer read) — left empty and
+    // minted by ProjectItem::ensureUniqueFileUids() at load time.
+    if (j.contains("uid")) j.at("uid").get_to(v.uid);
     j.at("filePath").get_to(v.filePath);
     j.at("sha256").get_to(v.sha256);
     j.at("order").get_to(v.order);
@@ -267,7 +270,7 @@ void from_json(const nlohmann::json& j, SourceSegment& v) {
 // --- OutputFile ---
 void to_json(nlohmann::json& j, const OutputFile& v) {
     j = nlohmann::json{
-        {"uuid", v.uuid},
+        {"uid", v.uid},
         {"fileName", v.fileName},
         {"sha256", v.sha256},
         {"sourceMap", v.sourceMap},
@@ -276,7 +279,7 @@ void to_json(nlohmann::json& j, const OutputFile& v) {
 }
 
 void from_json(const nlohmann::json& j, OutputFile& v) {
-    j.at("uuid").get_to(v.uuid);
+    if (j.contains("uid")) j.at("uid").get_to(v.uid); // minted at load if absent (old "uuid" ignored)
     j.at("fileName").get_to(v.fileName);
     j.at("sha256").get_to(v.sha256);
     j.at("sourceMap").get_to(v.sourceMap);
@@ -287,7 +290,7 @@ void from_json(const nlohmann::json& j, OutputFile& v) {
 void to_json(nlohmann::json& j, const ProjectItem& v) {
     j = nlohmann::json{
         {"name",             v.name},
-        {"uuid",             v.uuid},
+        {"uid",              v.uid},
         {"inputDirectory",   v.inputDirectory},
         {"canvasProfileIds", v.canvasProfileIds()},
         {"outputProfileId",  v.outputProfileId()},
@@ -300,7 +303,7 @@ void to_json(nlohmann::json& j, const ProjectItem& v) {
 }
 void from_json(const nlohmann::json& j, ProjectItem& v) {
     if (j.contains("name"))             j.at("name").get_to(v.name);
-    if (j.contains("uuid"))             j.at("uuid").get_to(v.uuid);
+    if (j.contains("uid"))              j.at("uid").get_to(v.uid); // minted at load if absent (old "uuid" ignored)
     if (j.contains("inputDirectory"))   j.at("inputDirectory").get_to(v.inputDirectory);
     // canvasProfileIds / outputProfileId are intentionally NOT read here: they are private and only
     // WorkspaceEditor / WorkspaceSerializer may write them. load() installs them per project (below)
@@ -461,11 +464,22 @@ Models::Workspace WorkspaceSerializer::load(const std::string&     filePath,
     WorkspaceEditor(workspace).installLoaded(
         std::move(canvasProfiles), std::move(outputProfiles), report);
 
-    // Rebuild runtime lookup tables for every project.
-    // These tables are not serialised so they must always be reconstructed
-    // after loading from JSON.
-    for (auto& pi : workspace.projectItems)
+    // Repair identifiers and rebuild runtime tables for every project. Local uids (project, input,
+    // output) are minted where missing — a workspace written under the old "uuid" key arrives with them
+    // empty (that key is no longer read) — or where duplicated (the historical position-derived input
+    // ids could collide across re-scans). The lookup tables are not serialised, so they are always
+    // reconstructed after loading.
+    std::vector<std::string> takenProjectUids;
+    takenProjectUids.reserve(workspace.projectItems.size());
+    for (auto& pi : workspace.projectItems) {
+        if (pi.uid.empty() ||
+            std::find(takenProjectUids.begin(), takenProjectUids.end(), pi.uid) != takenProjectUids.end())
+            pi.uid = makeUniqueId("proj", takenProjectUids);
+        takenProjectUids.push_back(pi.uid);
+
+        pi.ensureUniqueFileUids();
         pi.rebuildLookupTables();
+    }
 
     return workspace;
 }

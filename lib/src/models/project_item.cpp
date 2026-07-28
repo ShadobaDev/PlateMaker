@@ -13,6 +13,7 @@
 #include <platemaker/models/project_item.hpp>
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/infrastructure/file/path_utf8.hpp>
+#include <platemaker/infrastructure/id_generator/id_generator.hpp>
 
 #include <algorithm>
 #include <filesystem>
@@ -36,7 +37,7 @@ ProjectItem::ProjectItem(ProjectItem&& other) noexcept
     // Order matches member declaration order (the two m_*ProfileId* link fields are now private,
     // declared after outputSignature / canvasProfileIdsAtRender) — keeps -Wreorder quiet.
     : name(std::move(other.name))
-    , uuid(std::move(other.uuid))
+    , uid(std::move(other.uid))
     , inputDirectory(std::move(other.inputDirectory))
     , outputSignature(std::move(other.outputSignature))
     , canvasProfileIdsAtRender(std::move(other.canvasProfileIdsAtRender))
@@ -54,7 +55,7 @@ ProjectItem& ProjectItem::operator=(ProjectItem&& other) noexcept
 {
     if (this != &other) {
         name                  = std::move(other.name);
-        uuid                  = std::move(other.uuid);
+        uid                   = std::move(other.uid);
         inputDirectory        = std::move(other.inputDirectory);
         outputSignature       = std::move(other.outputSignature);
         canvasProfileIdsAtRender = std::move(other.canvasProfileIdsAtRender);
@@ -427,7 +428,10 @@ void ProjectItem::applyProcessingResults(
     m_output_images.reserve(records.size());
     for (std::size_t i = 0; i < records.size(); ++i) {
         OutputFile outf;
-        outf.uuid      = "out-" + std::to_string(i);
+        // Positional but stable and unique within this wholesale rebuild — output_00N always maps to
+        // out-N. (Unlike inputs, the output list is regenerated in full each render, so there is no
+        // cross-scan collision to guard against.)
+        outf.uid       = "out-" + std::to_string(i);
         outf.fileName  = records[i].fileName;
         outf.sha256    = records[i].outputSha256;
         outf.sourceMap = records[i].sourceMap;
@@ -567,7 +571,9 @@ ScanMergeResult ProjectItem::mergeFileScan(
         } else {
             // --- Case 3: brand-new file ---
             InputFile inf;
-            inf.uuid     = "file-" + std::to_string(newList.size());
+            // uid is left empty here and minted uniquely by ensureUniqueFileUids() below — deriving it
+            // from the list position ("file-" + index) handed the same id to different files across
+            // re-scans.
             inf.filePath = newPath;
             inf.order    = newOrder;
             inf.status   = FileStatus::Pending;
@@ -600,6 +606,7 @@ ScanMergeResult ProjectItem::mergeFileScan(
     m_input_images = std::move(newList);
     m_isUpToDate   = false; // always requires at least a sanitize() pass
 
+    ensureUniqueFileUids();  // mint uids for the brand-new files (left empty above)
     rebuildLookupTables();
     return result;
 }
@@ -636,6 +643,30 @@ bool ProjectItem::addCanvasProfile(
 
     m_canvasProfileIds.push_back(profileId);
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// ensureUniqueFileUids
+// ---------------------------------------------------------------------------
+
+void ProjectItem::ensureUniqueFileUids()
+{
+    // Inputs and outputs are separate namespaces ("file-*" / "out-*"), so they are deduplicated
+    // independently. Only an empty or already-seen uid is (re)minted, so a set that is already unique
+    // is untouched and existing ids stay stable across loads.
+    const auto repair = [](auto& files, std::string_view prefix) {
+        std::vector<std::string> taken;
+        taken.reserve(files.size());
+        for (auto& f : files) {
+            if (f.uid.empty() ||
+                std::find(taken.begin(), taken.end(), f.uid) != taken.end())
+                f.uid = Infrastructure::makeUniqueId(prefix, taken);
+            taken.push_back(f.uid);
+        }
+    };
+
+    repair(m_input_images,  "file");
+    repair(m_output_images, "out");
 }
 
 } // namespace Platemaker::Models

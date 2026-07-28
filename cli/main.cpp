@@ -285,15 +285,15 @@ static std::string nowIso8601()
  * created by one command came out identical.
  *
  * \note "uid" (unique identifier), not "uuid": what we generate is a random identifier,
- *       not an RFC 4122 UUID, and it has never had that layout.  ProjectItem still calls
- *       the field \c uuid; renaming it is a public API break, so it waits for 0.3.0.
+ *       not an RFC 4122 UUID, and it has never had that layout.  The model field was renamed
+ *       \c uuid → \c uid in 0.3.0.
  */
 static std::string makeProjectUid(const Workspace& ws)
 {
     std::vector<std::string> taken;
     taken.reserve(ws.projectItems.size());
     for (const auto& pi : ws.projectItems)
-        taken.push_back(pi.uuid);
+        taken.push_back(pi.uid);
 
     return makeUniqueId("proj", taken);
 }
@@ -1016,7 +1016,7 @@ static int cmdProcess(const Opts& opts)
             // No match — create a new project and append to workspace.
             ProjectItem newProj;
             newProj.name           = inputDir.filename().string();
-            newProj.uuid           = makeProjectUid(ws);
+            newProj.uid            = makeProjectUid(ws);
             newProj.inputDirectory = absInput;
             // Use mergeFileScan() on the empty project to populate the file
             // list via the library layer (same path as updates later on).
@@ -1328,7 +1328,7 @@ static int cmdWorkspaceListProjects(const Opts& opts)
     std::cout << "Projects (" << ws.projectItems.size() << "):\n";
     for (const auto& pi : ws.projectItems) {
         std::cout << "  name          : " << pi.name << '\n'
-                  << "    uuid        : " << pi.uuid << '\n'
+                  << "    uid         : " << pi.uid << '\n'
                   << "    input dir   : "
                   << (pi.inputDirectory.empty() ? "(not set)" : pi.inputDirectory) << '\n'
                   << "    output dir  : "
@@ -1374,7 +1374,7 @@ static int cmdProjectCreate(const Opts& opts)
 
     ProjectItem newProj;
     newProj.name = opts.get("name");
-    newProj.uuid = makeProjectUid(ws);
+    newProj.uid = makeProjectUid(ws);
 
     if (opts.has("input")) {
         const fs::path inputDir = opts.get("input");
@@ -1675,7 +1675,7 @@ static int cmdProjectStatus(const Opts& opts)
     }
 
     std::cout << "Project: " << pi->name << '\n'
-              << "  uuid           : " << pi->uuid << '\n'
+              << "  uid            : " << pi->uid << '\n'
               << "  input dir      : "
               << (pi->inputDirectory.empty() ? "(not set)" : pi->inputDirectory) << '\n'
               << "  output dir     : "

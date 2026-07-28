@@ -167,7 +167,7 @@ TEST(NonAsciiPathTest, SanitizeReportsProcessedRatherThanPending)
     project.name = "Chapter 01";
 
     Models::InputFile inf;
-    inf.uuid     = "file-0";
+    inf.uid      = "file-0";
     inf.order    = 0;
     inf.filePath = input;
     inf.sha256   = Infrastructure::FileMetaData::computeFileSha256(input);
@@ -228,7 +228,7 @@ TEST(NonAsciiPathTest, WorkspaceRemembersNonAsciiInputPathsExactly)
     Models::ProjectItem project;
     project.name = "Chapter 01";
     Models::InputFile inf;
-    inf.uuid     = "file-0";
+    inf.uid      = "file-0";
     inf.filePath = input;
     project.getInputImages().push_back(inf);
     original.projectItems.push_back(std::move(project));

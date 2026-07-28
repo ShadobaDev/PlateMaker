@@ -63,7 +63,7 @@ private:
 std::string projectJson(const std::string& canvasIds, const std::string& outputProfileId)
 {
     return R"({
-        "uuid": "proj-1", "name": "Chapter 01",
+        "uid": "proj-1", "name": "Chapter 01",
         "inputDirectory": "", "outputDirectory": "",
         "inputFiles": [], "outputFiles": [],
         "outputSignature": "", "canvasProfileIdsAtRender": [],

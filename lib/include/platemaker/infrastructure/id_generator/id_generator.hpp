@@ -53,8 +53,8 @@ namespace Platemaker::Infrastructure {
 /**
  * \brief Returns an identifier that does not appear in \p taken.
  *
- * The general form, for entities the typed helpers below do not cover (project uids, for
- * instance, whose field is named \c uuid rather than \c id).
+ * The general form, for entities the typed helpers below do not cover (project / input / output
+ * uids, for instance, whose field is named \c uid rather than \c id).
  *
  * \param prefix Short tag, as for makeId().
  * \param taken  Identifiers already in use.

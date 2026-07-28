@@ -354,9 +354,13 @@ The Qt GUI is developed in a separate repository. It consumes `libplatemaker` as
 
 ## 6. Data Models
 
+> **`id` / `uid` are local identifiers, not RFC 4122 UUIDs** — random `<prefix>-<hex>` strings minted by
+> `Infrastructure::id_generator` (profiles use `id`; projects/inputs/outputs use `uid`). The `: uid`
+> type annotation below means exactly that.
+
 ### `CanvasProfile`
 ```
-id            : uuid      // stable identifier — never changes after creation
+id            : uid       // stable identifier — never changes after creation
 name          : string    // e.g. "Webtoon 4-page" or "Marvel Standard" (future)
 canvasSize    : Size      // full canvas including margins, e.g. 1600×10240
 margins       : Margins   // top/right/bottom/left in px
@@ -366,7 +370,7 @@ visualColour  : RGBA      // template overlay colour, e.g. #FF69B4 at 50% alpha
 
 ### `OutputProfile`
 ```
-id              : uuid        // stable identifier — never changes after creation
+id              : uid         // stable identifier — never changes after creation
 name            : string      // e.g. "Webtoon Standard"
 targetWidth     : int         // e.g. 800
 sliceHeight     : int         // e.g. 1280
@@ -420,7 +424,7 @@ GUI surfaces it and warns when a cap would be exceeded. Tracked in both
 
 ### `PageItem`
 ```
-id           : uuid (string)
+uid          : uid       // local id (e.g. "file-<hex>"), minted if missing/duplicate on load
 filePath     : string    // absolute path on disk
 order        : int       // 0-indexed display order (not filesystem order)
 status       : enum      // PENDING | PROCESSED | SKIPPED | ERROR
@@ -437,13 +441,13 @@ A **project** is an ordered set of source images that are processed together as 
 single virtual strip, sharing one output profile and a curated list of canvas profiles.
 
 ```
-id                : uuid        // stable identifier
+uid               : uid         // stable local identifier
 name              : string      // user-facing label, e.g. "Chapter 01"
 inputDirectory    : string      // directory scanned for source images
 outputDirectory   : string      // where output slices are written
-outputProfileId   : uuid        // references OutputProfile.id in the parent Workspace
+outputProfileId   : uid         // references OutputProfile.id in the parent Workspace
                                 // exactly one output profile per project
-canvasProfileIds  : uuid[]      // ordered list of CanvasProfile.id values
+canvasProfileIds  : uid[]       // ordered list of CanvasProfile.id values
                                 // order = priority (first match wins)
                                 // invariant: no two entries may refer to profiles
                                 // whose canvasSize is identical (conflict guard)
@@ -488,7 +492,7 @@ outputDirectory: string           // workspace-level default (overridden per pro
 > and a top-level `stripDirty`/`processedFiles`.  These fields are replaced by
 > `ProjectItem` in schema v2.  The `WorkspaceSerializer` migration chain must convert
 > old documents by wrapping the flat page list into a single `ProjectItem` and resolving
-> the active profile names to UUIDs.
+> the active profile names to profile ids.
 
 `ProjectItem.stripDirty` is set to `true` whenever: page order changes, a page is
 added/removed, or the project's `outputProfileId` changes.  When `true`, the entire
@@ -720,7 +724,7 @@ So a raw `pi.canvasProfileIds.push_back()` (bypassing the dimension guard) or `p
 `ProjectItem::addCanvasProfile()` and applies the dimension-collision guard; `setProjectOutputProfile()`
 validates the id resolves (user profile or preset).  `WorkspaceSerializer` (a friend) installs both
 palettes and the project links at load time, running the same repair rules an in-session edit obeys.
-(`Workspace::projectItems` and `ProjectItem::name`/`uuid`/`inputDirectory`/`outputSignature` stay public
+(`Workspace::projectItems` and `ProjectItem::name`/`uid`/`inputDirectory`/`outputSignature` stay public
 — they carry no cross-cutting invariant.)
 
 Linking currently returns `bool` (linked / rejected); the richer result below — naming the specific
@@ -741,9 +745,9 @@ struct AddCanvasProfileResult {          // possible future enrichment of the bo
 **CLI response on `Conflict`:**
 ```
 Error: canvas profile '<new-name>' (WxH) conflicts with already-linked
-       profile '<existing-name>' (WxH) [id: <existing-uuid>].
+       profile '<existing-name>' (WxH) [id: <existing-id>].
 Hint:  to replace it, run:
-         platemaker project rm-profile --project <NAME> --profile <existing-uuid>
+         platemaker project rm-profile --project <NAME> --profile <existing-id>
        then re-run the add command.
 ```
 
@@ -786,7 +790,7 @@ public:
     /// Construction is O(N_workspace × N_project_ids).
     CanvasProfileMatcher(
         const std::vector<CanvasProfile>& allWorkspaceProfiles,
-        const std::vector<std::string>&   projectProfileIds); // ordered UUIDs
+        const std::vector<std::string>&   projectProfileIds); // ordered profile ids
 
     /// Resolves the canvas profile for one input image of size \p w × \p h.
     ///

@@ -99,7 +99,7 @@ struct SourceSegment {
  * \brief An input image file tracked by a \c ProjectItem.
  */
 struct InputFile {
-    std::string uuid;                    //!< Unique identifier for this entry.
+    std::string uid;                     //!< Local unique id for this entry (e.g. "file-<hex>"). Not an RFC 4122 UUID.
     std::string filePath;                //!< Absolute path on disk.
     std::string sha256;                  //!< SHA-256 hex digest from the last processing run.
     int         order        = 0;        //!< 0-based position in the virtual strip.
@@ -133,7 +133,7 @@ struct InputFile {
  * \brief An output slice file produced by a \c ProjectItem processing run.
  */
 struct OutputFile {
-    std::string uuid;     //!< Unique identifier for this entry.
+    std::string uid;      //!< Local unique id for this entry (e.g. "out-3"). Not an RFC 4122 UUID.
     std::string fileName; //!< Filename only (e.g. "output_001.png").
     std::string sha256;   //!< SHA-256 hex digest of the generated file.
     std::vector<SourceSegment> sourceMap; //!< Input contributions for this slice.
@@ -252,7 +252,7 @@ public:
     // Public serialised fields
     // -----------------------------------------------------------------------
     std::string name;           //!< Human-readable chapter name (e.g. "Chapter 01").
-    std::string uuid;           //!< Auto-generated unique identifier.
+    std::string uid;            //!< Local unique id (e.g. "proj-<hex>"), minted by makeUniqueId. Not an RFC 4122 UUID.
     std::string inputDirectory; //!< Absolute path to the source image directory.
 
     /**
@@ -467,6 +467,18 @@ public:
      *  - \c m_sha256Index         — sha256   → current file path.
      */
     void rebuildLookupTables();
+
+    /**
+     * \brief Gives every input / output file a non-empty, unique \c uid, minting one where it is
+     *        missing or duplicated.
+     *
+     * The uids are short local identifiers (\c "file-<hex>" / \c "out-N"), not RFC 4122 UUIDs.  This
+     * repairs two cases: a workspace written under the old \c "uuid" key (no longer read) arrives with
+     * empty uids; and the historical position-derived scheme (\c "file-" + index) could hand the same
+     * id to two files across re-scans.  Idempotent — an already-unique set is left untouched, so
+     * existing ids stay stable.  Called after deserialisation (\c load()) and after \c mergeFileScan().
+     */
+    void ensureUniqueFileUids();
 
     /**
      * \brief Applies the results of a pipeline run to all tracked records.

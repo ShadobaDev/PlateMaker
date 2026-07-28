@@ -56,8 +56,17 @@ a consumer that used the removed preset internals must adapt.
   raw `pi.canvasProfileIds.push_back()` (skipping the "one profile per canvas W×H" guard,
   SPECIFICATION.md §7.5.2) no longer compiles. `from_json(ProjectItem)` is intentionally partial (like
   `Workspace`); `load()` installs the links through the friend path. Other `ProjectItem` fields
-  (`name`/`uuid`/`inputDirectory`/`outputSignature`/`canvasProfileIdsAtRender`) stay public — they carry
+  (`name`/`uid`/`inputDirectory`/`outputSignature`/`canvasProfileIdsAtRender`) stay public — they carry
   no cross-cutting invariant.
+- **`uuid` → `uid` across `InputFile` / `OutputFile` / `ProjectItem`, and the ids are now genuinely
+  unique.** The field and its JSON key are renamed (these are short *local* ids like `file-<hex>` /
+  `out-N` / `proj-<hex>`, never RFC 4122 UUIDs — the name over-promised). **No back-compat**: the old
+  `"uuid"` key is not read, so a workspace written by an older build loads with empty file/project ids
+  that are minted fresh on load (and the old key is dropped on the next save). Input ids are no longer
+  derived from the list position (`"file-" + index`), which could hand two files the same id across
+  re-scans; `ProjectItem::ensureUniqueFileUids()` and `WorkspaceSerializer::load()` mint via
+  `Infrastructure::makeUniqueId` and de-duplicate. The GUI's project id (previously a timestamp — also
+  collision-prone) now goes through `makeUniqueId` too.
 
 ### Added
 
