@@ -17,6 +17,19 @@ a consumer that used the removed preset internals must adapt.
 
 ### Changed (breaking)
 
+- **Unmatched input pages are now rendered implicitly instead of being dropped.** When a project has
+  canvas profiles and an input's `W×H` matches none of them, the pipeline used to skip the page (it
+  never joined the strip, only a summary count noted it — and because slice numbering is continuous,
+  the missing page left no visible gap). It is now **scaled to `targetWidth` with no margin crop** (the
+  same path a project with no profiles uses) and reported via `onInput` as `AppendedWithoutProfile`, or
+  `AppendedProfileNotLinked` (with a *Warning* log naming the ids) when a same-size profile exists in
+  the workspace but is not linked to the project. Such a page is marked `FileStatus::Processed` with an
+  empty `canvasProfileId`. `ProcessingOutcome::skippedPages` now lists only missing / load-error inputs.
+  Two new `InputStatus` values are added; `SkippedNoProfile` / `SkippedProfileNotLinked` are retained
+  but unemitted (reserved for a future opt-in "drop unmatched pages" mode). This deviates from the old
+  SPECIFICATION §7.5.1 steps 4a/4b (now amended): determinism is preserved by *visibility* (the input
+  is flagged) rather than by omission, and quick-start renders and late-added profile-less frames no
+  longer lose pages. See §7.5.1.
 - **Presets are code-defined and never persisted.** A preset is a baked-in template — a compile-time
   catalogue (`Models::k_outputPresetDefs` / `OutputPresetDef`) materialised on demand — never
   serialised into `outputProfiles`. Preset-ness is **provenance**, tested zero-copy by
@@ -74,17 +87,20 @@ a consumer that used the removed preset internals must adapt.
   catalogue (single source of truth) and its zero-copy membership test.
 - **`Core::ProcessingCallbacks` and its event payloads** (`core/processing_callbacks/processing_callbacks.hpp`)
   — the pipeline now reports, in addition to progress/log/slice-saved: **`onInput(InputResult)`** once per
-  input (Appended, or Skipped with a reason — `SkippedMissing` / `SkippedNoProfile` /
-  `SkippedProfileNotLinked` with the matching-but-unlinked workspace profile ids / `SkippedError`);
-  **`onSlicingStarted(SlicingStarted)`** at the phase-1→phase-2 boundary with the expected slice count;
+  input (`Appended`; `AppendedWithoutProfile` / `AppendedProfileNotLinked` for an implicitly-rendered page,
+  the latter carrying the matching-but-unlinked workspace profile ids; or `SkippedMissing` / `SkippedError`.
+  The `SkippedNoProfile` / `SkippedProfileNotLinked` values remain in the enum but are no longer emitted —
+  reserved for a future opt-in skip mode); **`onSlicingStarted(SlicingStarted)`** at the phase-1→phase-2
+  boundary with the expected slice count;
   and **`onSliceSkipped(SliceSkipped)`** for a clean slice a partial re-render leaves untouched. All are
   optional. Callbacks fire synchronously on the calling thread; the library remains thread- and
   GUI-agnostic.
 - **`Models::FileStatus::Skipped`** — a new lifecycle value for an input the last render did not
-  include (no canvas profile matched its size, one exists but is not linked to the project, or it
-  failed to load). Distinct from `Missing` (the file is present) and `Processed` (it exists but was
-  never rendered). Set by `applyProcessingResults()` (above) and reported live during a render via
-  the `onInput` callback; a consumer switching over `FileStatus` must handle the new value.
+  include: a **missing** file or one that **failed to load**. (A page that merely matches no canvas
+  profile is no longer skipped — it is rendered implicitly and ends up `Processed`; see the
+  implicit-render entry under *Changed*.) Distinct from `Missing` and `Processed`. Set by
+  `applyProcessingResults()` (above) and reported live during a render via the `onInput` callback;
+  a consumer switching over `FileStatus` must handle the new value.
 - **`Infrastructure::WorkspaceEditor`** (`platemaker/infrastructure/workspace_editor/workspace_editor.hpp`)
   — the single authority that mutates a workspace's profile palettes while enforcing its invariants.
   Intent-level ops: `addCanvasProfile` / `removeCanvasProfile` / `replaceCanvasProfiles` (carries

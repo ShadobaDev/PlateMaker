@@ -108,6 +108,12 @@ ProcessingOutcome ProcessingPipeline::run(
             continue;
         }
 
+        // Status reported to onInput after the page is appended. Stays Appended for a matched
+        // profile (or a project with no profiles at all); the two mismatch cases below downgrade it
+        // to an implicit-render status but the page is still rendered — never dropped.
+        InputStatus              appendStatus = InputStatus::Appended;
+        std::vector<std::string> candidateIds;
+
         try {
             const CanvasProfile* matchedProfile = nullptr;
             if (hasProfiles) {
@@ -116,31 +122,38 @@ ProcessingOutcome ProcessingPipeline::run(
                 if (w <= 0 || h <= 0)
                     throw std::runtime_error("cannot determine image dimensions");
 
+                const std::string dims = std::to_string(w) + "x" + std::to_string(h);
                 const auto result = matcher.resolve(w, h);
-                if (result.status != ProfileMatchResult::Status::Matched) {
-                    // A profile of this size may exist in the workspace but not be linked to the
-                    // project (FoundInWorkspaceOnly) — a distinct, actionable case from "no profile
-                    // anywhere". Surface the difference (and the candidate ids) to onInput.
-                    InputStatus              inputStatus  = InputStatus::SkippedNoProfile;
-                    std::vector<std::string> candidateIds;
-                    std::string              reason       = "no matching canvas profile";
-                    if (result.status == ProfileMatchResult::Status::FoundInWorkspaceOnly) {
-                        inputStatus = InputStatus::SkippedProfileNotLinked;
-                        reason      = "a canvas profile matches but is not linked to this project";
-                        candidateIds.reserve(result.workspaceCandidates.size());
-                        for (const auto* cand : result.workspaceCandidates)
-                            candidateIds.push_back(cand->id);
-                    }
+                if (result.status == ProfileMatchResult::Status::Matched) {
+                    matchedProfile = result.profile;
+                    emitLog(callbacks.onLog, ProcessingLogLevel::Info,
+                            "Applied canvas profile '" + matchedProfile->name + "' (" + dims
+                            + ") to " + file.filePath);
+                } else if (result.status == ProfileMatchResult::Status::FoundInWorkspaceOnly) {
+                    // A same-size profile exists in the workspace but is not linked to this project.
+                    // Render implicitly (no margins) rather than drop the page, but say so loudly:
+                    // linking the profile is a one-click fix that would apply its margins.
+                    appendStatus = InputStatus::AppendedProfileNotLinked;
+                    candidateIds.reserve(result.workspaceCandidates.size());
+                    for (const auto* cand : result.workspaceCandidates)
+                        candidateIds.push_back(cand->id);
+                    const std::string name = result.workspaceCandidates.empty()
+                                                 ? std::string{}
+                                                 : result.workspaceCandidates.front()->name;
                     emitLog(callbacks.onLog, ProcessingLogLevel::Warning,
-                            "Skipping (" + reason + " for "
-                            + std::to_string(w) + "x" + std::to_string(h) + "): "
-                            + file.filePath);
-                    outcome.skippedPages.push_back(file.filePath);
-                    if (callbacks.onInput)
-                        callbacks.onInput({file.filePath, inputStatus, std::move(candidateIds), {}});
-                    continue;
+                            "No linked canvas profile matches " + dims + " — rendering " + file.filePath
+                            + " without margins; profile '" + name + "' (" + dims
+                            + ") exists in the workspace but is not linked to this project."
+                            + " Link it to apply its margins.");
+                } else {
+                    // No profile of this size exists anywhere — render the page implicitly (scaled,
+                    // no margins), exactly the no-profiles path. Determinism is preserved by
+                    // visibility (the input is flagged) rather than by omission.
+                    appendStatus = InputStatus::AppendedWithoutProfile;
+                    emitLog(callbacks.onLog, ProcessingLogLevel::Info,
+                            "No canvas profile matches " + dims + " — rendering " + file.filePath
+                            + " without margins");
                 }
-                matchedProfile = result.profile;
             }
 
             // Record what was actually applied to this page. Editing a profile leaves
@@ -170,7 +183,7 @@ ProcessingOutcome ProcessingPipeline::run(
                 strip.append(std::move(scaled));
             }
             if (callbacks.onInput)
-                callbacks.onInput({file.filePath, InputStatus::Appended, {}, {}});
+                callbacks.onInput({file.filePath, appendStatus, std::move(candidateIds), {}});
         } catch (const std::exception& e) {
             emitLog(callbacks.onLog, ProcessingLogLevel::Warning,
                     std::string("Skipping (") + e.what() + "): " + file.filePath);

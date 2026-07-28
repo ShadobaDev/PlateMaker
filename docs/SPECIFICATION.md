@@ -584,36 +584,46 @@ W×H pair, so the first match in subA is always final — no tie-breaking needed
 
    4a. If not found in subB either:
          → NotFoundAnywhere
-         → CLI ERROR: "no canvas profile matches <W>×<H>"
-         → CLI hint: "run `platemaker workspace add-profile
-                       --canvas <W>x<H> --margins 0,0,0,0`
-                       then `platemaker project add-profile
-                       --project <NAME> --profile <ID>`"
-         → page is skipped; reported in final summary.
+         → page is **rendered implicitly**: scaled to the output profile's
+           `targetWidth` with no margin crop (the same path a project with no
+           canvas profiles uses). `appliedProfiles` records an empty profile id.
+         → reported live via `onInput` as `AppendedWithoutProfile` and logged
+           (Info): "No canvas profile matches <W>×<H> — rendering <file> without margins".
 
    4b. If found in subB:
          → FoundInWorkspaceOnly
-         → CLI ERROR: "canvas profile '<name>' (<W>×<H>) exists in workspace
-                       but is not linked to project '<project-name>'"
-         → CLI hint: list all subB profiles matching W×H with their IDs,
-                     then "run `platemaker project add-profile
-                     --project <NAME> --profile <ID>` to link it"
-         → page is skipped; reported in final summary.
+         → page is **rendered implicitly** exactly as in 4a (no margins), but loudly:
+         → reported live via `onInput` as `AppendedProfileNotLinked` carrying the
+           matching workspace-profile ids, and logged (Warning):
+           "No linked canvas profile matches <W>×<H> — rendering <file> without
+            margins; profile '<name>' (<W>×<H>) exists in the workspace but is not
+            linked to this project. Link it to apply its margins."
+         → linking the profile (`platemaker project add-profile --project <NAME>
+           --profile <ID>`) is a one-click fix that applies its margins on the next run.
 ```
 
-> **Design rationale:** Step 6b is an explicit error rather than a silent fallback.
-> Without it, adding a new profile to the workspace could silently change the
-> behaviour of every existing project that has a page with matching dimensions —
-> the opposite of determinism.  The user must consciously opt a project into a profile.
+> **Design rationale:** Neither 4a nor 4b drops the page. Dropping is silent — because
+> slice numbering is continuous, a missing page leaves no visible gap in the output, so
+> a published chapter can lose a page unnoticed. Rendering the page implicitly and
+> flagging the input preserves determinism by **visibility** rather than by omission:
+> adding a workspace profile still cannot silently change a project's margins (4b renders
+> without them and says so loudly until the user consciously links it), but a page is never
+> lost. This covers quick-start (render right after install, before any profile exists) and
+> late-added, profile-less frames. The `SkippedNoProfile` / `SkippedProfileNotLinked`
+> `InputStatus` values are retained (currently unemitted) so a future opt-in "drop unmatched
+> pages" mode can restore the strict behaviour without a breaking change.
 
-**Model effect — `FileStatus::Skipped`.** A page the run left out (no matching profile, a matching but
-unlinked one, or a load error) is recorded as `FileStatus::Skipped` on its `InputFile`, **not**
-`Processed`.  `ProjectItem::applyProcessingResults()` takes the run's `skippedPages`
-(`ProcessingOutcome::skippedPages`) and marks exactly those inputs, so a skipped page is honestly
-flagged afterwards instead of masquerading as done.  The pipeline also reports each input **live** in
-phase 1 through `ProcessingCallbacks::onInput(InputResult)` — `Appended`, or `Skipped*` with the reason
-(missing / no matching profile / matched-but-unlinked with the candidate ids / load error) — which the
-GUI uses to colour input tiles as the strip is built.
+**Model effect.** An implicitly-rendered page is a normal rendered input: `applyProcessingResults()`
+marks it `FileStatus::Processed` with an **empty** `canvasProfileId` — the empty id being the honest
+record that no profile was applied (and the reason a later link of a matching profile registers as a
+staleness change). `FileStatus::Skipped` now covers only a **missing** file or a **load error** — the
+run's `skippedPages` (`ProcessingOutcome::skippedPages`) lists exactly those, and
+`ProjectItem::applyProcessingResults()` marks them, so a genuinely-skipped page is flagged instead of
+masquerading as done. The pipeline reports each input **live** in phase 1 through
+`ProcessingCallbacks::onInput(InputResult)` — `Appended` (matched a profile, or no profiles in use),
+`AppendedWithoutProfile` / `AppendedProfileNotLinked` (rendered implicitly, the latter carrying the
+unlinked candidate ids), or `SkippedMissing` / `SkippedError` — which the GUI uses to colour input
+tiles as the strip is built.
 
 #### 7.5.2 Conflict guard (ProjectItem invariant)
 

@@ -42,11 +42,19 @@ enum class ProcessingLogLevel { Info, Warning, Error };
 
 /// Outcome of processing one input file during phase 1 (strip building).
 enum class InputStatus {
-    Appended,                //!< Loaded, scaled and appended to the virtual strip.
+    Appended,                 //!< Loaded, scaled and appended to the strip using a matched canvas profile,
+                              //!< or with no profile at all when the project uses no canvas profiles.
+    AppendedWithoutProfile,   //!< Canvas profiles are in use but none — anywhere — matches this size, so the
+                              //!< page was rendered implicitly (scaled, no margins). Not an error.
+    AppendedProfileNotLinked, //!< Rendered implicitly (scaled, no margins), but a profile of this size exists
+                              //!< in the workspace unlinked; see \c InputResult::unlinkedCandidateProfileIds.
+                              //!< Link it to apply its margins.
     SkippedMissing,          //!< File was FileStatus::Missing.
-    SkippedNoProfile,        //!< Canvas profiles are in use and none — anywhere — matches this size.
-    SkippedProfileNotLinked, //!< A profile of this size exists in the workspace but is not linked to the
-                             //!< project; see \c InputResult::unlinkedCandidateProfileIds.
+    SkippedNoProfile,        //!< Retained but not currently emitted: the pipeline renders unmatched pages
+                             //!< implicitly (see \c AppendedWithoutProfile). Kept for a future opt-in skip mode.
+    SkippedProfileNotLinked, //!< Retained but not currently emitted: a same-size profile exists unlinked, yet
+                             //!< the pipeline now renders such pages implicitly (see \c AppendedProfileNotLinked).
+                             //!< Kept for a future opt-in skip mode; would carry \c unlinkedCandidateProfileIds.
     SkippedError,            //!< Load / margin-crop / scale failed; see \c InputResult::detail.
 };
 

@@ -181,61 +181,26 @@ the authoritative "did it fail"); a **non-fatal** per-input problem stays on `on
 is not spammed for benign skips. The typed payload is also far cleaner across a future C boundary
 than string-scraping the log.
 
-### Unmatched pages: render them implicitly instead of dropping them — **deviates from SPECIFICATION §7.5.1**
+### Unmatched pages: render them implicitly instead of dropping them — ✅ **SHIPPED (0.3.0)**
 
-**Current behaviour, and it is deliberate.** `ProcessingPipeline::run()` sets
-`hasProfiles = !canvasProfiles.empty()` (`processing_pipeline.cpp:94`) and branches per input
-at `:112-128`:
-
-| Workspace | Page whose `W×H` matches nothing |
-|---|---|
-| no canvas profiles | matching never attempted — page is scaled to `targetWidth` and appended, `appliedProfiles` records an empty profile id (`:133-137`) |
-| ≥ 1 canvas profile | warning logged, path pushed to `outcome.skippedPages`, `continue` — the page never joins the strip |
-
-This matches `SPECIFICATION.md` §7.5.1 steps 4a/4b ("page is skipped; reported in final
-summary") and its design rationale at `:574-577`: adding a profile to the workspace must not
-silently change how existing projects behave, so the user has to opt a project into a profile
-consciously.
-
-**The proposal — keep the page, flag the input.** The determinism argument is sound, but the
-remedy is disproportionate: the cost of *dropping* a page is a published chapter with a page
-missing, and because slice numbering is continuous there is no gap in the output to notice it
-by. The only signal is a summary line the user has to read (`render.cpp:466-472` in the GUI,
-which reports a bare count).
-
-Treating the page as if it belongs in the project — scaled to `targetWidth`, no margin crop,
-exactly the no-profiles path that already exists at `:152-155` — fails softer. Determinism is
-then preserved by *visibility* rather than by omission: mark the input as having been rendered
-with an **implicit profile** (amber, say), so the state is obvious in the tile grid rather than
-buried in a log.
-
-Points that need deciding when this is picked up:
-
-- **`FoundInWorkspaceOnly` probably should not be quietened.** A profile of exactly the right
-  size existing in the workspace but not linked to the project is a different situation from
-  no profile existing at all — it is a one-click fix, and §7.5.1 step 4b wants it named. Keeping
-  it loud (or at least distinctly labelled) while relaxing `NotFoundAnywhere` is likely the
-  right split.
-- **The diagnosis is currently thrown away.** `ProfileMatchResult` carries three statuses and,
-  for `FoundInWorkspaceOnly`, a populated `workspaceCandidates` list. The pipeline discards all
-  of it and emits one generic string — `"Skipping (no matching canvas profile for WxH)"`
-  (`:120-123`) — so the actionable case is indistinguishable from the genuine gap. Whatever the
-  outcome here, that distinction should survive into the log. Pairs with the **structured error
-  system** entry above.
-- **Surfacing "implicit" per input needs a channel that does not exist.** Inputs are consumed
-  in phase 1, before the first slice, and nothing is reported per input — see the
-  `onInputDone` callback in the **ProcessingCallbacks** entry below. This item naturally rides
-  the same 0.3.0 window.
-- **Model impact.** `FileStatus` (`models/project_item.hpp:63-70`) has no value for "processed,
-  but without a profile". Whether that becomes a new enumerator or a separate flag alongside
-  `AppliedCanvasProfile` (which already represents the no-profile case as an empty id) is open.
-
-**`SPECIFICATION.md` §7.5.1 must be amended if this lands** — steps 4a/4b and the design
-rationale below them describe the skip as intended, so the spec is the source of truth being
-changed here, not a document lagging behind the code.
-
-Documented as-is in the GUI wiki (`Manual-Canvas-Profiles`, `Manual-Rendering`,
-`Manual-Troubleshooting`); those three need revisiting if the behaviour changes.
+> **Done in the lib + CLI.** A page whose `W×H` matches no profile is no longer dropped — the
+> pipeline renders it implicitly (scaled to `targetWidth`, no margin crop, empty `appliedProfiles`
+> id), so it ends up `FileStatus::Processed` with an empty `canvasProfileId`. `onInput` reports the
+> new `AppendedWithoutProfile`, or `AppendedProfileNotLinked` (Warning log naming the ids) when a
+> same-size profile exists in the workspace unlinked. `outcome.skippedPages` now carries only
+> missing / load-error inputs. Matched pages also log which profile was applied. SPECIFICATION §7.5.1
+> (steps 4a/4b, rationale, model effect) rewritten; CHANGELOG 0.3.0 has the breaking bullet.
+>
+> **Decisions taken:** (1) both `NotFoundAnywhere` and `FoundInWorkspaceOnly` render — the latter
+> loudly (per user) rather than staying skipped. (2) No new `FileStatus` — the empty `canvasProfileId`
+> already records "no profile applied" (and makes a later profile-link register as staleness). (3) The
+> `SkippedNoProfile` / `SkippedProfileNotLinked` `InputStatus` values are **retained but unemitted**,
+> reserved for a future opt-in "drop unmatched pages" mode, so restoring strict behaviour needs no
+> breaking enum change.
+>
+> **Remaining — GUI round.** Persistent tile colouring (amber for implicitly-rendered inputs) and
+> surfacing the "unlinked candidate" nudge across reopens; the GUI wiki (`Manual-Canvas-Profiles`,
+> `Manual-Rendering`, `Manual-Troubleshooting`) needs revisiting for the new behaviour.
 
 ### WorkspaceEditor — enforce workspace invariants in one place — ✅ **SHIPPED (0.3.0)**
 
