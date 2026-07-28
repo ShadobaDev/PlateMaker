@@ -1051,8 +1051,8 @@ static int cmdProcess(const Opts& opts)
                       << "'. Run 'workspace list-output-profiles'.\n";
             return 1;
         }
-    } else if (!project.outputProfileId.empty()) {
-        selected = Platemaker::Models::resolveOutputProfile(ws, project.outputProfileId);
+    } else if (!project.outputProfileId().empty()) {
+        selected = Platemaker::Models::resolveOutputProfile(ws, project.outputProfileId());
     }
 
     const bool hasInlineOverrides = opts.has("format") || opts.has("start-index")
@@ -1223,7 +1223,7 @@ static int cmdProcess(const Opts& opts)
         project.getInputImages(),
         outProfile,
         effectiveProfiles,
-        project.canvasProfileIds,
+        project.canvasProfileIds(),
         outputDir,
         cancelToken,
         callbacks,
@@ -1651,10 +1651,10 @@ static int cmdProjectStatus(const Opts& opts)
 
     // Resolve profile names for display.
     std::string canvasProfilesSummary;
-    if (pi->canvasProfileIds.empty()) {
+    if (pi->canvasProfileIds().empty()) {
         canvasProfilesSummary = "(all workspace profiles)";
     } else {
-        for (const auto& id : pi->canvasProfileIds) {
+        for (const auto& id : pi->canvasProfileIds()) {
             if (!canvasProfilesSummary.empty()) canvasProfilesSummary += ", ";
             bool found = false;
             for (const auto& cp : ws.canvasProfiles())
@@ -1663,15 +1663,15 @@ static int cmdProjectStatus(const Opts& opts)
         }
     }
     std::string outputProfileSummary;
-    if (pi->outputProfileId.empty()) {
+    if (pi->outputProfileId().empty()) {
         outputProfileSummary = ws.outputProfiles().empty()
             ? "(none — using built-in default)"
             : ws.outputProfiles().front().name + " (workspace default)";
     } else {
         for (const auto& op : ws.outputProfiles())
-            if (op.id == pi->outputProfileId) { outputProfileSummary = op.name; break; }
+            if (op.id == pi->outputProfileId()) { outputProfileSummary = op.name; break; }
         if (outputProfileSummary.empty())
-            outputProfileSummary = pi->outputProfileId + " (missing)";
+            outputProfileSummary = pi->outputProfileId() + " (missing)";
     }
 
     std::cout << "Project: " << pi->name << '\n'

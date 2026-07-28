@@ -207,12 +207,12 @@ TEST(OutputPresetLoadTest, StoredCanonicalPresetCopyIsDropped)
 
     EXPECT_TRUE(loaded.outputProfiles().empty());
     ASSERT_EQ(loaded.projectItems.size(), 1u);
-    EXPECT_EQ(loaded.projectItems[0].outputProfileId, Models::k_webtoonStandardPresetId);
+    EXPECT_EQ(loaded.projectItems[0].outputProfileId(), Models::k_webtoonStandardPresetId);
 
     const auto resolved =
-        Models::resolveOutputProfile(loaded, loaded.projectItems[0].outputProfileId);
+        Models::resolveOutputProfile(loaded, loaded.projectItems[0].outputProfileId());
     ASSERT_TRUE(resolved.has_value());
-    EXPECT_NE(Models::outputPresetDefById(loaded.projectItems[0].outputProfileId), nullptr);
+    EXPECT_NE(Models::outputPresetDefById(loaded.projectItems[0].outputProfileId()), nullptr);
 }
 
 TEST(OutputPresetLoadTest, AUserCopyOfAPresetSurvives)
@@ -228,7 +228,7 @@ TEST(OutputPresetLoadTest, AUserCopyOfAPresetSurvives)
 
     ASSERT_EQ(loaded.outputProfiles().size(), 1u);
     EXPECT_EQ(loaded.outputProfiles()[0].id, "op-mine");
-    EXPECT_EQ(loaded.projectItems[0].outputProfileId, "op-mine");
+    EXPECT_EQ(loaded.projectItems[0].outputProfileId(), "op-mine");
 }
 
 TEST(OutputPresetLoadTest, DivergedPresetIdProfileIsStrippedToAUserProfile)
@@ -244,7 +244,7 @@ TEST(OutputPresetLoadTest, DivergedPresetIdProfileIsStrippedToAUserProfile)
     ASSERT_EQ(loaded.outputProfiles().size(), 1u);
     EXPECT_FALSE(Models::outputProfilePresetById(loaded.outputProfiles()[0].id).has_value());
     EXPECT_EQ(loaded.outputProfiles()[0].outputFormat, Models::OutputFormat::WebP);
-    EXPECT_EQ(loaded.projectItems[0].outputProfileId, loaded.outputProfiles()[0].id);
+    EXPECT_EQ(loaded.projectItems[0].outputProfileId(), loaded.outputProfiles()[0].id);
 }
 
 TEST(OutputPresetLoadTest, MigrationIsIdempotent)
@@ -263,8 +263,8 @@ TEST(OutputPresetLoadTest, MigrationIsIdempotent)
     EXPECT_EQ(first.outputProfiles().size(), second.outputProfiles().size());
     ASSERT_EQ(first.projectItems.size(), 1u);
     ASSERT_EQ(second.projectItems.size(), 1u);
-    EXPECT_EQ(first.projectItems[0].outputProfileId, Models::k_webtoonStandardPresetId);
-    EXPECT_EQ(second.projectItems[0].outputProfileId, Models::k_webtoonStandardPresetId);
+    EXPECT_EQ(first.projectItems[0].outputProfileId(), Models::k_webtoonStandardPresetId);
+    EXPECT_EQ(second.projectItems[0].outputProfileId(), Models::k_webtoonStandardPresetId);
 }
 
 // ===========================================================================

@@ -48,6 +48,16 @@ a consumer that used the removed preset internals must adapt.
   unchanged apart from the `()`. This closes a real hole: an edit made in a running session is now put
   through the *same* invariant checks (unique ids, no persisted presets, `templateInfo` preserved) that
   a loaded file is, instead of only being validated on the next open.
+- **`ProjectItem`'s profile-link fields are now encapsulated too.** `canvasProfileIds` and
+  `outputProfileId` are no longer public: they are read through `pi.canvasProfileIds()` /
+  `pi.outputProfileId()` (const accessors) and written **only** through `ProjectItem::addCanvasProfile()`
+  (the dimension guard) and `WorkspaceEditor::setProjectOutputProfile()` / `removeCanvasProfileFromProject()`.
+  This closes the last bypass: a raw `pi.outputProfileId = "garbage"` (skipping the id validation) or a
+  raw `pi.canvasProfileIds.push_back()` (skipping the "one profile per canvas W×H" guard,
+  SPECIFICATION.md §7.5.2) no longer compiles. `from_json(ProjectItem)` is intentionally partial (like
+  `Workspace`); `load()` installs the links through the friend path. Other `ProjectItem` fields
+  (`name`/`uuid`/`inputDirectory`/`outputSignature`/`canvasProfileIdsAtRender`) stay public — they carry
+  no cross-cutting invariant.
 
 ### Added
 
@@ -105,6 +115,19 @@ a consumer that used the removed preset internals must adapt.
   EU Cyber Resilience Act and by commercial integrators; the texts satisfy the LGPL requirement to
   distribute a copy of the licence. A consumer locates the directory via the `platemaker_CREDITS_DIR`
   package-config variable.
+
+### Fixed
+
+- **`ProjectItem::sanitize()` no longer discards a skipped page's status.** A page the last render
+  skipped (no matching / linked canvas profile) is now **sticky**: `sanitize()` keeps `FileStatus::Skipped`
+  as long as the file is unchanged, instead of "un-skipping" it from the disk pass (a stale-but-matching
+  hash used to flip it to `Processed`, a never-rendered one to `Pending`). Because a skipped page is
+  terminal — nothing can be rendered for it without a profile change — it no longer sets the project
+  out of date, so a project with a permanently-skipped page (all outputs `Done`) is correctly reported
+  up to date instead of re-rendering on every run. An actual profile-list change is still caught by
+  `detectCanvasConfigChange()`, and editing a skipped file re-opens it (`Modified`). `inputsAllProcessed()`
+  likewise treats `Skipped` as settled. Fixes the GUI reopening a project with all-`Done` outputs yet
+  always re-rendering, and skipped input tiles reverting on reopen.
 
 ## [0.2.1] — 2026-07-20
 

@@ -289,8 +289,8 @@ void to_json(nlohmann::json& j, const ProjectItem& v) {
         {"name",             v.name},
         {"uuid",             v.uuid},
         {"inputDirectory",   v.inputDirectory},
-        {"canvasProfileIds", v.canvasProfileIds},
-        {"outputProfileId",  v.outputProfileId},
+        {"canvasProfileIds", v.canvasProfileIds()},
+        {"outputProfileId",  v.outputProfileId()},
         {"outputSignature",  v.outputSignature},
         {"canvasProfileIdsAtRender", v.canvasProfileIdsAtRender},
         {"inputFiles",       v.getInputImages()},
@@ -302,8 +302,9 @@ void from_json(const nlohmann::json& j, ProjectItem& v) {
     if (j.contains("name"))             j.at("name").get_to(v.name);
     if (j.contains("uuid"))             j.at("uuid").get_to(v.uuid);
     if (j.contains("inputDirectory"))   j.at("inputDirectory").get_to(v.inputDirectory);
-    if (j.contains("canvasProfileIds")) j.at("canvasProfileIds").get_to(v.canvasProfileIds);
-    if (j.contains("outputProfileId"))  j.at("outputProfileId").get_to(v.outputProfileId);
+    // canvasProfileIds / outputProfileId are intentionally NOT read here: they are private and only
+    // WorkspaceEditor / WorkspaceSerializer may write them. load() installs them per project (below)
+    // so a project's links go in through the friend path, the same way the workspace palettes do.
     if (j.contains("outputSignature"))  j.at("outputSignature").get_to(v.outputSignature);
     if (j.contains("canvasProfileIdsAtRender"))
         j.at("canvasProfileIdsAtRender").get_to(v.canvasProfileIdsAtRender);
@@ -426,6 +427,22 @@ Models::Workspace WorkspaceSerializer::load(const std::string&     filePath,
         // load-time invariants below.
         j.at("canvasProfiles").get_to(canvasProfiles);
         j.at("outputProfiles").get_to(outputProfiles);
+
+        // Install each project's link fields. They are private on ProjectItem and from_json leaves
+        // them empty by design; WorkspaceSerializer is a friend, so it writes them here — the friend
+        // path that stops a raw consumer from setting an unvalidated outputProfileId or bypassing the
+        // canvas dimension guard. The array order matches workspace.projectItems (nlohmann preserves
+        // it). This runs before installLoaded() below, whose relink pass rewrites these references.
+        if (j.contains("projectItems")) {
+            const auto&       jProjects = j.at("projectItems");
+            const std::size_t n = std::min(workspace.projectItems.size(), jProjects.size());
+            for (std::size_t i = 0; i < n; ++i) {
+                workspace.projectItems[i].m_canvasProfileIds =
+                    jProjects[i].value("canvasProfileIds", std::vector<std::string>{});
+                workspace.projectItems[i].m_outputProfileId =
+                    jProjects[i].value("outputProfileId", std::string{});
+            }
+        }
     } catch (const nlohmann::json::exception& e) {
         throw std::runtime_error(
             "WorkspaceSerializer::load() — schema error in '" +

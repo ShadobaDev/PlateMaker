@@ -33,13 +33,15 @@ ProjectItem::ProjectItem() noexcept
 // moves ProjectItems, the field would arrive empty with nothing to hint why. Add new
 // members here and in operator=(ProjectItem&&) as well.
 ProjectItem::ProjectItem(ProjectItem&& other) noexcept
+    // Order matches member declaration order (the two m_*ProfileId* link fields are now private,
+    // declared after outputSignature / canvasProfileIdsAtRender) — keeps -Wreorder quiet.
     : name(std::move(other.name))
     , uuid(std::move(other.uuid))
     , inputDirectory(std::move(other.inputDirectory))
-    , canvasProfileIds(std::move(other.canvasProfileIds))
-    , outputProfileId(std::move(other.outputProfileId))
     , outputSignature(std::move(other.outputSignature))
     , canvasProfileIdsAtRender(std::move(other.canvasProfileIdsAtRender))
+    , m_canvasProfileIds(std::move(other.m_canvasProfileIds))
+    , m_outputProfileId(std::move(other.m_outputProfileId))
     , m_input_images(std::move(other.m_input_images))
     , m_output_images(std::move(other.m_output_images))
     , m_output_directory(std::move(other.m_output_directory))
@@ -54,10 +56,10 @@ ProjectItem& ProjectItem::operator=(ProjectItem&& other) noexcept
         name                  = std::move(other.name);
         uuid                  = std::move(other.uuid);
         inputDirectory        = std::move(other.inputDirectory);
-        canvasProfileIds      = std::move(other.canvasProfileIds);
-        outputProfileId       = std::move(other.outputProfileId);
         outputSignature       = std::move(other.outputSignature);
         canvasProfileIdsAtRender = std::move(other.canvasProfileIdsAtRender);
+        m_canvasProfileIds    = std::move(other.m_canvasProfileIds);
+        m_outputProfileId     = std::move(other.m_outputProfileId);
         m_input_images        = std::move(other.m_input_images);
         m_output_images       = std::move(other.m_output_images);
         m_output_directory    = std::move(other.m_output_directory);
@@ -132,6 +134,24 @@ bool ProjectItem::sanitize(const std::vector<CanvasProfile>& workspaceProfiles)
             file.status  = FileStatus::Missing;
             m_isUpToDate = false;
             continue;
+        }
+
+        // A page the last render skipped (no matching / linked canvas profile) stays Skipped as long
+        // as the file is unchanged.  sanitize() is disk-based and cannot re-derive the profile match,
+        // so it must NOT silently "un-skip" the page to Processed/Pending — doing so lost the render's
+        // result on every reopen, and made the project look permanently out of date (a never-rendered
+        // skipped page has no hash → Pending → forces a re-render forever, even with every output Done).
+        // Skipped is terminal: nothing more can be rendered for it without a profile change, so it does
+        // NOT mark the project out of date.  A canvas-profile *list* change is caught separately by
+        // detectCanvasConfigChange() below (listChanged), which forces a full re-render and
+        // re-evaluates every page — so a page becoming matchable is not missed.
+        if (file.status == FileStatus::Skipped) {
+            if (file.sha256.empty())
+                continue; // no content baseline, but still deliberately skipped — leave it
+            if (Infrastructure::FileMetaData::computeFileSha256(file.filePath) == file.sha256)
+                continue; // unchanged → remain Skipped
+            // The file changed since it was skipped: fall through so it becomes Modified and the next
+            // render re-includes or re-skips it.
         }
 
         if (file.sha256.empty()) {
@@ -237,8 +257,11 @@ std::vector<std::string> ProjectItem::dirtyOutputNames() const
 
 bool ProjectItem::inputsAllProcessed() const noexcept
 {
+    // Skipped counts as settled: a page with no matching canvas profile is not going to be rendered,
+    // so it must not block the "inputs are clean → a partial re-render of dirty outputs suffices"
+    // decision (otherwise a project with one permanently-skipped page could never take the partial path).
     for (const auto& inf : m_input_images)
-        if (inf.status != FileStatus::Processed)
+        if (inf.status != FileStatus::Processed && inf.status != FileStatus::Skipped)
             return false;
     return !m_input_images.empty();
 }
@@ -252,7 +275,7 @@ std::vector<std::string> ProjectItem::effectiveCanvasProfileIds(
 {
     std::vector<std::string> ids;
 
-    if (canvasProfileIds.empty()) {
+    if (m_canvasProfileIds.empty()) {
         // No per-project filter → CanvasProfileMatcher accepts every workspace
         // profile, so the whole palette is what we render with.
         ids.reserve(workspaceProfiles.size());
@@ -263,8 +286,8 @@ std::vector<std::string> ProjectItem::effectiveCanvasProfileIds(
 
     // Keep the project's order, but drop ids that no longer exist in the workspace:
     // they match nothing, so they cannot influence a render either way.
-    ids.reserve(canvasProfileIds.size());
-    for (const auto& id : canvasProfileIds) {
+    ids.reserve(m_canvasProfileIds.size());
+    for (const auto& id : m_canvasProfileIds) {
         const auto it = std::find_if(
             workspaceProfiles.begin(), workspaceProfiles.end(),
             [&id](const CanvasProfile& cp) { return cp.id == id; });
@@ -590,8 +613,8 @@ bool ProjectItem::addCanvasProfile(
     const std::string&                profileId)
 {
     // Idempotent: already linked.
-    if (std::find(canvasProfileIds.begin(), canvasProfileIds.end(), profileId)
-            != canvasProfileIds.end())
+    if (std::find(m_canvasProfileIds.begin(), m_canvasProfileIds.end(), profileId)
+            != m_canvasProfileIds.end())
         return true;
 
     // Locate the profile in the workspace palette.
@@ -602,7 +625,7 @@ bool ProjectItem::addCanvasProfile(
 
     // Conflict guard (SPECIFICATION.md §7.5.2):
     // Reject if any already-linked profile shares the same canvas dimensions.
-    for (const auto& existingId : canvasProfileIds) {
+    for (const auto& existingId : m_canvasProfileIds) {
         for (const auto& p : workspaceProfiles) {
             if (p.id == existingId &&
                 p.canvasSize.width  == adding->canvasSize.width &&
@@ -611,7 +634,7 @@ bool ProjectItem::addCanvasProfile(
         }
     }
 
-    canvasProfileIds.push_back(profileId);
+    m_canvasProfileIds.push_back(profileId);
     return true;
 }
 

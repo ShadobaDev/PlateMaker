@@ -602,6 +602,15 @@ W×H pair, so the first match in subA is always final — no tie-breaking needed
 > behaviour of every existing project that has a page with matching dimensions —
 > the opposite of determinism.  The user must consciously opt a project into a profile.
 
+**Model effect — `FileStatus::Skipped`.** A page the run left out (no matching profile, a matching but
+unlinked one, or a load error) is recorded as `FileStatus::Skipped` on its `InputFile`, **not**
+`Processed`.  `ProjectItem::applyProcessingResults()` takes the run's `skippedPages`
+(`ProcessingOutcome::skippedPages`) and marks exactly those inputs, so a skipped page is honestly
+flagged afterwards instead of masquerading as done.  The pipeline also reports each input **live** in
+phase 1 through `ProcessingCallbacks::onInput(InputResult)` — `Appended`, or `Skipped*` with the reason
+(missing / no matching profile / matched-but-unlinked with the candidate ids / load error) — which the
+GUI uses to colour input tiles as the strip is built.
+
 #### 7.5.2 Conflict guard (ProjectItem invariant)
 
 Within a single project, `canvasProfileIds` must never contain two profiles whose
@@ -696,13 +705,26 @@ masquerade as a preset.  A user profile whose settings merely coincide with a pr
 untouched.  This migration is silent — unambiguous bookkeeping, not a collision — so it is **not**
 reported in `WorkspaceRepairReport`.
 
-**Implemented API.** The "future WorkspaceEditor / ProjectEditor type" anticipated here now exists as
-`Infrastructure::WorkspaceEditor` — the single authority that mutates the workspace profile palettes
-(`Workspace::canvasProfiles` / `outputProfiles` are private, read through const accessors). Linking a
-profile to a project is `WorkspaceEditor::addCanvasProfileToProject(project, profileId)`, which delegates
-to `ProjectItem::addCanvasProfile()` and applies the dimension-collision guard. It currently returns
-`bool` (linked / rejected); the richer result below — naming the specific conflicting profile — remains a
-possible enhancement rather than a shipped shape:
+**Implemented API — and the invariant is now *enforced*, not merely guarded.** The "future
+WorkspaceEditor / ProjectEditor type" anticipated here exists as `Infrastructure::WorkspaceEditor`, the
+single authority that mutates workspace profile state.  The invariant-bearing fields are **private in the
+model**, read through const accessors and written only through the editor / the guarded `ProjectItem`
+methods:
+
+- `Workspace::canvasProfiles()` / `outputProfiles()` — the palettes (unique ids, no persisted presets);
+- `ProjectItem::canvasProfileIds()` / `outputProfileId()` — the project links.
+
+So a raw `pi.canvasProfileIds.push_back()` (bypassing the dimension guard) or `pi.outputProfileId =
+"garbage"` (bypassing id validation) **no longer compiles**.  Linking is
+`WorkspaceEditor::addCanvasProfileToProject(project, profileId)`, which delegates to
+`ProjectItem::addCanvasProfile()` and applies the dimension-collision guard; `setProjectOutputProfile()`
+validates the id resolves (user profile or preset).  `WorkspaceSerializer` (a friend) installs both
+palettes and the project links at load time, running the same repair rules an in-session edit obeys.
+(`Workspace::projectItems` and `ProjectItem::name`/`uuid`/`inputDirectory`/`outputSignature` stay public
+— they carry no cross-cutting invariant.)
+
+Linking currently returns `bool` (linked / rejected); the richer result below — naming the specific
+conflicting profile — remains a possible enhancement rather than a shipped shape:
 ```cpp
 struct AddCanvasProfileResult {          // possible future enrichment of the bool return
     enum class Status { Ok, Conflict };
@@ -788,7 +810,7 @@ private:
 **Typical usage per processing run:**
 ```cpp
 // Constructed once per project, before the page loop.
-CanvasProfileMatcher matcher(workspace.canvasProfiles(), project.canvasProfileIds);
+CanvasProfileMatcher matcher(workspace.canvasProfiles(), project.canvasProfileIds());
 
 for (const auto& page : project.pages) {
     auto [w, h] = readImageDimensions(page.filePath);

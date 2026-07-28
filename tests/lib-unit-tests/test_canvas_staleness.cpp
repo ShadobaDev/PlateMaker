@@ -218,16 +218,26 @@ TEST(EffectiveCanvasProfileIdsTest, KeepsProjectOrder)
         makeProfile("p2", 800, 1280, 0),
     };
     ProjectItem p;
-    p.canvasProfileIds = {"p2", "p1"};
+    // Link in this order (different dimensions, so the guard allows both) to pin that the project's
+    // order is preserved. The palette is private now, so it goes in through the guarded add.
+    p.addCanvasProfile(ws, "p2");
+    p.addCanvasProfile(ws, "p1");
     EXPECT_EQ(p.effectiveCanvasProfileIds(ws), (std::vector<std::string>{"p2", "p1"}));
 }
 
 TEST(EffectiveCanvasProfileIdsTest, DropsIdsMissingFromWorkspace)
 {
-    // A dangling id matches nothing, so it cannot influence a render either way.
+    // A dangling id matches nothing, so it cannot influence a render either way. The palette is
+    // private, so the dangling state is built the real way — link a profile, then query with a
+    // workspace that no longer contains it (the drop must still happen).
+    const std::vector<CanvasProfile> wsFull{
+        makeProfile("p1", 1600, 10240, 100),
+        makeProfile("ghost", 800, 1280, 0),
+    };
     const std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
     ProjectItem p;
-    p.canvasProfileIds = {"p1", "ghost"};
+    p.addCanvasProfile(wsFull, "p1");
+    p.addCanvasProfile(wsFull, "ghost");
     EXPECT_EQ(p.effectiveCanvasProfileIds(ws), (std::vector<std::string>{"p1"}));
 }
 
@@ -395,6 +405,48 @@ TEST(SanitizeCanvasTest, UnchangedConfigLeavesEverythingClean)
         EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed) << "input " << i;
         EXPECT_EQ(d.outputStatus(i), FileStatus::Done)      << "output " << i;
     }
+}
+
+TEST(SanitizeCanvasTest, SkippedInputIsStickyAndDoesNotForceARender)
+{
+    // Regression for the reopen bugs: sanitize()'s disk pass used to "un-skip" a page the render had
+    // skipped (no matching canvas profile) — a page with a stale-but-matching hash flipped to
+    // Processed (losing the Skipped tile), and a never-rendered one (empty hash) flipped to Pending,
+    // which made the project look permanently out of date and re-rendered forever even with every
+    // output Done. Skipped must be sticky while the file is unchanged, and must not block up-to-date.
+    const std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
+    DiskProject d("skipped", 3, ws, "p1");
+
+    auto& pages = d.project.getInputImages();
+    // page 0: skipped, never successfully rendered (no stored hash).
+    pages[0].status = FileStatus::Skipped;
+    pages[0].sha256.clear();
+    pages[0].canvasProfileId.clear();
+    pages[0].canvasFingerprint.clear();
+    pages[0].contributesTo.clear();
+    // page 1: skipped now, but keeps a hash from an earlier render — the file is unchanged.
+    pages[1].status = FileStatus::Skipped;
+    pages[1].canvasProfileId.clear();
+    pages[1].canvasFingerprint.clear();
+    pages[1].contributesTo.clear();
+
+    // Reopen: both skips survive, page 2 stays Processed, and the project is up to date (every output
+    // is Done; a skipped page is terminal, not pending work).
+    EXPECT_TRUE(d.project.sanitize(ws));
+    EXPECT_EQ(d.inputStatus(0), FileStatus::Skipped) << "never-rendered skip must not become Pending";
+    EXPECT_EQ(d.inputStatus(1), FileStatus::Skipped) << "stale-hash skip must not become Processed";
+    EXPECT_EQ(d.inputStatus(2), FileStatus::Processed);
+    EXPECT_TRUE(d.project.isUpToDate());
+
+    // Idempotent across a second reopen.
+    EXPECT_TRUE(d.project.sanitize(ws));
+    EXPECT_EQ(d.inputStatus(0), FileStatus::Skipped);
+    EXPECT_EQ(d.inputStatus(1), FileStatus::Skipped);
+
+    // But editing a skipped file must re-open it for evaluation (Modified), not leave it stuck.
+    std::ofstream(pages[1].filePath, std::ios::binary) << "CHANGED-CONTENT";
+    EXPECT_FALSE(d.project.sanitize(ws));
+    EXPECT_EQ(d.inputStatus(1), FileStatus::Modified);
 }
 
 TEST(SanitizeCanvasTest, MarginEditDesynchronizesOnlyTheAffectedPages)

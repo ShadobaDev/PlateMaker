@@ -50,6 +50,12 @@
 #include <vector>
 #include "platemaker/platemaker_export.h"
 #include "platemaker/models/canvas_profile.hpp"
+
+// Forward declarations only (no include, so Models stays independent of Infrastructure). The
+// project's profile-link fields are private; WorkspaceEditor is the sole runtime mutation authority
+// (it enforces the guards), and WorkspaceSerializer installs them at load time.
+namespace Platemaker::Infrastructure { class WorkspaceEditor; class WorkspaceSerializer; }
+
 namespace Platemaker::Models {
 
 // ---------------------------------------------------------------------------
@@ -249,11 +255,23 @@ public:
     std::string uuid;           //!< Auto-generated unique identifier.
     std::string inputDirectory; //!< Absolute path to the source image directory.
 
-    /// IDs of canvas profiles linked to this project (empty = all workspace profiles accepted).
-    std::vector<std::string> canvasProfileIds;
+    /**
+     * \brief Ids of canvas profiles linked to this project (empty = all workspace profiles accepted).
+     *
+     * Read-only view. The backing vector is private and mutated only through the guarded
+     * \c addCanvasProfile() / \c WorkspaceEditor::removeCanvasProfileFromProject(), so a caller
+     * cannot bypass the "at most one profile per canvas W×H" rule (SPECIFICATION.md §7.5.2) with a
+     * raw \c push_back.
+     */
+    [[nodiscard]] const std::vector<std::string>& canvasProfileIds() const noexcept { return m_canvasProfileIds; }
 
-    /// ID of the output profile linked to this project (empty = workspace default).
-    std::string outputProfileId;
+    /**
+     * \brief Id of the output profile linked to this project (empty = workspace default).
+     *
+     * Read-only view. Set only through \c WorkspaceEditor::setProjectOutputProfile(), which validates
+     * that the id resolves to a user profile or a preset — a raw write of an unknown id is not possible.
+     */
+    [[nodiscard]] const std::string& outputProfileId() const noexcept { return m_outputProfileId; }
 
     /// Signature of the output-profile configuration that produced the current
     /// outputs (see \c outputProfileSignature()).  Empty until the first render.
@@ -546,6 +564,14 @@ public:
         const std::string& profileId);
 
 private:
+    // WorkspaceEditor is the sole runtime authority allowed to write the profile-link fields below
+    // (it applies the validation / dimension guard); WorkspaceSerializer installs them at load time.
+    friend class Platemaker::Infrastructure::WorkspaceEditor;
+    friend class Platemaker::Infrastructure::WorkspaceSerializer;
+
+    std::vector<std::string> m_canvasProfileIds; //!< Ids of linked canvas profiles (see canvasProfileIds()).
+    std::string              m_outputProfileId;  //!< Id of the linked output profile (see outputProfileId()).
+
     std::vector<InputFile>  m_input_images;     //!< Ordered input image list.
     std::vector<OutputFile> m_output_images;    //!< Output slice list from last run.
     std::string             m_output_directory; //!< Absolute path for output slices.

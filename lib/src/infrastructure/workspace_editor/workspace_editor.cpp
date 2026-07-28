@@ -40,14 +40,14 @@ void WorkspaceEditor::relinkProfileId(Models::Workspace& ws,
     // profiles, the output profile, the canvas baseline recorded at render time, and the
     // per-input profile the page was rendered with.
     for (auto& pi : ws.projectItems) {
-        for (auto& id : pi.canvasProfileIds)
+        for (auto& id : pi.m_canvasProfileIds)   // private; WorkspaceEditor is a friend of ProjectItem
             if (id == oldId) id = newId;
 
         for (auto& id : pi.canvasProfileIdsAtRender)
             if (id == oldId) id = newId;
 
-        if (pi.outputProfileId == oldId)
-            pi.outputProfileId = newId;
+        if (pi.m_outputProfileId == oldId)
+            pi.m_outputProfileId = newId;
 
         for (auto& inf : pi.getInputImages())
             if (inf.canvasProfileId == oldId)
@@ -253,7 +253,7 @@ bool WorkspaceEditor::addCanvasProfileToProject(
 bool WorkspaceEditor::removeCanvasProfileFromProject(
     Models::ProjectItem& project, const std::string& profileId)
 {
-    auto&      ids    = project.canvasProfileIds;
+    auto&      ids    = project.m_canvasProfileIds; // private; WorkspaceEditor is a friend of ProjectItem
     const auto before = ids.size();
     ids.erase(std::remove(ids.begin(), ids.end(), profileId), ids.end());
     return ids.size() != before;
@@ -267,7 +267,7 @@ bool WorkspaceEditor::setProjectOutputProfile(
     if (!outputProfileId.empty() && !Models::resolveOutputProfile(m_ws, outputProfileId))
         return false;
 
-    project.outputProfileId = outputProfileId;
+    project.m_outputProfileId = outputProfileId; // private; WorkspaceEditor is a friend of ProjectItem
     return true;
 }
 

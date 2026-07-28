@@ -239,12 +239,20 @@ Documented as-is in the GUI wiki (`Manual-Canvas-Profiles`, `Manual-Rendering`,
 
 ### WorkspaceEditor — enforce workspace invariants in one place — ✅ **SHIPPED (0.3.0)**
 
-> **Done in the lib.** `Infrastructure::WorkspaceEditor` is the sole mutation authority;
+> **Done in the lib + GUI.** `Infrastructure::WorkspaceEditor` is the sole mutation authority;
 > `Workspace::canvasProfiles` / `outputProfiles` are private with const accessors; the identifier-repair
 > rules live in the editor and `load()` runs them via `installLoaded()`. The CLI is migrated; lib tests
-> cover it (`test_workspace_editor.cpp`). See CHANGELOG 0.3.0. **Remaining = GUI adoption in 1.2.0**
-> (drop `m_workspace` direct mutation → `WorkspaceEditor`; the audit below is the call-site map). The
-> design write-up is kept for that round.
+> cover it (`test_workspace_editor.cpp`). The GUI adopted it in 1.2.0 (no raw `m_workspace` profile
+> writes remain). See CHANGELOG 0.3.0.
+>
+> **Tier 2 enforcement — ✅ DONE (0.3.0).** `ProjectItem::canvasProfileIds` / `outputProfileId` are now
+> **private with const accessors** (`pi.canvasProfileIds()` / `pi.outputProfileId()`), written only via
+> `ProjectItem::addCanvasProfile()` (dimension guard) and `WorkspaceEditor::setProjectOutputProfile()` /
+> `removeCanvasProfileFromProject()`. A raw `pi.outputProfileId = "garbage"` or `canvasProfileIds.push_back()`
+> no longer compiles. `from_json(ProjectItem)` is partial; `load()` installs the links through the friend
+> path (serializer + CLI + GUI + tests migrated). `Workspace::projectItems` and the
+> dir/`stripDirty`/`version` fields stay public by design (Tier 3, no cross-cutting invariant) — that is
+> the intended boundary, so the WorkspaceEditor topic is now **fully closed**.
 
 **Problem.** `Models::Workspace` is a bare struct — public vectors, no mutating methods. Every
 invariant (unique profile ids, no duplicate canvas dimensions, no persisted presets, `templateInfo`

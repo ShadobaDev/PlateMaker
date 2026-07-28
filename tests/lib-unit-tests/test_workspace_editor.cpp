@@ -201,15 +201,15 @@ TEST(WorkspaceEditorTest, LinkAndUnlinkCanvasProfileAreSymmetric)
 
     Models::ProjectItem proj;
     EXPECT_TRUE(ed.addCanvasProfileToProject(proj, id));
-    ASSERT_EQ(proj.canvasProfileIds.size(), 1u);
-    EXPECT_EQ(proj.canvasProfileIds[0], id);
+    ASSERT_EQ(proj.canvasProfileIds().size(), 1u);
+    EXPECT_EQ(proj.canvasProfileIds()[0], id);
 
     // Idempotent add; unknown-id add fails.
     EXPECT_TRUE(ed.addCanvasProfileToProject(proj, id));
     EXPECT_FALSE(ed.addCanvasProfileToProject(proj, "cp-nope"));
 
     EXPECT_TRUE(ed.removeCanvasProfileFromProject(proj, id));
-    EXPECT_TRUE(proj.canvasProfileIds.empty());
+    EXPECT_TRUE(proj.canvasProfileIds().empty());
     EXPECT_FALSE(ed.removeCanvasProfileFromProject(proj, id)); // already gone
 }
 
@@ -223,7 +223,7 @@ TEST(WorkspaceEditorTest, LinkCanvasProfileRejectsADimensionConflict)
     Models::ProjectItem proj;
     EXPECT_TRUE(ed.addCanvasProfileToProject(proj, a));
     EXPECT_FALSE(ed.addCanvasProfileToProject(proj, b)); // conflict: same canvas dimensions
-    EXPECT_EQ(proj.canvasProfileIds.size(), 1u);
+    EXPECT_EQ(proj.canvasProfileIds().size(), 1u);
 }
 
 TEST(WorkspaceEditorTest, SetProjectOutputProfileValidatesTheId)
@@ -236,19 +236,19 @@ TEST(WorkspaceEditorTest, SetProjectOutputProfileValidatesTheId)
 
     // A user profile id resolves.
     EXPECT_TRUE(ed.setProjectOutputProfile(proj, mine));
-    EXPECT_EQ(proj.outputProfileId, mine);
+    EXPECT_EQ(proj.outputProfileId(), mine);
 
     // A baked-in preset id resolves too (a project can point at a preset).
     EXPECT_TRUE(ed.setProjectOutputProfile(proj, std::string(Models::k_webtoonStandardPresetId)));
-    EXPECT_EQ(proj.outputProfileId, Models::k_webtoonStandardPresetId);
+    EXPECT_EQ(proj.outputProfileId(), Models::k_webtoonStandardPresetId);
 
     // Empty = "use the workspace default" — accepted, clears the link.
     EXPECT_TRUE(ed.setProjectOutputProfile(proj, ""));
-    EXPECT_TRUE(proj.outputProfileId.empty());
+    EXPECT_TRUE(proj.outputProfileId().empty());
 
     // An unknown id is rejected and leaves the field untouched.
     EXPECT_FALSE(ed.setProjectOutputProfile(proj, "op-nope"));
-    EXPECT_TRUE(proj.outputProfileId.empty());
+    EXPECT_TRUE(proj.outputProfileId().empty());
 }
 
 // ---------------------------------------------------------------------------

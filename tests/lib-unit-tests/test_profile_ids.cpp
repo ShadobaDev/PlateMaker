@@ -213,8 +213,8 @@ TEST(WorkspaceIdRepairTest, ProjectReferenceStillResolvesToTheFirstProfile)
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path());
 
     ASSERT_EQ(loaded.projectItems.size(), 1u);
-    ASSERT_EQ(loaded.projectItems[0].canvasProfileIds.size(), 1u);
-    EXPECT_EQ(loaded.projectItems[0].canvasProfileIds[0], loaded.canvasProfiles()[0].id);
+    ASSERT_EQ(loaded.projectItems[0].canvasProfileIds().size(), 1u);
+    EXPECT_EQ(loaded.projectItems[0].canvasProfileIds()[0], loaded.canvasProfiles()[0].id);
     EXPECT_EQ(loaded.canvasProfiles()[0].name, "Webtoon-4s");
 }
 
@@ -226,7 +226,7 @@ TEST(WorkspaceIdRepairTest, DuplicateBecomesAssignableAgain)
 
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path());
 
-    const auto& ids = loaded.projectItems[0].canvasProfileIds;
+    const auto& ids = loaded.projectItems[0].canvasProfileIds();
     EXPECT_EQ(std::find(ids.begin(), ids.end(), loaded.canvasProfiles()[1].id), ids.end());
 }
 
@@ -266,7 +266,7 @@ TEST(WorkspaceIdRepairTest, OutputProfileDuplicatesAreRepairedToo)
     EXPECT_EQ(report.outputProfiles[0].name, "WEBP");
 
     // Reference keeps pointing at the profile it always resolved to.
-    EXPECT_EQ(loaded.projectItems[0].outputProfileId, loaded.outputProfiles()[0].id);
+    EXPECT_EQ(loaded.projectItems[0].outputProfileId(), loaded.outputProfiles()[0].id);
 }
 
 // ===========================================================================
@@ -290,7 +290,7 @@ TEST(WorkspaceIdMigrationTest, MissingIdIsMintedAndLegacyReferencesAreRelinked)
     EXPECT_FALSE(loaded.outputProfiles()[0].id.empty());
 
     // The project follows the profile to its freshly minted id.
-    EXPECT_EQ(loaded.projectItems[0].outputProfileId, loaded.outputProfiles()[0].id);
+    EXPECT_EQ(loaded.projectItems[0].outputProfileId(), loaded.outputProfiles()[0].id);
 
     // Minting is unambiguous bookkeeping, not a collision — nothing to tell the user about.
     EXPECT_FALSE(report.any());
