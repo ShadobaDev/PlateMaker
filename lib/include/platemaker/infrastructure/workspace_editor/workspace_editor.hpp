@@ -125,6 +125,24 @@ public:
     WorkspaceRepairReport replaceOutputProfiles(std::vector<Models::OutputProfile> incoming);
 
     // -----------------------------------------------------------------------
+    // Projects
+    // -----------------------------------------------------------------------
+
+    /**
+     * \brief Creates a project with a fresh, workspace-unique uid and appends it to the workspace.
+     *
+     * Minting the project uid is the lib's job, not the consumer's: the uid must be unique across
+     * every project in the workspace, so the workspace is the only place that can guarantee it.
+     * (Input/output uids are minted by \c ProjectItem::ensureUniqueFileUids(); profile ids by the
+     * palette ops above — this closes the last identifier a consumer used to hand-roll.)
+     *
+     * \param name Human-readable project name.
+     * \return Reference to the newly appended project. Valid until the next mutation of the
+     *         workspace's project list; the caller typically populates it immediately.
+     */
+    Models::ProjectItem& addProject(std::string name);
+
+    // -----------------------------------------------------------------------
     // Project ↔ profile links
     // -----------------------------------------------------------------------
 

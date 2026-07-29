@@ -241,6 +241,25 @@ WorkspaceRepairReport WorkspaceEditor::replaceOutputProfiles(
 }
 
 // ---------------------------------------------------------------------------
+// Projects
+// ---------------------------------------------------------------------------
+
+Models::ProjectItem& WorkspaceEditor::addProject(std::string name)
+{
+    std::vector<std::string> taken;
+    taken.reserve(m_ws.projectItems.size());
+    for (const auto& p : m_ws.projectItems)
+        taken.push_back(p.uid);
+
+    Models::ProjectItem project;
+    project.name = std::move(name);
+    project.uid  = makeUniqueId("proj", taken);
+
+    m_ws.projectItems.push_back(std::move(project));
+    return m_ws.projectItems.back();
+}
+
+// ---------------------------------------------------------------------------
 // Project ↔ profile links
 // ---------------------------------------------------------------------------
 

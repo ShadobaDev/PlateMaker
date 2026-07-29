@@ -426,7 +426,10 @@ GUI surfaces it and warns when a cap would be exceeded. Tracked in both
 ```
 uid          : uid       // local id (e.g. "file-<hex>"), minted if missing/duplicate on load
 filePath     : string    // absolute path on disk
-order        : int       // 0-indexed display order (not filesystem order)
+order        : int       // 0-indexed strip position — the render builds the virtual strip in this
+                         // order (via ProjectItem::inputsInOrder()), not in the stored-vector order.
+                         // Reordering rewrites only this field (Infrastructure::ProjectEditor); the
+                         // input vector is never physically moved.
 status       : enum      // PENDING | PROCESSED | SKIPPED | ERROR
 errorMessage : string    // empty unless status == ERROR or SKIPPED
 ```
@@ -624,6 +627,24 @@ masquerading as done. The pipeline reports each input **live** in phase 1 throug
 `AppendedWithoutProfile` / `AppendedProfileNotLinked` (rendered implicitly, the latter carrying the
 unlinked candidate ids), or `SkippedMissing` / `SkippedError` — which the GUI uses to colour input
 tiles as the strip is built.
+
+##### Input order & composition (a third staleness axis)
+
+The virtual strip is a **continuous concatenation** built in `InputFile::order` sequence (via
+`ProjectItem::inputsInOrder()`), independent of the stored-vector order. Reordering an input — or adding
+or removing one — shifts pixels across **every downstream slice** while leaving each input *and* output
+file byte-identical, so neither the SHA-256 pass nor the canvas/output-signature axes can see it.
+
+`ProjectItem::applyProcessingResults()` therefore records `inputOrderAtRender` (the input uid sequence,
+in `order`, at render — the sibling of `canvasProfileIdsAtRender`, keyed by `uid` so a rename does not
+false-invalidate). `sanitize()` compares it via `detectInputCompositionChange()` and, on a mismatch,
+marks **every** output `Desynchronized` (the whole strip moved); callers fold the same signal into their
+"config changed" decision so the *full* render path runs and refreshes the baseline. A project rendered
+before this field existed has its baseline **backfilled** by `WorkspaceSerializer::load()` from the
+outputs' `sourceMap` provenance, so a pre-existing reorder is caught without a spurious re-render.
+
+Reordering goes through `Infrastructure::ProjectEditor` (the project-content twin of `WorkspaceEditor`),
+which rewrites only the `order` field — a reorder never physically moves `m_input_images`.
 
 #### 7.5.2 Conflict guard (ProjectItem invariant)
 

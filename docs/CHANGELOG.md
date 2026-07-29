@@ -83,6 +83,27 @@ a consumer that used the removed preset internals must adapt.
 
 ### Added
 
+- **`Infrastructure::ProjectEditor`** (`platemaker/infrastructure/project_editor/project_editor.hpp`)
+  — the authority for a single project's content, twin of `WorkspaceEditor`. Owns input ordering:
+  `setInputOrder(orderedUids)` (validates a permutation, rewrites each `InputFile::order`) and
+  `moveInput(uid, ±1)`. It **never physically reorders** the stored input vector — only the `order`
+  field — so a reorder does not churn the project structure.
+- **The render now follows `InputFile::order`, not the stored-vector order.** New
+  `ProjectItem::inputsInOrder()` returns the inputs sorted by `order`; the CLI passes it to
+  `ProcessingPipeline::run` (the pipeline itself is unchanged — it still renders the sequence it is
+  handed, with no knowledge of `order`). Previously the strip was built in raw vector order, so a
+  reorder that only touched `order` never reached the output.
+- **Input-composition staleness axis** — `ProjectItem::inputOrderAtRender` (the input uid sequence, in
+  `order`, captured at render, next to `canvasProfileIdsAtRender`) and
+  `ProjectItem::detectInputCompositionChange()`. `sanitize()` marks every output `Desynchronized` when
+  the current order/composition differs from the baseline: reordering / adding / removing an input
+  shifts the continuous strip so every downstream slice changes while each file stays byte-identical —
+  no hash could notice. `WorkspaceSerializer::load()` **backfills** the baseline of a project rendered
+  before this field existed from the outputs' `sourceMap` provenance, so an old reorder is still caught
+  without a spurious re-render.
+- **`WorkspaceEditor::addProject(name)`** — creates a project with a workspace-unique `proj-` uid and
+  appends it. Minting the project uid is now the lib's job: the CLI (and GUI) no longer hand-roll it
+  with `makeUniqueId` (the last identifier a consumer still generated itself).
 - **`Models::outputPresetDefById()`, `OutputPresetDef`, `k_outputPresetDefs`** — the compile-time preset
   catalogue (single source of truth) and its zero-copy membership test.
 - **`Core::ProcessingCallbacks` and its event payloads** (`core/processing_callbacks/processing_callbacks.hpp`)

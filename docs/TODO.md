@@ -142,6 +142,73 @@ CMakePresets).
 Breaking changes — a consumer must rebuild or adapt. These ship together, and the GUI pins the
 version in lockstep.
 
+### Input reorder is not honored by the render, and never invalidates outputs — ✅ **lib SHIPPED (0.3.0)**
+
+> **Done in the lib + CLI.** The render now builds the strip in `InputFile::order` sequence
+> (`ProjectItem::inputsInOrder()`), so a reorder that touches only `order` finally reaches the output.
+> Reordering is a first-class content op on the new `Infrastructure::ProjectEditor` facade
+> (`setInputOrder` / `moveInput`) — it rewrites only the `order` field, never the stored vector. A
+> persistent baseline `inputOrderAtRender` (+ `detectInputCompositionChange()`) makes `sanitize()` mark
+> affected outputs `Desynchronized` on a reorder / add / remove, surviving reopen; `load()` backfills it
+> from output provenance for pre-existing projects. The composition change is folded into the CLI's
+> `configChanged` so the full path runs and refreshes the baseline (no re-render loop). Project uids are
+> now minted by `WorkspaceEditor::addProject()`. Tests: `test_project_editor.cpp` (+ addProject).
+> See CHANGELOG 0.3.0 and SPECIFICATION §7.5.1.
+>
+> **Remaining — GUI adoption (1.2.0).** The reorder handlers (`onTileMoveUp/Down`, `onRowsMoved`,
+> `moveByOrder`) must call `ProjectEditor` instead of writing `order` directly; `projects.cpp` must
+> create projects via `WorkspaceEditor::addProject`; `render.cpp` must fold
+> `detectInputCompositionChange()` into its `configChanged`. GUI wiki `Manual-Projects` needs a note.
+>
+> The confirmed root-cause analysis is kept below for reference.
+
+**Symptom (user).** A project already rendered (outputs `Done`); reordering inputs (▲/▼ or drag) and
+then Render or Refresh files does not catch the change — outputs stay `Done`, a render reproduces the
+same output.
+
+**Root cause (confirmed).**
+- The manual reorder handlers change only the `InputFile::order` **field**, never the `m_input_images`
+  vector: GUI `Project::onTileMoveUp/Down` → `moveByOrder` (swaps two `order` values via sorted
+  pointers) and drag `Project::onRowsMoved` (writes `order = listRow`), in `widgets/project/input.cpp`.
+- The render builds the strip from the **raw vector** — `getInputImages()` is passed straight to
+  `ProcessingPipeline::run` (GUI `mainwindow/render.cpp:283`, CLI `cli/main.cpp:1223`) and the pipeline
+  iterates it in vector order; nothing sorts by `order`. The serializer saves/loads `inputFiles` in
+  array order and never re-sorts by `order` (`workspace_serializer.cpp:299/314`).
+- So after a manual reorder the **display** (populate sorts a pointer copy by `order`) diverges from the
+  **render** (vector order). The reorder is effectively a no-op on output, even across reopen.
+- Even if the render honored order, `ProjectItem::sanitize()` only compares input/output file **hashes**
+  and **canvas config** — never input order/composition — so it cannot flag stale outputs.
+  `mergeFileScan()` *does* set every output `Desynchronized` on a structural change (including
+  `inf.order != newOrder`, `project_item.cpp:536/599-603`), but the next `sanitize()` recomputes those
+  outputs back to `Done` from disk (bytes unchanged), wiping it. There is no persistent signal.
+- **Latent sibling gap:** pure input **removal** has the same problem — the remaining outputs are
+  byte-identical, so `sanitize()` resets them to `Done`; the `mergeFileScan` Desync doesn't survive.
+
+**Design to review next session.**
+- **Make reordering a first-class model operation** — e.g. `Models::ProjectItem::reorderInputs(ordered
+  uids/paths)` as the single authority, the way removal already routes through `mergeFileScan`. Reorder
+  should not be GUI-side ad-hoc `order`-field twiddling. Implies a **GUI refactor**: `onTileMoveUp/Down`,
+  `onRowsMoved`, `moveByOrder` call the model method (consistent with the WorkspaceEditor round).
+- **Canonical order axis (pick one):** (A) the pipeline sorts inputs by `order` — makes `order`
+  authoritative, matches its documented meaning ("0-based position in the virtual strip"), zero GUI
+  handler change; or (B) keep the vector canonical and have `reorderInputs` physically rebuild it,
+  preserving the `vector position == order == strip position` invariant `mergeFileScan` already keeps.
+  A first-class model API argues for **B** (model keeps its own invariant); A is smaller.
+- **Persistent staleness baseline:** capture the render-time input composition/order as a baseline — the
+  analog of `canvasProfileIdsAtRender` — e.g. `inputUidsAtRender` (ordered by `order`; keyed by **uid**
+  so a rename does not false-invalidate). Set it in `applyProcessingResults()`, compare it in
+  `sanitize()`; a mismatch marks all outputs `Desynchronized` (a reorder cascades through every slice →
+  full re-render). This folds add / remove / reorder into one sanitize-level check that survives reopen
+  (unlike the transient `mergeFileScan` Desync), and closes the removal gap above.
+- **Pre-existing rendered projects (no baseline yet):** backfill the baseline from the outputs' existing
+  `sourceMap` provenance on load (it already records which input fed each slice, in order), so there is
+  no spurious re-render and a pre-upgrade reorder is still caught. *(User's chosen approach.)*
+- **Touch points:** `lib/src/core/processing_pipeline/processing_pipeline.cpp` (strip order),
+  `lib/src/models/project_item.cpp` (`sanitize`, `applyProcessingResults`, new `reorderInputs`,
+  baseline), `lib/include/platemaker/models/project_item.hpp` (field + method),
+  `lib/src/infrastructure/workspace_serializer/workspace_serializer.cpp` (serialize baseline),
+  GUI `widgets/project/input.cpp` (reorder handlers), lib tests + `SPECIFICATION.md` §7.5 / pipeline.
+
 ### Structured error system
 
 The pipeline currently reports failures as ad-hoc strings via the

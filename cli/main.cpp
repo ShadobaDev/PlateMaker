@@ -278,25 +278,8 @@ static std::string nowIso8601()
     return oss.str();
 }
 
-/**
- * \brief Returns a "proj-" identifier that no project in \p ws is already using.
- *
- * These used to come from nowIso8601(), which resolves to the second — so two projects
- * created by one command came out identical.
- *
- * \note "uid" (unique identifier), not "uuid": what we generate is a random identifier,
- *       not an RFC 4122 UUID, and it has never had that layout.  The model field was renamed
- *       \c uuid → \c uid in 0.3.0.
- */
-static std::string makeProjectUid(const Workspace& ws)
-{
-    std::vector<std::string> taken;
-    taken.reserve(ws.projectItems.size());
-    for (const auto& pi : ws.projectItems)
-        taken.push_back(pi.uid);
-
-    return makeUniqueId("proj", taken);
-}
+// Project uids are now minted by WorkspaceEditor::addProject() — the lib owns identifier generation,
+// so the CLI no longer hand-rolls a "proj-" id (see the project-creation call sites).
 
 // ===========================================================================
 // platemaker --version
@@ -1013,10 +996,8 @@ static int cmdProcess(const Opts& opts)
                 { projectIdx = i; break; }
 
         if (projectIdx < 0) {
-            // No match — create a new project and append to workspace.
-            ProjectItem newProj;
-            newProj.name           = inputDir.filename().string();
-            newProj.uid            = makeProjectUid(ws);
+            // No match — create a new project via the library (which mints the uid) and append.
+            ProjectItem& newProj = WorkspaceEditor(ws).addProject(inputDir.filename().string());
             newProj.inputDirectory = absInput;
             // Use mergeFileScan() on the empty project to populate the file
             // list via the library layer (same path as updates later on).
@@ -1026,7 +1007,6 @@ static int cmdProcess(const Opts& opts)
             for (const auto& f : files)
                 paths.push_back(fs::absolute(f).string());
             newProj.mergeFileScan(paths);
-            ws.projectItems.push_back(std::move(newProj));
             projectIdx = static_cast<int>(ws.projectItems.size()) - 1;
         }
     } else {
@@ -1119,8 +1099,13 @@ static int cmdProcess(const Opts& opts)
     const auto canvasChange =
         project.detectCanvasConfigChange(effectiveProfiles);
 
+    // Reordering / adding / removing inputs shifts the continuous strip, so every downstream slice
+    // changes while each file stays byte-identical. Fold it into configChanged so the *full* path runs
+    // (applyProcessingResults refreshes the baseline; the partial path would leave it stale forever).
+    const bool inputOrderChanged = project.detectInputCompositionChange();
+
     const bool configChanged =
-        hasOutputs && (sigMismatch || formatMismatch || canvasChange.any());
+        hasOutputs && (sigMismatch || formatMismatch || canvasChange.any() || inputOrderChanged);
 
     if (!jsonMode && canvasChange.any()) {
         if (canvasChange.listChanged)
@@ -1131,6 +1116,9 @@ static int cmdProcess(const Opts& opts)
                       << canvasChange.changedInputs.size()
                       << " page(s) affected; re-rendering.\n";
     }
+
+    if (!jsonMode && inputOrderChanged)
+        std::cerr << "Input order/composition changed since the last render — re-rendering.\n";
 
     if (project.isUpToDate() && !configChanged) {
         if (!jsonMode)
@@ -1220,7 +1208,7 @@ static int cmdProcess(const Opts& opts)
     };
 
     const auto outcome = Platemaker::Core::ProcessingPipeline::run(
-        project.getInputImages(),
+        project.inputsInOrder(),   // strip is built in `order` sequence, not stored-vector order
         outProfile,
         effectiveProfiles,
         project.canvasProfileIds(),
@@ -1372,9 +1360,8 @@ static int cmdProjectCreate(const Opts& opts)
         }
     }
 
-    ProjectItem newProj;
-    newProj.name = opts.get("name");
-    newProj.uid = makeProjectUid(ws);
+    // The library mints the project uid (a workspace-unique concern the consumer must not own).
+    ProjectItem& newProj = WorkspaceEditor(ws).addProject(opts.get("name"));
 
     if (opts.has("input")) {
         const fs::path inputDir = opts.get("input");
@@ -1396,8 +1383,6 @@ static int cmdProjectCreate(const Opts& opts)
 
     if (opts.has("output"))
         newProj.getOutputDirectory() = opts.get("output");
-
-    ws.projectItems.push_back(std::move(newProj));
 
     try {
         WorkspaceSerializer{}.save(ws, wsFile);

@@ -28,6 +28,8 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -296,6 +298,7 @@ void to_json(nlohmann::json& j, const ProjectItem& v) {
         {"outputProfileId",  v.outputProfileId()},
         {"outputSignature",  v.outputSignature},
         {"canvasProfileIdsAtRender", v.canvasProfileIdsAtRender},
+        {"inputOrderAtRender", v.inputOrderAtRender},
         {"inputFiles",       v.getInputImages()},
         {"outputFiles",      v.getOutputImages()},
         {"outputDirectory",  v.getOutputDirectory()}
@@ -311,6 +314,8 @@ void from_json(const nlohmann::json& j, ProjectItem& v) {
     if (j.contains("outputSignature"))  j.at("outputSignature").get_to(v.outputSignature);
     if (j.contains("canvasProfileIdsAtRender"))
         j.at("canvasProfileIdsAtRender").get_to(v.canvasProfileIdsAtRender);
+    if (j.contains("inputOrderAtRender"))
+        j.at("inputOrderAtRender").get_to(v.inputOrderAtRender);
     j.at("inputFiles").get_to(v.getInputImages());
     j.at("outputFiles").get_to(v.getOutputImages());
     j.at("outputDirectory").get_to(v.getOutputDirectory());
@@ -375,6 +380,46 @@ namespace {
 // migrateOutputProfilePresets / relinkProfileId) that used to live here now belong to
 // WorkspaceEditor, so load() and every in-session edit run one copy of the rules.  load()
 // reaches them via WorkspaceEditor::installLoaded() below.
+
+// Reconstructs the input-composition baseline (inputOrderAtRender) of a project that was rendered
+// before that field existed, so a reorder done under an older build is still caught. The outputs'
+// sourceMap records which input fed each slice, in vertical order; scanning the slices in name order
+// and taking each source path's first appearance recovers the render-time strip order. Paths are
+// mapped to the current input uid (the baseline is uid-keyed); a source path that is no longer an
+// input means the composition already changed, so its path is kept as a token that cannot match any
+// current uid — the comparison then correctly reports a change. Runs only when there is no baseline
+// yet and outputs exist; an unchanged project reconstructs its own current order and stays up to date.
+void backfillInputOrderBaseline(Models::ProjectItem& pi)
+{
+    if (!pi.inputOrderAtRender.empty() || pi.getOutputImages().empty())
+        return;
+
+    std::unordered_map<std::string, std::string> pathToUid;
+    for (const auto& inf : pi.getInputImages())
+        pathToUid.emplace(inf.filePath, inf.uid);
+
+    std::vector<const Models::OutputFile*> outs;
+    outs.reserve(pi.getOutputImages().size());
+    for (const auto& out : pi.getOutputImages())
+        outs.push_back(&out);
+    std::stable_sort(outs.begin(), outs.end(),
+                     [](const Models::OutputFile* a, const Models::OutputFile* b) {
+                         return a->fileName < b->fileName;
+                     });
+
+    std::vector<std::string> order;
+    std::unordered_set<std::string> seen;
+    for (const auto* out : outs)
+        for (const auto& seg : out->sourceMap)
+            if (seen.insert(seg.sourceFilePath).second) {
+                const auto it = pathToUid.find(seg.sourceFilePath);
+                order.push_back(it != pathToUid.end() ? it->second : seg.sourceFilePath);
+            }
+
+    // Nothing to compare against (no provenance) → leave empty; sanitize() then skips the axis.
+    if (!order.empty())
+        pi.inputOrderAtRender = std::move(order);
+}
 
 } // anonymous namespace
 
@@ -479,6 +524,10 @@ Models::Workspace WorkspaceSerializer::load(const std::string&     filePath,
 
         pi.ensureUniqueFileUids();
         pi.rebuildLookupTables();
+
+        // A project rendered before the input-composition axis existed carries no baseline; rebuild it
+        // from output provenance so a reorder done under an older build is not silently missed.
+        backfillInputOrderBaseline(pi);
     }
 
     return workspace;

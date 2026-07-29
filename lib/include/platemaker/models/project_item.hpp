@@ -295,6 +295,14 @@ public:
     /// reorder degrades to a full re-render.
     std::vector<std::string> canvasProfileIdsAtRender;
 
+    /// Input \c uid sequence, in strip (\c order) order, at the last render.  Empty until the
+    /// first render.  The input-composition baseline: the strip is a continuous concatenation, so
+    /// reordering, adding or removing an input shifts pixels across every downstream slice while
+    /// leaving each input file byte-identical — no hash notices.  Comparing this against the current
+    /// \c order-sorted uids (\c detectInputCompositionChange()) is what surfaces it.  Keyed by \c uid
+    /// (not path) so a rename — same content, same position — does not false-invalidate.
+    std::vector<std::string> inputOrderAtRender;
+
     // -----------------------------------------------------------------------
     // Construction
     // -----------------------------------------------------------------------
@@ -325,6 +333,17 @@ public:
 
     /// \overload Const accessor for read-only contexts.
     [[nodiscard]] const std::vector<InputFile>& getInputImages() const noexcept;
+
+    /**
+     * \brief Returns a copy of the input files sorted ascending by \c InputFile::order.
+     *
+     * The strip is built in \c order sequence, which is *not* necessarily the stored vector
+     * order — a reorder changes only the \c order field, never the physical \c m_input_images
+     * layout (that is what keeps a reorder from churning the project structure).  Render callers
+     * pass this to \c ProcessingPipeline::run so the pipeline stays a pure "render the sequence I
+     * am handed" component with no knowledge of \c order.
+     */
+    [[nodiscard]] std::vector<InputFile> inputsInOrder() const;
 
     /**
      * \brief Returns the list of output files.
@@ -418,6 +437,23 @@ public:
      */
     [[nodiscard]] CanvasConfigChange detectCanvasConfigChange(
         const std::vector<CanvasProfile>& workspaceProfiles) const;
+
+    /**
+     * \brief Detects an input-composition change (reorder / add / remove) that invalidates outputs.
+     *
+     * Compares the current \c order-sorted input uids against \c inputOrderAtRender.  This catches
+     * what hashes and the canvas axis cannot: reordering inputs shifts the continuous strip so every
+     * downstream slice changes, yet no input or output file changes on disk.
+     *
+     * Only meaningful after a first render (a project with no outputs, or no baseline, reports no
+     * change — Pending inputs already force a full run, and \c load() backfills the baseline of a
+     * pre-existing project from output provenance).  A hit degrades the whole project to a full
+     * re-render: fold it into the caller's \c configChanged so the *full* path runs and refreshes the
+     * baseline (the partial path leaves it stale, which would re-render forever).
+     *
+     * \return \c true when the input order/composition differs from the last render.
+     */
+    [[nodiscard]] bool detectInputCompositionChange() const;
 
     // -----------------------------------------------------------------------
     // Operations
@@ -583,6 +619,10 @@ private:
 
     std::vector<std::string> m_canvasProfileIds; //!< Ids of linked canvas profiles (see canvasProfileIds()).
     std::string              m_outputProfileId;  //!< Id of the linked output profile (see outputProfileId()).
+
+    /// The current input uids in strip (\c order) order — the value captured as
+    /// \c inputOrderAtRender and compared by \c detectInputCompositionChange().
+    [[nodiscard]] std::vector<std::string> orderedInputUids() const;
 
     std::vector<InputFile>  m_input_images;     //!< Ordered input image list.
     std::vector<OutputFile> m_output_images;    //!< Output slice list from last run.

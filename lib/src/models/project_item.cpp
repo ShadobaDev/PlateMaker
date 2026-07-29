@@ -41,6 +41,7 @@ ProjectItem::ProjectItem(ProjectItem&& other) noexcept
     , inputDirectory(std::move(other.inputDirectory))
     , outputSignature(std::move(other.outputSignature))
     , canvasProfileIdsAtRender(std::move(other.canvasProfileIdsAtRender))
+    , inputOrderAtRender(std::move(other.inputOrderAtRender))
     , m_canvasProfileIds(std::move(other.m_canvasProfileIds))
     , m_outputProfileId(std::move(other.m_outputProfileId))
     , m_input_images(std::move(other.m_input_images))
@@ -59,6 +60,7 @@ ProjectItem& ProjectItem::operator=(ProjectItem&& other) noexcept
         inputDirectory        = std::move(other.inputDirectory);
         outputSignature       = std::move(other.outputSignature);
         canvasProfileIdsAtRender = std::move(other.canvasProfileIdsAtRender);
+        inputOrderAtRender    = std::move(other.inputOrderAtRender);
         m_canvasProfileIds    = std::move(other.m_canvasProfileIds);
         m_outputProfileId     = std::move(other.m_outputProfileId);
         m_input_images        = std::move(other.m_input_images);
@@ -83,6 +85,30 @@ std::vector<InputFile>& ProjectItem::getInputImages() noexcept
 const std::vector<InputFile>& ProjectItem::getInputImages() const noexcept
 {
     return m_input_images;
+}
+
+std::vector<InputFile> ProjectItem::inputsInOrder() const
+{
+    std::vector<InputFile> ordered = m_input_images;
+    std::stable_sort(ordered.begin(), ordered.end(),
+                     [](const InputFile& a, const InputFile& b) { return a.order < b.order; });
+    return ordered;
+}
+
+std::vector<std::string> ProjectItem::orderedInputUids() const
+{
+    std::vector<const InputFile*> ptrs;
+    ptrs.reserve(m_input_images.size());
+    for (const auto& f : m_input_images)
+        ptrs.push_back(&f);
+    std::stable_sort(ptrs.begin(), ptrs.end(),
+                     [](const InputFile* a, const InputFile* b) { return a->order < b->order; });
+
+    std::vector<std::string> uids;
+    uids.reserve(ptrs.size());
+    for (const auto* p : ptrs)
+        uids.push_back(p->uid);
+    return uids;
 }
 
 std::vector<OutputFile>& ProjectItem::getOutputImages() noexcept
@@ -240,6 +266,17 @@ bool ProjectItem::sanitize(const std::vector<CanvasProfile>& workspaceProfiles)
         }
     }
 
+    // Composition axis: reordering / adding / removing inputs shifts the continuous strip, so every
+    // downstream slice changes while each input file stays byte-identical — no hash notices. The strip
+    // is one concatenation, so a change anywhere invalidates the whole output; mark every clean output
+    // Desynchronized (the inputs themselves are unchanged and stay Processed). See
+    // detectInputCompositionChange().
+    if (detectInputCompositionChange()) {
+        m_isUpToDate = false;
+        for (auto& out : m_output_images)
+            markDesynchronized(out.status, FileStatus::Done);
+    }
+
     return m_isUpToDate;
 }
 
@@ -336,6 +373,20 @@ CanvasConfigChange ProjectItem::detectCanvasConfigChange(
     }
 
     return change;
+}
+
+bool ProjectItem::detectInputCompositionChange() const
+{
+    // No outputs → nothing to invalidate; Pending inputs already force a full run.
+    if (m_output_images.empty())
+        return false;
+
+    // No baseline (a project rendered before this axis existed) → don't guess here; load()
+    // backfills the baseline from output provenance, so a genuine change is caught on the next pass.
+    if (inputOrderAtRender.empty())
+        return false;
+
+    return orderedInputUids() != inputOrderAtRender;
 }
 
 // ---------------------------------------------------------------------------
@@ -446,6 +497,10 @@ void ProjectItem::applyProcessingResults(
     // Captured here rather than by the caller so it can never drift out of sync with
     // the per-input fingerprints written above.
     canvasProfileIdsAtRender = effectiveCanvasProfileIds(workspaceProfiles);
+
+    // Baseline for detectInputCompositionChange(): the input sequence (uids, in strip order) this
+    // render used. A later reorder / add / remove changes this and thus stales the outputs.
+    inputOrderAtRender = orderedInputUids();
 
     rebuildLookupTables();
 }

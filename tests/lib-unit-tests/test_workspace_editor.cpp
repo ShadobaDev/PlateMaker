@@ -286,4 +286,28 @@ TEST(WorkspaceEditorTest, InstallLoadedMintsDeduplicatesAndDropsPersistedPresets
     EXPECT_EQ(ws.outputProfiles()[0].id, "op-user");
 }
 
+// ---------------------------------------------------------------------------
+// Projects: addProject mints the uid (a workspace-unique concern the lib owns)
+// ---------------------------------------------------------------------------
+
+TEST(WorkspaceEditorTest, AddProjectMintsAUniqueProjUidAndAppends)
+{
+    Models::Workspace ws;
+    Infrastructure::WorkspaceEditor ed(ws);
+
+    // The returned reference is only valid until the next mutation of the project list, so capture
+    // the minted uid before adding the second project.
+    const std::string uidA = ed.addProject("Chapter 01").uid;
+    const std::string uidB = ed.addProject("Chapter 02").uid;
+
+    EXPECT_EQ(uidA.rfind("proj-", 0), 0u) << "expected a 'proj-' prefix, got " << uidA;
+    EXPECT_FALSE(uidA.empty());
+    EXPECT_NE(uidA, uidB);
+    ASSERT_EQ(ws.projectItems.size(), 2u);
+    EXPECT_EQ(ws.projectItems[0].name, "Chapter 01");
+    EXPECT_EQ(ws.projectItems[0].uid, uidA);
+    EXPECT_EQ(ws.projectItems[1].name, "Chapter 02");
+    EXPECT_EQ(ws.projectItems[1].uid, uidB);
+}
+
 } // namespace Platemaker
