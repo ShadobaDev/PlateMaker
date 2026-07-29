@@ -73,9 +73,11 @@ enum class FileStatus {
     Missing,        //!< File was registered but cannot be found on disk.
     Desynchronized, //!< Output is out-of-sync with the current input set.
     Done,           //!< Output slice is up-to-date with the current input set and workspace config.
-    Skipped         //!< Input the last render did not include — no canvas profile matched its size, or
-                    //!< one exists but is not linked to the project, or it failed to load. Distinct from
-                    //!< Missing (the file is present) and Processed (it exists but was never rendered).
+    Skipped         //!< Input the last render could not include: the file is missing or failed to
+                    //!< load. A size mismatch is NOT a skip — an unmatched page is rendered without
+                    //!< margins and ends up Processed with an empty canvasProfileId. Sticky across
+                    //!< sanitize() while the file is unchanged. Distinct from Missing, which is a
+                    //!< pre-render disk check, and from Pending, which was never rendered.
 };
 
 // ---------------------------------------------------------------------------
