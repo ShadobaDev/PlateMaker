@@ -446,7 +446,8 @@ single virtual strip, sharing one output profile and a curated list of canvas pr
 ```
 uid               : uid         // stable local identifier
 name              : string      // user-facing label, e.g. "Chapter 01"
-inputDirectory    : string      // directory scanned for source images
+inputDirectory    : string      // folder inputs were last scanned from (not authoritative — each
+                                //   input carries its own path); CLI project-match key + GUI dialog default
 outputDirectory   : string      // where output slices are written
 outputProfileId   : uid         // references OutputProfile.id in the parent Workspace
                                 // exactly one output profile per project

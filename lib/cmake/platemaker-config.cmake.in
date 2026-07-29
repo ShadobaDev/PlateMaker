@@ -1,5 +1,36 @@
 @PACKAGE_INIT@
 
+# --- Toolchain (ABI) compatibility check --------------------------------------
+# C++ has no standardised ABI, so a package built with MSVC cannot be linked from a MinGW/GCC build
+# (or the reverse): name mangling differs, std::string / std::vector have different layouts between
+# the MSVC STL and libstdc++, exceptions cannot cross the boundary, and memory allocated in the DLL
+# cannot be freed by an exe linked to a different CRT. Without this check find_package() *succeeds*
+# and the mismatch surfaces much later as a link error or a load-time failure pointing nowhere useful
+# (this has bitten once: an MSVC-built lib used from a MinGW-built GUI). Per-toolchain dev packages
+# already ship (…-windows-mingw-… vs …-windows-msvc-…); fail here, immediately, naming both sides and
+# which package to install. The MSVC-ABI flag is the decisive axis: true for MSVC/clang-cl, false for
+# MinGW/GCC — it is a no-op on Linux (both sides 0), so no platform guard is needed.
+if(DEFINED CMAKE_CXX_COMPILER_ID)
+    if(MSVC)
+        set(_platemaker_this_msvc_abi 1)
+    else()
+        set(_platemaker_this_msvc_abi 0)
+    endif()
+    if(NOT _platemaker_this_msvc_abi EQUAL @PLATEMAKER_BUILT_MSVC_ABI@)
+        if(@PLATEMAKER_BUILT_MSVC_ABI@)
+            set(_platemaker_want "the MSVC dev package (…-windows-msvc-…)")
+        else()
+            set(_platemaker_want "the MinGW dev package (…-windows-mingw-…)")
+        endif()
+        message(FATAL_ERROR
+            "platemaker was built with @PLATEMAKER_BUILT_COMPILER_ID@ but this project is being "
+            "configured with ${CMAKE_CXX_COMPILER_ID}. These toolchains are ABI-incompatible "
+            "(different name mangling, STL layout and C runtime), so the library cannot be linked. "
+            "Install ${_platemaker_want} that matches your compiler.")
+    endif()
+    unset(_platemaker_this_msvc_abi)
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/platemaker-targets.cmake")
 
 # Directory holding the package's credits/ (SPDX SBOM + third-party licence texts). The config lands

@@ -43,7 +43,7 @@ pre-process could split the strip at input boundaries into segments that each
 yield a whole number of slices; independent segments could then be scaled/sliced
 on separate threads and the slice files numbered deterministically afterwards.
 
-### Package version compatibility is wrong for a 0.x library
+### Package version compatibility is wrong for a 0.x library — ✅ **lib SHIPPED (0.3.0)**
 
 `lib/CMakeLists.txt:200` uses `COMPATIBILITY SameMajorVersion`. With major `0`, that treats
 **every** `0.y` as compatible — so a GUI pinned to `0.3.0` would happily accept `0.4.0`, even
@@ -380,7 +380,7 @@ the planned output-size warning has something to check against rather than a har
 Documented in the GUI wiki as currently-PNG (`Manual-Output-Profiles`); that page needs revisiting
 whichever way this goes.
 
-### `ProjectItem::inputDirectory` is dead state — remove it or give it a purpose
+### `ProjectItem::inputDirectory` is dead state — remove it or give it a purpose  — ✅ **SHIPPED (0.3.0)**
 
 The model carries `ProjectItem::inputDirectory`, but nothing in the library reads it: inputs
 are tracked as full absolute paths per `InputFile`, and the pipeline, serializer and matcher

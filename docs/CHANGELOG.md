@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — 0.3.0
+## [0.3.0] — 2026-07-29
 
 **Breaking** (pre-1.0 shifted scale: a breaking change bumps the minor). The output-profile **preset
 model changed** and some symbols were removed. Workspace files stay readable and are migrated on load;
@@ -174,6 +174,21 @@ a consumer that used the removed preset internals must adapt.
   `detectCanvasConfigChange()`, and editing a skipped file re-opens it (`Modified`). `inputsAllProcessed()`
   likewise treats `Skipped` as settled. Fixes the GUI reopening a project with all-`Done` outputs yet
   always re-rendering, and skipped input tiles reverting on reopen.
+
+### Packaging
+
+- **The `find_package(platemaker)` version pin now actually holds pre-1.0.** The config-version file
+  switched from `SameMajorVersion` to `SameMinorVersion`: with major `0`, `SameMajorVersion` treats
+  every `0.y` as compatible, so a consumer pinned to `0.3.0` would silently accept an incompatible
+  `0.4.0` — but under semver a `0.MINOR` bump is exactly where a pre-1.0 breaking change lives (as
+  `0.2.0` and this `0.3.0` both were). The package now accepts only the same `0.MINOR.*`.
+- **The package rejects an ABI-incompatible toolchain at `find_package` time.** The generated
+  `platemaker-config.cmake` records the build compiler and fails with an actionable `FATAL_ERROR`
+  when a MinGW/GCC consumer picks up an MSVC-built package (or the reverse) — the two are
+  ABI-incompatible (name mangling, STL layout, CRT) and cannot be linked. Previously `find_package`
+  succeeded and the mismatch surfaced much later as a baffling link or load error. The message names
+  both compilers and points at the matching per-toolchain dev package (`…-windows-mingw-…` vs
+  `…-windows-msvc-…`).
 
 ## [0.2.1] — 2026-07-20
 

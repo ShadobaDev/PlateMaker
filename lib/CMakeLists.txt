@@ -249,16 +249,30 @@ install(EXPORT platemaker-targets
     COMPONENT Development
 )
 
+# Record the build-time toolchain so find_package() can reject an ABI-incompatible consumer (see the
+# check in platemaker-config.cmake.in). The MSVC-ABI flag is the decisive axis on Windows: it is true
+# for MSVC and clang-cl (MSVC ABI) and false for MinGW/GCC — the boundary that cannot be crossed.
+set(PLATEMAKER_BUILT_COMPILER_ID "${CMAKE_CXX_COMPILER_ID}")
+if(MSVC)
+    set(PLATEMAKER_BUILT_MSVC_ABI 1)
+else()
+    set(PLATEMAKER_BUILT_MSVC_ABI 0)
+endif()
+
 configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/platemaker-config.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/platemaker-config.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/platemaker
 )
 
+# SameMinorVersion while the lib is pre-1.0: under semver a 0.MINOR bump is exactly where breaking
+# changes live (0.1.1 → 0.2.0 already was one), so SameMajorVersion — which treats every 0.y as
+# compatible — would let a consumer pinned to 0.3.0 silently accept an incompatible 0.4.0. This
+# accepts only the same 0.MINOR.* and still rejects anything older than requested. Revisit at 1.0.
 write_basic_package_version_file(
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/platemaker-config-version.cmake
     VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
+    COMPATIBILITY SameMinorVersion
 )
 
 install(FILES

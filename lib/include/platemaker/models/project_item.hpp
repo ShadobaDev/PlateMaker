@@ -253,7 +253,12 @@ public:
     // -----------------------------------------------------------------------
     std::string name;           //!< Human-readable chapter name (e.g. "Chapter 01").
     std::string uid;            //!< Local unique id (e.g. "proj-<hex>"), minted by makeUniqueId. Not an RFC 4122 UUID.
-    std::string inputDirectory; //!< Absolute path to the source image directory.
+    std::string inputDirectory; //!< Absolute path of the folder inputs were last scanned from. NOT
+                                //!< authoritative for the input list (each InputFile carries its own
+                                //!< full path; inputs may come from several folders). Two defined
+                                //!< uses: the CLI matches an existing project by this directory
+                                //!< (`platemaker process <dir>`), and the GUI pre-opens it in the
+                                //!< add-from-directory dialog. May be empty (never scanned a folder).
 
     /**
      * \brief Ids of canvas profiles linked to this project (empty = all workspace profiles accepted).
