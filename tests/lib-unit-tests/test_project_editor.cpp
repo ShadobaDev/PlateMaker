@@ -18,7 +18,9 @@
 
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/infrastructure/project_editor/project_editor.hpp>
+#include <platemaker/infrastructure/workspace_editor/workspace_editor.hpp>
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
+#include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/project_item.hpp>
 #include <platemaker/models/workspace.hpp>
@@ -114,6 +116,65 @@ TEST(ProjectEditorTest, MoveInputUpAndDown)
     EXPECT_FALSE(ed.moveInput("u2", -1));  // already first
     EXPECT_FALSE(ed.moveInput("u1", +1));  // already last
     EXPECT_FALSE(ed.moveInput("nope", -1)); // unknown
+}
+
+// ---------------------------------------------------------------------------
+// ProjectEditor::snapshot / restore — undo/redo support
+// ---------------------------------------------------------------------------
+
+TEST(ProjectEditorSnapshotTest, RoundTripsContentAndPreservesName)
+{
+    ProjectItem p = makeProject(3);
+    p.getOutputDirectory() = "out/dir";
+    p.outputSignature      = "sig123";
+
+    Infrastructure::ProjectEditor ed(p);
+    const std::string snap = ed.snapshot();
+
+    // Mutate: reorder, change output dir, rename.
+    ed.setInputOrder({"u2", "u1", "u0"});
+    p.getOutputDirectory() = "different";
+    p.name                 = "Renamed";
+
+    ed.restore(snap);
+
+    EXPECT_EQ(orderSeqUids(p), (std::vector<std::string>{"u0", "u1", "u2"})); // order restored
+    EXPECT_EQ(p.getOutputDirectory(), "out/dir");                             // dir restored
+    EXPECT_EQ(p.outputSignature, "sig123");
+    EXPECT_EQ(p.name, "Renamed"); // name is workspace-owned → preserved, NOT reverted to the snapshot
+}
+
+TEST(ProjectEditorSnapshotTest, RoundTripsProfileLinks)
+{
+    Models::Workspace ws;
+    Infrastructure::WorkspaceEditor wed(ws);
+
+    Models::CanvasProfile cp;
+    cp.name       = "A4";
+    cp.canvasSize = {100, 200};
+    const std::string cid = wed.addCanvasProfile(cp);
+
+    Models::OutputProfile op;
+    op.name = "Web";
+    const std::string oid = wed.addOutputProfile(op);
+
+    Models::ProjectItem& p = wed.addProject("Chapter");
+    ASSERT_TRUE(wed.addCanvasProfileToProject(p, cid));
+    ASSERT_TRUE(wed.setProjectOutputProfile(p, oid));
+    ASSERT_EQ(p.canvasProfileIds(), (std::vector<std::string>{cid}));
+    ASSERT_EQ(p.outputProfileId(), oid);
+
+    const std::string snap = Infrastructure::ProjectEditor(p).snapshot();
+
+    // Unlink everything, then restore.
+    ASSERT_TRUE(wed.removeCanvasProfileFromProject(p, cid));
+    ASSERT_TRUE(wed.setProjectOutputProfile(p, ""));
+    ASSERT_TRUE(p.canvasProfileIds().empty());
+    ASSERT_TRUE(p.outputProfileId().empty());
+
+    Infrastructure::ProjectEditor(p).restore(snap);
+    EXPECT_EQ(p.canvasProfileIds(), (std::vector<std::string>{cid}));
+    EXPECT_EQ(p.outputProfileId(), oid);
 }
 
 // ---------------------------------------------------------------------------

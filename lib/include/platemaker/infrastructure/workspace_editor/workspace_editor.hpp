@@ -192,6 +192,34 @@ public:
                        std::vector<Models::OutputProfile>&& output,
                        WorkspaceRepairReport&               report);
 
+    // -----------------------------------------------------------------------
+    // Snapshot / restore (undo/redo support) — workspace-level metadata only
+    // -----------------------------------------------------------------------
+
+    /**
+     * \brief Serialises the workspace-level metadata to an opaque snapshot string.
+     *
+     * Captures only what is owned at the workspace scope: the canvas and output profile palettes
+     * (presets filtered, as they are never persisted) and the project roster as \c (uid, name) pairs.
+     * It deliberately does **not** include project *contents* (inputs/outputs) — those are captured
+     * per project by \c ProjectEditor::snapshot(), which keeps this snapshot small and keeps a
+     * workspace-scope undo from resurrecting project content reverted on a project's own timeline.
+     */
+    [[nodiscard]] std::string snapshotMeta() const;
+
+    /**
+     * \brief Restores workspace-level metadata from a string produced by \c snapshotMeta().
+     *
+     * Reinstalls the profile palettes through the validated palette setters (ids preserved, presets
+     * stripped, \c templateInfo restored to the exact snapshot value) and restores each project's
+     * \c name by uid. Project contents and the project roster (add/remove) are left untouched — undo
+     * of add/remove is out of scope, so the set of projects a snapshot describes still exists.
+     *
+     * \param snapshot A string previously returned by \c snapshotMeta().
+     * \throws nlohmann::json::exception if \p snapshot is not valid metadata JSON.
+     */
+    void restoreMeta(const std::string& snapshot);
+
 private:
     // --- invariant helpers (one copy of the rules, shared by the ops above and installLoaded) ---
 

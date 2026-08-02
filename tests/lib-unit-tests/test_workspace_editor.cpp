@@ -310,4 +310,72 @@ TEST(WorkspaceEditorTest, AddProjectMintsAUniqueProjUidAndAppends)
     EXPECT_EQ(ws.projectItems[1].uid, uidB);
 }
 
+// ---------------------------------------------------------------------------
+// snapshotMeta / restoreMeta — workspace-level undo support
+// ---------------------------------------------------------------------------
+
+TEST(WorkspaceEditorSnapshotMetaTest, RestoresProfilesAndProjectNames)
+{
+    Models::Workspace ws;
+    Infrastructure::WorkspaceEditor ed(ws);
+    const std::string cid = ed.addCanvasProfile(canvas("", "A", 800, 1000));
+    const std::string oid = ed.addOutputProfile(output("", "Mine"));
+    ed.addProject("Chapter 01");
+    ed.addProject("Chapter 02");
+
+    const std::string snap = ed.snapshotMeta();
+
+    // Mutate workspace-level state: delete the canvas profile and rename a project.
+    ed.removeCanvasProfile(cid);
+    ws.projectItems[0].name = "Renamed";
+    ASSERT_TRUE(ws.canvasProfiles().empty());
+
+    ed.restoreMeta(snap);
+
+    ASSERT_EQ(ws.canvasProfiles().size(), 1u);
+    EXPECT_EQ(ws.canvasProfiles()[0].id, cid);   // id preserved through the validated setter
+    ASSERT_EQ(ws.outputProfiles().size(), 1u);
+    EXPECT_EQ(ws.outputProfiles()[0].id, oid);
+    EXPECT_EQ(ws.projectItems[0].name, "Chapter 01"); // name restored by uid
+}
+
+TEST(WorkspaceEditorSnapshotMetaTest, RestoresCanvasTemplateInfoExactly)
+{
+    Models::Workspace ws;
+    Infrastructure::WorkspaceEditor ed(ws);
+    const std::string cid = ed.addCanvasProfile(canvas("", "A", 800, 1000));
+    ASSERT_TRUE(ed.setCanvasProfileTemplateInfo(cid, [] {
+        Models::CanvasTemplateInfo t; t.path = "tpl.png"; return t; }()));
+
+    const std::string snap = ed.snapshotMeta();
+
+    // Clear the template (as a "delete template" would), then undo via restoreMeta.
+    ASSERT_TRUE(ed.setCanvasProfileTemplateInfo(cid, Models::CanvasTemplateInfo{}));
+    ASSERT_TRUE(ws.canvasProfiles()[0].templateInfo.path.empty());
+
+    ed.restoreMeta(snap);
+    EXPECT_EQ(ws.canvasProfiles()[0].templateInfo.path, "tpl.png");
+}
+
+TEST(WorkspaceEditorSnapshotMetaTest, LeavesProjectContentsUntouched)
+{
+    Models::Workspace ws;
+    Infrastructure::WorkspaceEditor ed(ws);
+    Models::ProjectItem& p = ed.addProject("Chapter");
+    Models::InputFile inf;
+    inf.uid = "u0"; inf.filePath = "p0.png"; inf.order = 0;
+    p.getInputImages().push_back(std::move(inf));
+
+    const std::string snap = ed.snapshotMeta();
+
+    // Add project content after the snapshot; restoreMeta must not revert it (contents are the
+    // project scope's job, captured by ProjectEditor::snapshot — not this metadata snapshot).
+    Models::InputFile inf2;
+    inf2.uid = "u1"; inf2.filePath = "p1.png"; inf2.order = 1;
+    ws.projectItems[0].getInputImages().push_back(std::move(inf2));
+
+    ed.restoreMeta(snap);
+    EXPECT_EQ(ws.projectItems[0].getInputImages().size(), 2u);
+}
+
 } // namespace Platemaker

@@ -4,6 +4,22 @@
 
 ### Added
 
+- **`ProjectEditor` and `WorkspaceEditor` now expose component snapshot/restore** for undo/redo (or any
+  save-and-revert-a-single-part need), so a consumer never has to serialise or parse workspace JSON
+  itself — the editors, already the validated-mutation authorities, own it:
+  - `ProjectEditor::snapshot()` / `restore(str)` — a compact serialisation of *one* project (inputs,
+    outputs, profile links, output-profile selection, output dir, render baselines). `restore` reinstalls
+    the content in place, rebuilds the lookup tables, and applies the private profile-link fields through
+    the friend path; the project `name` is **preserved** (it belongs to the workspace scope).
+  - `WorkspaceEditor::snapshotMeta()` / `restoreMeta(str)` — workspace-level metadata only: the canvas
+    and output palettes plus the project `(uid, name)` roster, **without** project contents. `restoreMeta`
+    reinstalls the palettes through the validated setters (ids preserved, presets stripped, `templateInfo`
+    restored exactly) and restores project names by uid, leaving inputs/outputs untouched.
+
+  The two are scoped so a workspace-level restore can never resurrect project content reverted on a
+  project's own timeline. (Internally, the Models JSON codec moved from `workspace_serializer.cpp` to a
+  shared `model_json` unit both the serializer and the editors use; `WorkspaceSerializer`'s public API
+  is unchanged.)
 - **Five new platform output presets.** Alongside "Webtoon Standard", the catalogue now ships presets
   for Tapas, NAMICOMI, GlobalComix, Popjoy and ComicFury/indie-web. Design rule: **a preset must always
   produce an uploadable file** for its platform — slice heights are kept conservative (≈1.4–3.3 MP) and

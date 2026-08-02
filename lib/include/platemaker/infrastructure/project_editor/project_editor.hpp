@@ -69,6 +69,35 @@ public:
      */
     bool moveInput(const std::string& uid, int delta);
 
+    // -----------------------------------------------------------------------
+    // Snapshot / restore (undo/redo support)
+    // -----------------------------------------------------------------------
+
+    /**
+     * \brief Serialises the bound project's full content to an opaque snapshot string.
+     *
+     * Captures everything a project owns — inputs, outputs, profile links, output-profile selection,
+     * output directory, and the render baselines. Meant to be paired with \c restore(): a consumer
+     * (e.g. a GUI undo command) keeps the string and hands it back to revert an edit. The format is
+     * the same JSON the workspace file uses, but this is a *component* snapshot (one project), so it
+     * is light — no whole-workspace copy. Compact (no pretty-printing) to keep it small in memory.
+     */
+    [[nodiscard]] std::string snapshot() const;
+
+    /**
+     * \brief Restores the bound project from a string produced by \c snapshot().
+     *
+     * Replaces the project's content in place and rebuilds its runtime lookup tables. The project's
+     * \c name is **preserved** (it is workspace-owned — renamed through \c WorkspaceEditor, tracked on
+     * the workspace undo timeline — so a project-scope restore must not resurrect an old name). Applies
+     * the private profile-link fields through the friend path, exactly as \c load() does; the snapshot
+     * was a previously valid state, so no re-validation is performed.
+     *
+     * \param snapshot A string previously returned by \c snapshot() on a project with the same uid.
+     * \throws nlohmann::json::exception if \p snapshot is not valid project JSON.
+     */
+    void restore(const std::string& snapshot);
+
 private:
     Models::ProjectItem& m_project;
 };

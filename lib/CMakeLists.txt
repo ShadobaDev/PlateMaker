@@ -24,6 +24,7 @@ set(PLATEMAKER_SOURCES
     # Infrastructure / IO
     src/infrastructure/file/file_meta_data.cpp
     src/infrastructure/image_io/image_io.cpp
+    src/infrastructure/model_json/model_json.cpp
     src/infrastructure/workspace_serializer/workspace_serializer.cpp
     src/infrastructure/workspace_editor/workspace_editor.cpp
     src/infrastructure/project_editor/project_editor.cpp

@@ -12,9 +12,16 @@
 
 #include <platemaker/infrastructure/project_editor/project_editor.hpp>
 
+#include "infrastructure/model_json/model_json.hpp"   // ProjectItem JSON codec
+
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace Platemaker::Infrastructure {
 
@@ -77,6 +84,33 @@ bool ProjectEditor::moveInput(const std::string& uid, int delta)
 
     std::swap(ordered[static_cast<std::size_t>(idx)], ordered[static_cast<std::size_t>(target)]);
     return setInputOrder(ordered);
+}
+
+std::string ProjectEditor::snapshot() const
+{
+    // to_json(ProjectItem) reads the profile links via the public accessors, so a plain conversion
+    // captures the full project. Compact dump keeps the in-memory undo snapshot small.
+    const nlohmann::json j = m_project;
+    return j.dump();
+}
+
+void ProjectEditor::restore(const std::string& snapshot)
+{
+    const nlohmann::json j = nlohmann::json::parse(snapshot);
+
+    // name is workspace-owned (renamed via WorkspaceEditor on the workspace timeline); a project-scope
+    // restore must keep the current name rather than resurrect the one stored in the snapshot.
+    std::string keepName = m_project.name;
+
+    // from_json fills the public fields + inputs/outputs but deliberately skips the private link
+    // fields; set those from the same JSON through the friend path (a previously valid state).
+    Models::ProjectItem restored = j.get<Models::ProjectItem>();
+    restored.name              = std::move(keepName);
+    restored.m_canvasProfileIds = j.value("canvasProfileIds", std::vector<std::string>{});
+    restored.m_outputProfileId  = j.value("outputProfileId",  std::string{});
+    restored.rebuildLookupTables();
+
+    m_project = std::move(restored);
 }
 
 } // namespace Platemaker::Infrastructure

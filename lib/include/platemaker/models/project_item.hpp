@@ -54,7 +54,7 @@
 // Forward declarations only (no include, so Models stays independent of Infrastructure). The
 // project's profile-link fields are private; WorkspaceEditor is the sole runtime mutation authority
 // (it enforces the guards), and WorkspaceSerializer installs them at load time.
-namespace Platemaker::Infrastructure { class WorkspaceEditor; class WorkspaceSerializer; }
+namespace Platemaker::Infrastructure { class WorkspaceEditor; class WorkspaceSerializer; class ProjectEditor; }
 
 namespace Platemaker::Models {
 
@@ -620,9 +620,12 @@ public:
 
 private:
     // WorkspaceEditor is the sole runtime authority allowed to write the profile-link fields below
-    // (it applies the validation / dimension guard); WorkspaceSerializer installs them at load time.
+    // (it applies the validation / dimension guard); WorkspaceSerializer installs them at load time;
+    // ProjectEditor writes them back when restoring a project snapshot for undo/redo (a previously
+    // valid state, so no re-validation is needed — the same friend path load() uses).
     friend class Platemaker::Infrastructure::WorkspaceEditor;
     friend class Platemaker::Infrastructure::WorkspaceSerializer;
+    friend class Platemaker::Infrastructure::ProjectEditor;
 
     std::vector<std::string> m_canvasProfileIds; //!< Ids of linked canvas profiles (see canvasProfileIds()).
     std::string              m_outputProfileId;  //!< Id of the linked output profile (see outputProfileId()).

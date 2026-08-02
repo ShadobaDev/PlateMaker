@@ -17,9 +17,7 @@ work happens in.
   baseline — ship a MINOR before the pending PATCH and that patch becomes `0.3.1`, the next MINOR
   becomes `0.4.0`.
 
-Baseline: **0.2.1 released, 0.3.0 in progress** (`CMakeLists.txt`). The additive `0.2.2` work
-(buildInfo, SBOM) was folded into `0.3.0`, which also makes breaking preset/CLI changes — so the
-release is a minor, and `0.2.2` never ships on its own.
+Baseline: **0.3.0 released, 0.3.1 in progress** (`CMakeLists.txt`).
 
 ---
 
@@ -180,6 +178,26 @@ Seven tests are currently stubbed with `GTEST_SKIP()` pending real image fixture
 Need: small test PNG fixtures in `tests/lib-unit-tests/fixtures/` and a test
 helper that calls `vips_init()`/`vips_shutdown()` in a `SetUpTestSuite` /
 `TearDownTestSuite` pair.
+
+### Custom libvips build to drop unused codecs (~9 MB) — LOW priority
+
+After switching Windows to the prebuilt `vips-dev-x64-web` build, the bundled third-party DLLs are
+~40 / ~25 MB. The largest are **codecs Platemaker never uses** but that `libvips-42.dll` imports
+directly, so the install-time closure cannot prune them:
+
+| DLL | Size | Format |
+|---|---|---|
+| `libaom.dll` | 5.3 MB | AV1 / AVIF |
+| `librsvg-2-2.dll` | 2.5 MB | SVG |
+| `libheif.dll` | 1.3 MB | HEIF |
+
+That is ~9 MB for formats we neither load nor save (we do PNG/JPEG/WebP/TIFF). The only way to shed
+them is a **custom libvips build** with those loaders disabled (e.g. `-Dheif=disabled -Dsvg=disabled`
+and dropping aom), replacing the FetchContent of the prebuilt zip. That would take the package under
+~17 MB, but it means owning a libvips build (meson/toolchain, per-arch, kept in step with the pinned
+version) instead of downloading an official zip — a real maintenance cost for a size-only win, hence
+low priority. Applies to both MSVC and MinGW (they now share the same web zip). No API/behaviour
+change — the same formats are still supported.
 
 ---
 

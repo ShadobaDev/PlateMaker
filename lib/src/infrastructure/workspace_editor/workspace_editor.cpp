@@ -17,10 +17,17 @@
 
 #include <platemaker/infrastructure/workspace_editor/workspace_editor.hpp>
 
+#include "infrastructure/model_json/model_json.hpp"   // Workspace-component JSON codec
+
 #include <platemaker/infrastructure/id_generator/id_generator.hpp>
 #include <platemaker/models/output_profile.hpp>
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace Platemaker::Infrastructure {
 
@@ -320,6 +327,59 @@ void WorkspaceEditor::installLoaded(std::vector<Models::CanvasProfile>&& canvas,
     // Presets last: the collapse pass hands out relinks and drops copies, so it must run on a
     // list that is already free of duplicate ids.
     migrateOutputProfilePresets(m_ws);
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot / restore (workspace-level metadata) — undo/redo support
+// ---------------------------------------------------------------------------
+
+std::string WorkspaceEditor::snapshotMeta() const
+{
+    // Project roster: uid + name only (no contents — those are per-project snapshots).
+    nlohmann::json projects = nlohmann::json::array();
+    for (const auto& pi : m_ws.projectItems)
+        projects.push_back(nlohmann::json{{"uid", pi.uid}, {"name", pi.name}});
+
+    // Output profiles: filter presets, mirroring the workspace codec (they are never persisted).
+    nlohmann::json outputs = nlohmann::json::array();
+    for (const auto& op : m_ws.outputProfiles())
+        if (!Models::outputPresetDefById(op.id))
+            outputs.push_back(op);
+
+    const nlohmann::json j{
+        {"canvasProfiles", m_ws.canvasProfiles()},
+        {"outputProfiles", outputs},
+        {"projects",       projects}
+    };
+    return j.dump();
+}
+
+void WorkspaceEditor::restoreMeta(const std::string& snapshot)
+{
+    const nlohmann::json j = nlohmann::json::parse(snapshot);
+
+    // Reinstall the palettes through the validated setters: ids preserved, presets stripped, and
+    // (for canvas) templateInfo carried from the current profile of the same id. The carry heuristic
+    // is not exact, so re-apply each snapshot's templateInfo explicitly afterwards — this makes an
+    // undo of template generation/deletion restore the exact recorded value.
+    auto canvas = j.at("canvasProfiles").get<std::vector<Models::CanvasProfile>>();
+    replaceCanvasProfiles(canvas);
+    for (const auto& cp : canvas)
+        setCanvasProfileTemplateInfo(cp.id, cp.templateInfo);
+
+    replaceOutputProfiles(j.at("outputProfiles").get<std::vector<Models::OutputProfile>>());
+
+    // Restore project names by uid. The roster itself is not changed here (add/remove is not
+    // undoable), so a uid the snapshot lists but that no longer exists is simply skipped, and a
+    // project not in the snapshot is left as-is.
+    std::unordered_map<std::string, std::string> nameByUid;
+    for (const auto& jp : j.at("projects"))
+        nameByUid.emplace(jp.at("uid").get<std::string>(), jp.at("name").get<std::string>());
+    for (auto& pi : m_ws.projectItems) {
+        const auto it = nameByUid.find(pi.uid);
+        if (it != nameByUid.end())
+            pi.name = it->second;
+    }
 }
 
 } // namespace Platemaker::Infrastructure
