@@ -171,13 +171,65 @@ struct OutputPresetDef {
     int              startIndex;
 };
 
-//! Canonical id of the Webtoon Standard preset. Stable across builds and sessions so a stored
-//! ProjectItem::outputProfileId can reference it; resolved from the catalogue, never persisted.
+//! Canonical ids of the built-in presets. Stable across builds and sessions so a stored
+//! ProjectItem::outputProfileId can reference one; resolved from the catalogue, never persisted.
 inline constexpr std::string_view k_webtoonStandardPresetId = "op-preset-webtoon-standard";
+inline constexpr std::string_view k_tapasPresetId           = "op-preset-tapas";
+inline constexpr std::string_view k_namicomiPresetId        = "op-preset-namicomi";
+inline constexpr std::string_view k_globalComixPresetId     = "op-preset-globalcomix";
+inline constexpr std::string_view k_popjoyPresetId          = "op-preset-popjoy";
+inline constexpr std::string_view k_comicFuryPresetId       = "op-preset-comicfury";
 
 //! The preset catalogue — the single, compile-time source of truth. Add a preset by adding a row.
-inline constexpr std::array<OutputPresetDef, 1> k_outputPresetDefs = {{
+//!
+//! Design rule: a preset must ALWAYS produce uploadable files for its platform. So slice heights are
+//! kept conservative (≈1.4–3.3 MP) and lossy/compressed formats are preferred — never the largest
+//! setting a platform tolerates. Users who want to push size/quality do it in a custom profile. Most
+//! presets output JPEG (best compression at visually identical quality); WebP where the platform
+//! promotes it; PNG only where the per-chapter limit is so large that lossless is free (NAMICOMI).
+inline constexpr std::array<OutputPresetDef, 6> k_outputPresetDefs = {{
     { k_webtoonStandardPresetId, "Webtoon Standard", 800, 1280,
+      LastSlicePolicy::KeepAsIs, OutputFormat::JPEG,
+      JpegOptions{90, JpegSubsampling::YUV_444, true, false},
+      PngOptions{6, false},
+      WebpOptions{80, false, 4},
+      1 },
+    // Tapas requires 940px width (any height) with a 2 MB per-file limit. Slice height is 1504px so the
+    // slice keeps Webtoon's 800:1280 (1:1.6) aspect ratio (940 × 1.6 = 1504); a q90 JPEG at this size
+    // stays comfortably under 2 MB.
+    { k_tapasPresetId, "Tapas", 940, 1504,
+      LastSlicePolicy::KeepAsIs, OutputFormat::JPEG,
+      JpegOptions{90, JpegSubsampling::YUV_444, true, false},
+      PngOptions{6, false},
+      WebpOptions{80, false, 4},
+      1 },
+    // NAMICOMI recommends 1200 × 1600 pages and allows a huge 250 MB per-chapter budget, so lossless
+    // PNG is free here — the platform's creators prefer it. This is the one preset that is not lossy.
+    { k_namicomiPresetId, "NAMICOMI", 1200, 1600,
+      LastSlicePolicy::KeepAsIs, OutputFormat::PNG,
+      JpegOptions{90, JpegSubsampling::YUV_444, true, false},
+      PngOptions{6, false},
+      WebpOptions{80, false, 4},
+      1 },
+    // GlobalComix promotes HD (its reader upscales well on 4K/tablets) and fully supports WebP. WebP
+    // keeps a tall HD slice (1280 × 2560, 3.3 MP) safely uploadable — smaller than the equivalent JPEG.
+    { k_globalComixPresetId, "GlobalComix (HD)", 1280, 2560,
+      LastSlicePolicy::KeepAsIs, OutputFormat::WebP,
+      JpegOptions{90, JpegSubsampling::YUV_444, true, false},
+      PngOptions{6, false},
+      WebpOptions{80, false, 4},
+      1 },
+    // Popjoy targets high-DPI phone screens. 1000 × 2000 (2 MP) q90 JPEG stays well under a typical
+    // per-file limit while still giving crisp output on dense displays.
+    { k_popjoyPresetId, "Popjoy", 1000, 2000,
+      LastSlicePolicy::KeepAsIs, OutputFormat::JPEG,
+      JpegOptions{90, JpegSubsampling::YUV_444, true, false},
+      PngOptions{6, false},
+      WebpOptions{80, false, 4},
+      1 },
+    // ComicFury / indie-web CMS: a layout-safe 950px width (won't overflow classic page templates).
+    // Slice at 1500px (Google's alternative to publishing whole uncut pages); 1.4 MP q90 JPEG is tiny.
+    { k_comicFuryPresetId, "ComicFury / Indie", 950, 1500,
       LastSlicePolicy::KeepAsIs, OutputFormat::JPEG,
       JpegOptions{90, JpegSubsampling::YUV_444, true, false},
       PngOptions{6, false},
