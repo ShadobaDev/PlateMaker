@@ -24,6 +24,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Submit SPDX SBOM to the dependency graph
-        uses: advanced-security/spdx-dependency-submission-action@v0.1.1
+        uses: advanced-security/spdx-dependency-submission-action@v0.2.0
         with:
           filePath: "sbom"   # directory scanned for *.spdx.json
