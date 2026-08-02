@@ -1,0 +1,21 @@
+# Dependabot VERSION UPDATES (auto-PRs bumping dependency versions).
+#
+# Scope note: this only covers ecosystems Dependabot supports. Our main C++ dependencies
+# (libvips, nlohmann/json, Qt) have NO Dependabot ecosystem — they are pinned in CMakeLists.txt and
+# surfaced to GitHub via the SBOM submission (see .github/workflows/dependency-submission.yml). CVE
+# ALERTS for those come from "Dependabot alerts" (enabled in repo Settings → Code security), which
+# reads the dependency graph and needs no config here.
+#
+# So this file just keeps the two things Dependabot *can* update current: our GitHub Actions and the
+# Python test deps.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"                 # scans .github/workflows/*
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "pip"
+    directory: "/tests/cli-tests"  # requirements.txt lives here
+    schedule:
+      interval: "weekly"
