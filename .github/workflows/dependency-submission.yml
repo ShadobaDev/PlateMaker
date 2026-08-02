@@ -1,0 +1,29 @@
+# Populates GitHub's Dependency graph (Insights → Dependency graph) for this C++/CMake project.
+#
+# GitHub only parses dependencies from manifest files it knows (package.json, go.mod, …); it cannot
+# read our CMake FetchContent / find_package / prebuilt-zip dependencies, so the graph is empty by
+# default. Instead we submit the committed SPDX SBOM (sbom/sbom.spdx.json) through the Dependency
+# Submission API, which also lets Dependabot raise CVE alerts on libvips / nlohmann-json.
+#
+# The SBOM here is a *committed snapshot*. Our dependencies are pinned in CMakeLists.txt and change
+# rarely; when a pinned version does change, regenerate it and re-commit (see sbom/README.md).
+name: Dependency submission
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ "sbom/**", ".github/workflows/dependency-submission.yml" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # required by the Dependency Submission API
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Submit SPDX SBOM to the dependency graph
+        uses: advanced-security/spdx-dependency-submission-action@v0.1.1
+        with:
+          filePath: "sbom"   # directory scanned for *.spdx.json

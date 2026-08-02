@@ -201,6 +201,25 @@ change — the same formats are still supported.
 
 ---
 
+## No versioned changes
+
+### Add dependency manifest — done (SBOM submission)
+
+**Done.** GitHub's Dependency graph could not read our CMake dependencies (FetchContent / find_package /
+prebuilt libvips zip), and it does **not** ingest an SBOM merely committed to the repo — the *Export
+SBOM* button only exports. So instead of a fake `package.json`, we feed the graph through the
+**Dependency Submission API**: a committed SPDX snapshot at [`sbom/sbom.spdx.json`](../sbom/sbom.spdx.json)
+is submitted by [`.github/workflows/dependency-submission.yml`](../.github/workflows/dependency-submission.yml)
+(via `advanced-security/spdx-dependency-submission-action`) on every push touching `sbom/`. This lists
+the direct deps (libvips, nlohmann/json) with their `purl`s, so the graph populates and Dependabot can
+raise CVE alerts.
+
+The SBOM is a committed snapshot because our deps are pinned and change rarely; regenerate it from
+`build/mingw-release/lib/credits/sbom.spdx.json` when a pinned version changes (see `sbom/README.md`).
+Extending the snapshot to the full bundled DLL graph is the separate SBOM item under **PATCH** above.
+
+---
+
 ## Release history & coordination
 
 **Shipped:** `0.1.0` → `0.1.1` → `0.2.0` → `0.2.1` → `0.3.0` → `0.3.1` (lib);
