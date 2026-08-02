@@ -47,59 +47,17 @@ on separate threads and the slice files numbered deterministically afterwards.
 
 **Foundation shipped in 0.3.0.** The package now emits `credits/sbom.spdx.json` (an SPDX 2.3 SBOM)
 plus `credits/licenses/` — but only for the **direct** dependencies (libvips, nlohmann/json). The
-Windows packages still ship the whole libvips dependency graph (~90 DLLs: glib, libpng, libjpeg,
+Windows packages still ship the whole libvips dependency graph (~40 DLLs: glib, libpng, libjpeg,
 zlib, expat, …), several LGPL, and distributing them carries notice obligations that listing only
-"libvips" does not discharge.
+"libvips" does not discharge. Both toolchains now bundle the same libvips web-build graph, so one
+closure covers MSVC and MinGW.
 
 What remains is to enumerate that closure into the same SBOM (more `packages[]` entries + their
 licence texts). The DLL closure is already computed at install time
 (`_pm_install_mingw_dll_closure()`), so the list can be derived rather than maintained by hand; a
 scanner such as `syft` over the packaged `bin/` is the likely tool. Each DLL needs mapping to its
-SPDX licence and text — note MSYS2 does **not** ship a licence file for every package (libvips
-itself has none under `share/licenses/`), so some canonical texts must be vendored the way
-`lib/cmake/licenses/` already does for LGPL-2.1 and MIT.
-
-### Slim the MinGW package by switching to the `vips-dev-x64-web` variant
-
-The MinGW build ships a much larger libvips than MSVC — **not** because of the compiler,
-but because the two branches source different libvips builds
-([CMakeLists.txt](../CMakeLists.txt#L54-L95)):
-
-- **MSVC** FetchContents libvips' official `vips-dev-x64-web-8.18.2` zip — a deliberately
-  minimal build: **38 DLLs / 22.7 MB**, and no `vips-modules-*` dir (so the "unable to load
-  vips-heif/jxl/magick/…" warnings don't appear either).
-- **MinGW** uses MSYS2's `mingw-w64-x86_64-libvips` via pkg-config — the **full** build
-  (every loader + poppler/openslide/magick/raw/OpenEXR/…), ~92 DLLs / 34 MB even after the
-  existing DLL pruning. MSYS2 offers no minimal/web libvips package, so pacman can't provide
-  the web variant.
-
-**Plan: point the MinGW branch at the same web zip the MSVC branch already downloads.**
-Verified feasible:
-
-- **Formats cover our needs.** The web zip ships PNG, JPEG, WebP, TIFF (+ GIF/HEIF). Platemaker
-  saves PNG/JPEG/WebP and loads PNG/JPEG, so nothing we use is missing; only heavy formats we
-  never touch (PDF/poppler, openslide, magick, matio, cfitsio, OpenEXR, raw) are gone.
-- **ABI is clean because we use the vips C API only** — `grep` confirms zero `VImage` / `vips::`
-  / `<vips/vips8>` usage. The web zip's C++ runtime is LLVM libc++ (`libc++.dll`/`libunwind.dll`),
-  so linking `libvips-cpp` would clash with our libstdc++ — but we must link the **C** `libvips`
-  (not `vips-cpp`), and the C boundary is ABI-stable regardless of the DLL's C++ runtime. Note
-  CMake currently links `VIPS::vips-cpp`; switch the alias to the C `libvips`.
-- **MinGW can link the web zip's import libs.** It ships a `.def` for every library, so
-  `dlltool -d libvips.def -l libvips.dll.a -D libvips-42.dll` produces GNU import libs; modern
-  `ld` also often links the MS `.lib` directly.
-
-Side benefits beyond size: fewer DLLs means a smaller `DLL_PROCESS_DETACH` surface at exit —
-i.e. less exposure to the loader-shutdown deadlock recorded in
-[ISSUES.md](ISSUES.md) (already fixed via fast-exit, but a smaller graph lowers the odds
-regardless), and unifies MSVC + MinGW on one libvips source of truth.
-
-**Only real unknown — resolve with a ~30 min spike first:** does MinGW `ld` link the web zip's
-libs directly, or is the `dlltool`-from-`.def` step required? Point the MinGW build at the
-downloaded `build/msvc-release/_deps/vips_binaries-src`, link the C `libvips`, build the CLI and
-run ctest. If green, plan the full switch (CMake branch, DLL-closure/deploy code, README,
-CMakePresets).
-
----
+SPDX licence and text — the web-zip build ships no per-DLL licence files, so canonical texts must be
+vendored the way `lib/cmake/licenses/` already does for LGPL-2.1 and MIT.
 
 ## MINOR — next: 0.4.0
 

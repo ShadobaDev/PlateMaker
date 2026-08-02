@@ -46,54 +46,65 @@ include(FetchContent)
 
 # libvips  — image processing engine (LGPL 2.1)
 #
-# MSVC fetches a pinned prebuilt libvips (the web zip); MinGW uses whatever pkg-config finds. This
-# single version string drives both the download URL and the SBOM entry in lib/CMakeLists.txt, so
-# the fetched and reported versions cannot drift apart.
-set(PLATEMAKER_VIPS_MSVC_VERSION "8.18.2")
+# Windows (MSVC *and* MinGW) fetches the same pinned prebuilt "web" libvips — the official minimal
+# build (38 DLLs / ~23 MB, no vips-modules dir) that still ships every format Platemaker touches
+# (PNG/JPEG/WebP/TIFF). MinGW no longer uses MSYS2's `mingw-w64-x86_64-libvips` (the full build: ~92
+# DLLs / ~34 MB), so a MinGW build needs neither the MSYS2 libvips package nor an MSVC build present.
+# Linux uses whatever pkg-config finds. This one version string drives the download URL and the SBOM
+# entry in lib/CMakeLists.txt, so the fetched and reported versions cannot drift apart.
+set(PLATEMAKER_VIPS_WEB_VERSION "8.18.2")
 
-if(MSVC)
-    message(STATUS "[MSVC] Automating libvips deployment via FetchContent (v${PLATEMAKER_VIPS_MSVC_VERSION})...")
+if(WIN32)
+    message(STATUS "[Windows] Fetching prebuilt libvips web build v${PLATEMAKER_VIPS_WEB_VERSION} via FetchContent...")
 
-    # Select libvips for download
+    # Both toolchains fetch the same slim web zip. Each build downloads its own copy into its own build
+    # tree, so the branches are independent — a MinGW build never depends on an MSVC build having run.
     FetchContent_Declare(
         vips_binaries
-        URL https://github.com/libvips/build-win64-mxe/releases/download/v${PLATEMAKER_VIPS_MSVC_VERSION}/vips-dev-x64-web-${PLATEMAKER_VIPS_MSVC_VERSION}.zip
+        URL https://github.com/libvips/build-win64-mxe/releases/download/v${PLATEMAKER_VIPS_WEB_VERSION}/vips-dev-x64-web-${PLATEMAKER_VIPS_WEB_VERSION}.zip
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
-    
-    # Download libvips and unpack directly to build/
     FetchContent_MakeAvailable(vips_binaries)
-    
-    # Get path to binaries where CMake automatically unpacked them
     FetchContent_GetProperties(vips_binaries SOURCE_DIR VIPS_EXTRACTED_DIR)
-    
-    # Register includes
-    # include_directories(SYSTEM "${VIPS_EXTRACTED_DIR}/include")
     set(VIPS_ROOT_DIR "${VIPS_EXTRACTED_DIR}")
 
-    # Make alias for linker, so the other sub-projects (lib/cli/gui) do not require specific cmake sections
-    add_library(VIPS::vips-cpp SHARED  IMPORTED GLOBAL)
-    set_target_properties(VIPS::vips-cpp PROPERTIES
-        IMPORTED_IMPLIB   "${VIPS_ROOT_DIR}/lib/libvips-cpp.lib"
-        IMPORTED_LOCATION "${VIPS_ROOT_DIR}/bin/libvips-cpp-42.dll" # <--- Wskaż faktyczną nazwę pliku .dll w folderze bin (np. libvips-cpp-42.dll lub libvips-cpp.dll)
-        
-        # Collect vips-cpp alltogheter with glib and basic vips, so linker sees all of the functions
-        INTERFACE_LINK_LIBRARIES "${VIPS_ROOT_DIR}/lib/libvips.lib;${VIPS_ROOT_DIR}/lib/libglib-2.0.lib;${VIPS_ROOT_DIR}/lib/libgobject-2.0.lib"
-    )
-    
-    target_include_directories(VIPS::vips-cpp INTERFACE 
+    # Alias VIPS::vips-cpp so the sub-projects (lib/cli/gui) need no toolchain-specific link section.
+    # (The name is historical — we link the C libvips; no C++ vips symbols are ever referenced.)
+    if(MSVC)
+        # MSVC links the web zip's MS import libs. We reference only the vips C API, so although the
+        # zip's libvips-cpp is built against LLVM libc++, no C++ symbols are pulled across the boundary.
+        add_library(VIPS::vips-cpp SHARED IMPORTED GLOBAL)
+        set_target_properties(VIPS::vips-cpp PROPERTIES
+            IMPORTED_IMPLIB   "${VIPS_ROOT_DIR}/lib/libvips-cpp.lib"
+            IMPORTED_LOCATION "${VIPS_ROOT_DIR}/bin/libvips-cpp-42.dll"
+            INTERFACE_LINK_LIBRARIES "${VIPS_ROOT_DIR}/lib/libvips.lib;${VIPS_ROOT_DIR}/lib/libglib-2.0.lib;${VIPS_ROOT_DIR}/lib/libgobject-2.0.lib"
+        )
+    else()
+        # MinGW: link the *C* libvips only. The web zip's C++ runtime is LLVM libc++, ABI-incompatible
+        # with our libstdc++ — but Platemaker uses only the vips C API (<vips/vips.h>), whose ABI is
+        # stable across C++ runtimes. MinGW `ld` links directly against the DLLs (it synthesises import
+        # stubs from each DLL's export table), so no .lib / .def / dlltool step is needed — verified by
+        # a compile-link-run spike against libvips-42.dll.
+        add_library(VIPS::vips-cpp INTERFACE IMPORTED GLOBAL)
+        target_link_libraries(VIPS::vips-cpp INTERFACE
+            "${VIPS_ROOT_DIR}/bin/libvips-42.dll"
+            "${VIPS_ROOT_DIR}/bin/libglib-2.0-0.dll"
+            "${VIPS_ROOT_DIR}/bin/libgobject-2.0-0.dll")
+    endif()
+
+    target_include_directories(VIPS::vips-cpp INTERFACE
         "${VIPS_ROOT_DIR}/include"
         "${VIPS_ROOT_DIR}/include/glib-2.0"
         "${VIPS_ROOT_DIR}/lib/glib-2.0/include"
     )
-    message(STATUS "[MSVC] libvips extracted and linked from: ${VIPS_EXTRACTED_DIR}")
+    message(STATUS "[Windows] libvips ready at: ${VIPS_ROOT_DIR}")
 
 else()
-    # For Linux (WSL) and MinGW (MSYS2) keep vips native and let the pkg-config do the job
+    # Linux (and WSL): native libvips via pkg-config.
     message(STATUS "[GCC] Using system pkg-config to discover libvips...")
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(VIPS REQUIRED IMPORTED_TARGET vips-cpp)
-    
+
     # Make alias for linker, so the other sub-projects (lib/cli/gui) do not require specific cmake sections
     add_library(VIPS::vips-cpp INTERFACE IMPORTED GLOBAL)
     target_link_libraries(VIPS::vips-cpp INTERFACE PkgConfig::VIPS)

@@ -36,7 +36,7 @@
     {
       "name": "mingw-base",
       "hidden": true,
-      "description": "Shared Windows MinGW (MSYS2) GCC + Ninja settings. Requires MSYS2 with mingw-w64-x86_64-libvips and PKG_CONFIG_PATH set.",
+      "description": "Shared Windows MinGW (MSYS2) GCC + Ninja settings. Requires the MSYS2 mingw-w64 toolchain; libvips is fetched automatically (the slim web build) — no mingw-w64-x86_64-libvips or PKG_CONFIG_PATH needed.",
       "inherits": "base",
       "generator": "Ninja",
       "cacheVariables": {

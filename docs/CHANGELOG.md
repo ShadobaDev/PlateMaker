@@ -1,5 +1,41 @@
 # Changelog
 
+## [Unreleased] — 0.3.1
+
+### Added
+
+- **Five new platform output presets.** Alongside "Webtoon Standard", the catalogue now ships presets
+  for Tapas, NAMICOMI, GlobalComix, Popjoy and ComicFury/indie-web. Design rule: **a preset must always
+  produce an uploadable file** for its platform — slice heights are kept conservative (≈1.4–3.3 MP) and
+  compressed formats preferred; users who want to push size/quality do it in a custom profile.
+  - **Tapas** — `940 × 1504`, JPEG. 940px width is required, with a 2 MB per-file limit; the height
+    keeps Webtoon's `1:1.6` ratio (940 × 1.6 = 1504) and a q90 JPEG stays well under 2 MB.
+  - **NAMICOMI** — `1200 × 1600`, **PNG**. The platform allows a 250 MB per-chapter budget, so lossless
+    is free and its creators prefer it — the one non-lossy preset.
+  - **GlobalComix (HD)** — `1280 × 2560`, **WebP**. The platform promotes HD and fully supports WebP,
+    which keeps a tall HD slice uploadable (smaller than the equivalent JPEG).
+  - **Popjoy** — `1000 × 2000`, JPEG. Targets high-DPI phone screens; 2 MP q90 stays well under a
+    typical per-file limit.
+  - **ComicFury / Indie** — `950 × 1500`, JPEG. A layout-safe width for classic web CMS templates.
+
+  All resolve from the compile-time catalogue like "Webtoon Standard" (stable ids `op-preset-tapas`,
+  `op-preset-namicomi`, `op-preset-globalcomix`, `op-preset-popjoy`, `op-preset-comicfury`; never
+  persisted); consumers that list `outputProfilePresets()` — the CLI and the GUI — pick them up
+  automatically.
+
+### Packaging
+
+- **The MinGW build no longer depends on MSYS2's libvips (or on an MSVC build).** Both Windows
+  toolchains now fetch the same pinned prebuilt "web" libvips via `FetchContent` (each into its own
+  build tree, so the branches are independent). MinGW previously used MSYS2's `mingw-w64-x86_64-libvips`
+  through pkg-config — the full build (~92 DLLs / ~34 MB, plus `vips-modules` "unable to load …"
+  warnings). The slim web build cuts the bundled third-party DLLs to ~40 (~25 MB with the MinGW
+  runtime) and drops the module warnings. MinGW links the **C** `libvips` only (the web zip's C++
+  runtime is LLVM libc++, ABI-incompatible with libstdc++, but Platemaker uses only the vips C API,
+  whose ABI is stable across runtimes) — linking directly against the DLL, so no `.lib`/`.def`/`dlltool`
+  step is needed. Building on MinGW now requires only the MSYS2 toolchain (`gcc`, `ninja`); no
+  `mingw-w64-x86_64-libvips` package and no `PKG_CONFIG_PATH`.
+
 ## [0.3.0] — 2026-07-29
 
 **Breaking** (pre-1.0 shifted scale: a breaking change bumps the minor). The output-profile **preset

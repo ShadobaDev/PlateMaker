@@ -133,12 +133,12 @@ configure_file(
 # Component versions are the build-time values (an SBOM records what was built against); the About
 # dialog shows the honest *runtime* versions separately via Infrastructure::linkedComponents().
 # ---------------------------------------------------------------------------
-# Build-time dependency versions for the SBOM (libvips discovery differs by toolchain — see the root
-# CMakeLists.txt vips section; MSVC has no pkg-config, so its version tracks the FetchContent web-zip).
-if(MSVC)
-    set(_pm_vips_version "${PLATEMAKER_VIPS_MSVC_VERSION}")  # pinned web-zip tag (root CMakeLists.txt)
+# Build-time dependency versions for the SBOM (libvips discovery differs by platform — see the root
+# CMakeLists.txt vips section; on Windows both toolchains fetch the pinned web zip, Linux uses pkg-config).
+if(WIN32)
+    set(_pm_vips_version "${PLATEMAKER_VIPS_WEB_VERSION}")   # pinned web-zip tag (root CMakeLists.txt)
 else()
-    set(_pm_vips_version "${VIPS_VERSION}")                  # from pkg_check_modules
+    set(_pm_vips_version "${VIPS_VERSION}")                  # from pkg_check_modules (Linux)
 endif()
 if(DEFINED nlohmann_json_VERSION)
     set(_pm_json_version "${nlohmann_json_VERSION}")        # system/FetchContent-reported version
@@ -285,23 +285,23 @@ install(FILES
 # ---------------------------------------------------------------------------
 # Windows: bundle runtime DLLs (libvips + transitive deps) into bin/.
 #
-# MSVC  — VIPS_ROOT_DIR is set by FetchContent; copy the whole vips bin/.
-# MinGW — vips DLLs live in MSYS2 bin/ alongside all other runtime DLLs;
-#         derive the directory from the pkg-config library dir and copy everything.
+# Both toolchains now source libvips from the same FetchContent web zip (VIPS_ROOT_DIR/bin).
+# MSVC  — copy the whole (already minimal) web-zip bin/; the MSVC C++ runtime comes from the system.
+# MinGW — the web zip supplies libvips + its deps (incl. its own LLVM libc++), but NOT the MinGW C++
+#         runtime (libstdc++/libgcc/libwinpthread), which lives in the compiler's bin/. So the install
+#         computes the transitive closure across BOTH directories and prunes to what is actually used.
 #
-# The POST_BUILD copy puts the DLLs next to the built library so that the
-# binary can be run directly from the build tree (without cmake --install)
-# and Windows loads the FetchContent vips instead of any system/MinGW vips
-# that might be on PATH.
+# The POST_BUILD copy puts the DLLs next to the built library so the binary runs directly from the
+# build tree (without cmake --install) and Windows loads the FetchContent vips, not any other on PATH.
 # ---------------------------------------------------------------------------
 # Helper: emit the MinGW DLL-closure install rules for a given CPack component.
 # Called once per component (Runtime + cli) so both archives are self-contained.
-# Reads _vips_bin_dir from the calling scope.
+# Reads _vips_bin_dir from the calling scope — a ';'-list of directories to search.
 #
-# DLL pruning: instead of copying the entire mingw64/bin/ (~175 DLLs), compute the
-# actual transitive runtime-dependency closure of platemaker.dll at install time
-# via file(GET_RUNTIME_DEPENDENCIES) — only libvips, the GLib stack, the codecs
-# and the libstdc++/libgcc/libwinpthread runtime.
+# DLL pruning: instead of copying whole bin/ directories, compute the actual transitive
+# runtime-dependency closure of platemaker.dll at install time via file(GET_RUNTIME_DEPENDENCIES) —
+# only libvips + its web-zip deps (GLib stack, codecs, libc++/libunwind) and the
+# libstdc++/libgcc/libwinpthread MinGW runtime.
 #
 # NOTE: GET_RUNTIME_DEPENDENCIES walks the PE import table, so it will NOT catch
 # codecs loaded dynamically as vips modules (lib/vips-modules-8.x). The formats
@@ -317,11 +317,16 @@ set(_pm_search  \"${_vips_bin_dir}\")
 set(_pm_bindir  \"${CMAKE_INSTALL_BINDIR}\")" COMPONENT ${_component})
 
     install(CODE [==[
+        # _pm_search is a ';'-list of directories; it MUST be unquoted here so it expands to one
+        # DIRECTORIES argument per directory. A quoted "${_pm_search}" is passed as a single "a;b"
+        # string that GET_RUNTIME_DEPENDENCIES does NOT split, silently searching neither dir (that
+        # loses the MinGW runtime from the compiler bin/). Unquoted list expansion splits on ';' only,
+        # so directory paths containing spaces stay intact.
         file(GET_RUNTIME_DEPENDENCIES
             LIBRARIES                   "${_pm_lib}"
             RESOLVED_DEPENDENCIES_VAR   _res
             UNRESOLVED_DEPENDENCIES_VAR _unres
-            DIRECTORIES                 "${_pm_search}"
+            DIRECTORIES                 ${_pm_search}
             PRE_EXCLUDE_REGEXES  "^api-ms-" "^ext-ms-"
             POST_EXCLUDE_REGEXES "[Ss]ystem32"
         )
@@ -354,11 +359,21 @@ if(WIN32)
                 FILES_MATCHING PATTERN "*.dll"
             )
         endforeach()
-    elseif(NOT MSVC AND DEFINED VIPS_LIBRARY_DIRS)
-        # MinGW/MSYS2: vips DLLs live alongside all other MSYS2 DLLs in the same bin/.
-        # Derive the directory from the lib path reported by pkg-config.
-        list(GET VIPS_LIBRARY_DIRS 0 _vips_lib_dir)
-        get_filename_component(_vips_bin_dir "${_vips_lib_dir}/../bin" ABSOLUTE)
+    elseif(NOT MSVC AND DEFINED VIPS_ROOT_DIR)
+        # MinGW: make the build tree runnable by copying the web-zip DLLs next to the binaries (the
+        # MinGW C++ runtime is found via the developer's PATH); install then prunes to the real closure.
+        add_custom_command(TARGET platemaker-lib POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${VIPS_ROOT_DIR}/bin"
+                "$<TARGET_FILE_DIR:platemaker-lib>"
+            COMMENT "Copying libvips web-build DLLs to build output"
+            VERBATIM
+        )
+
+        # Search both sources for the dependency closure: the web zip (libvips + its deps) and the
+        # compiler's bin/ (libstdc++/libgcc/libwinpthread — not shipped in the web zip).
+        get_filename_component(_mingw_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        set(_vips_bin_dir "${VIPS_ROOT_DIR}/bin" "${_mingw_bin_dir}")
 
         _pm_install_mingw_dll_closure(Runtime)
         _pm_install_mingw_dll_closure(cli)

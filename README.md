@@ -81,21 +81,17 @@ pip install -r tests\cli-tests\requirements.txt
 ```bash
 pacman -S \
   mingw-w64-x86_64-gcc \
-  mingw-w64-x86_64-ninja \
-  mingw-w64-x86_64-pkg-config \
-  mingw-w64-x86_64-libvips
+  mingw-w64-x86_64-ninja
 ```
 
-`nlohmann-json` and `GoogleTest` are fetched automatically by CMake — no pacman packages needed for them.
-
-**Required environment variable** (set as a permanent Windows user variable):
-
-| Variable | Value |
-|---|---|
-| `PKG_CONFIG_PATH` | `C:\msys64\mingw64\lib\pkgconfig` |
+`libvips` (the slim prebuilt "web" build), `nlohmann-json` and `GoogleTest` are all fetched
+automatically by CMake — no pacman packages needed for them. In particular MinGW no longer uses
+MSYS2's `mingw-w64-x86_64-libvips`, so no `PKG_CONFIG_PATH` is required either.
 
 **Required PATH entry:** add `C:\msys64\mingw64\bin` to your Windows system PATH.  
-This makes `gcc`, `g++`, `ninja`, `pkg-config`, and the vips DLLs available in any terminal.
+This makes `gcc`, `g++` and `ninja` available in any terminal, and provides the MinGW runtime DLLs
+(`libstdc++`, `libgcc`, `libwinpthread`) at run time. The libvips DLLs come from the fetched web
+build (copied next to the binaries at build time), not from PATH.
 
 > **Tip:** The MSYS2 installer offers to add itself to PATH automatically — accept that, then also add `C:\msys64\mingw64\bin` manually if it was not added.
 
