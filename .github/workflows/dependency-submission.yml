@@ -22,7 +22,7 @@ jobs:
   submit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Submit SPDX SBOM to the dependency graph
         uses: advanced-security/spdx-dependency-submission-action@v0.1.1
         with:
