@@ -17,15 +17,15 @@ work happens in.
   baseline — ship a MINOR before the pending PATCH and that patch becomes `0.3.1`, the next MINOR
   becomes `0.4.0`.
 
-Baseline: **0.3.0 released, 0.3.1 in progress** (`CMakeLists.txt`).
+Baseline: **0.3.1 released, 0.3.2 in progress** (`CMakeLists.txt`).
 
 ---
 
-## PATCH — next: 0.3.1
+## PATCH — next: 0.3.2
 
-Fixes and additive changes — nothing a consumer must react to. Code built against 0.3.0 keeps
-compiling. (These ride `0.3.1` now that `0.3.0` takes the minor slot; per the cascade rule above,
-anything finished in time may still be bundled into `0.3.0` before it ships.)
+Fixes and additive changes — nothing a consumer must react to. Code built against 0.3.1 keeps
+compiling. (These ride `0.3.2`; per the cascade rule above, whichever section releases first takes
+its slot and the rest re-derive.)
 
 ### Persist last render log
 
@@ -203,16 +203,19 @@ change — the same formats are still supported.
 
 ## Release history & coordination
 
-**Shipped:** `0.1.0` → `0.1.1` → `0.2.0` → `0.2.1` (lib); GUI `1.0.0` → `1.0.1` → `1.1.0`.
+**Shipped:** `0.1.0` → `0.1.1` → `0.2.0` → `0.2.1` → `0.3.0` → `0.3.1` (lib);
+GUI `1.0.0` → `1.0.1` → `1.1.0` → `1.2.0` → `1.3.0`.
 `0.2.0` broke the API against `0.1.1` (`ProjectItem::sanitize()` gained a required parameter,
 `applyProcessingResults()` two) — breaking, hence the minor, not `0.1.2`. `0.2.1` was additive
 plus fixes, so a patch. `0.2.2`'s additive work (buildInfo, SBOM) was folded into `0.3.0`, which
-also removes/changes the preset & CLI API — breaking, hence the minor. **In progress: `0.3.0`.**
+also removes/changes the preset & CLI API — breaking, hence the minor. `0.3.1` was additive only
+(editor snapshot/restore, more presets, MinGW libvips slimming), so a patch. **In progress: `0.3.2`.**
 
 **Order is forced: lib first.** The GUI pins `LIBPLATEMAKER_VERSION`, which also builds the
 FetchContent URL, so until a lib version is on GitHub Releases anyone without a local
 `LIBPLATEMAKER_DIR` gets a 404. Tag and upload the lib, then the GUI.
 
-**Lockstep on a breaking lib bump.** When the lib reaches `0.3.0` the GUI moves with it and pins
-`find_package(platemaker 0.3.0 CONFIG REQUIRED)`, so an older lib is rejected at configure time
-instead of failing at compile time.
+**Lockstep on a lib bump the GUI needs.** The GUI pins the lib version it requires — currently
+`find_package(platemaker 0.3.1 CONFIG REQUIRED)` (1.3.0 adopts the 0.3.1 editor snapshot/restore) —
+so an older lib is rejected at configure time instead of failing at compile time. With the
+config-version file now `SameMinorVersion`, that pin also rejects a later breaking `0.MINOR`.
