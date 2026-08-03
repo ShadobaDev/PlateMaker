@@ -88,6 +88,10 @@ jobs:
     runs-on: ubuntu-latest
     # Only publish a Release for an actual tag push; a manual workflow_dispatch just validates the build.
     if: startsWith(github.ref, 'refs/tags/')
+    # Mirror the secret into an env var so the VirusTotal step can be skipped gracefully when the secret
+    # isn't set (the `secrets` context can't be used in an `if:`, but `env` can).
+    env:
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -103,3 +107,19 @@ jobs:
             dist/*.zip
             dist/*.tar.gz
             dist/*.sha256
+
+      # Best-effort malware scan of the released archives; appends the VirusTotal report links to the
+      # release body. Runs only if VT_API_KEY is set, and never fails the release (the Release is already
+      # published above) — a VT rate-limit / outage just leaves the links off. The free API is limited to
+      # 4 uploads/min and ~32 MB per file; our archives fit, and there are only a handful.
+      - name: Scan release assets on VirusTotal
+        if: env.VT_API_KEY != ''
+        continue-on-error: true
+        uses: crazy-max/ghaction-virustotal@v4
+        with:
+          vt_api_key: ${{ secrets.VT_API_KEY }}
+          github_token: ${{ github.token }}
+          update_release_body: true            # write the VT links into the just-published release
+          files: |
+            dist/*.zip
+            dist/*.tar.gz
