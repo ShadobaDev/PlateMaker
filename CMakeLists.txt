@@ -275,6 +275,11 @@ if(UNIX AND NOT APPLE)
     )
 endif()
 
+# Emit a "<archive>.sha256" sidecar (sha256sum format) next to every packaged archive, for release
+# verification. Runs as a CPack post-build step, so `cpack --preset …` and the dist workflows produce
+# the checksums automatically alongside the dev and cli archives.
+set(CPACK_POST_BUILD_SCRIPTS "${CMAKE_SOURCE_DIR}/cmake/cpack_checksums.cmake")
+
 include(CPack)
 
 # ---------------------------------------------------------------------------

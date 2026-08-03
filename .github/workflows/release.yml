@@ -1,0 +1,105 @@
+# Release pipeline: on a bare version tag (e.g. 0.3.2), build the lib + CLI packages, attach a
+# build-provenance attestation, and upload the archives + their .sha256 sidecars to a GitHub Release.
+#
+# Primary target is Windows/MinGW; Linux is included as a trial (fail-fast: false, so a flaky Linux
+# job never blocks the MinGW release). No MSVC yet, and no Qt (the lib doesn't use Qt — that's the GUI).
+#
+# Tests are deliberately NOT gating the release for now (the dist-* presets don't run ctest); adding a
+# ctest gate is noted as a future improvement (temp/CI-release-github-actions.md).
+name: Release
+
+on:
+  push:
+    tags: ['*.*.*']          # bare versions: 0.3.2 — matches the GUI's lib-download URL
+  workflow_dispatch:         # manual "Run workflow" button — builds + attests but does NOT release
+                             # (the release job below is tag-only), handy for validating the build
+
+permissions:
+  contents: write            # create the Release and upload assets
+  id-token: write            # OIDC token for provenance signing (Sigstore)
+  attestations: write        # store the build-provenance attestation
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false       # MinGW and Linux are independent; one failing must not cancel the other
+      matrix:
+        include:
+          - os: windows-latest
+            preset: dist-mingw-release
+            artifacts: dist/*.zip
+          - os: ubuntu-latest
+            preset: dist-linux-release
+            artifacts: dist/*.tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Toolchain per OS -------------------------------------------------
+      # Windows: MinGW (gcc + cmake + ninja) from MSYS2. The `msys2 {0}` shell on the build step below
+      # puts these on PATH — the same environment your Qt Creator MinGW kit uses. libvips is fetched by
+      # CMake (prebuilt web zip), so no libvips package is needed here.
+      - if: matrix.os == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+
+      # Linux: gcc is preinstalled; libvips comes from the system via pkg-config (the lib's non-Windows
+      # path), so libvips-dev + pkg-config are required. nlohmann/json is fetched (pinned), not apt-installed.
+      - if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config libvips-dev
+
+      # --- Configure + build + package (one CMake workflow preset) ----------
+      - name: Build & package (Windows / MinGW)
+        if: matrix.os == 'windows-latest'
+        shell: msys2 {0}
+        run: cmake --workflow --preset ${{ matrix.preset }}
+
+      - name: Build & package (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: cmake --workflow --preset ${{ matrix.preset }}
+
+      # --- Provenance: cryptographically tie each archive to this repo/commit/run ---
+      # Verifiable later with: gh attestation verify <archive> --repo ShadobaDev/PlateMaker
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: ${{ matrix.artifacts }}
+
+      # --- Hand the archives (+ their .sha256 sidecars) to the release job --
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.os }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only publish a Release for an actual tag push; a manual workflow_dispatch just validates the build.
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true      # flatten pkg-windows-latest/ + pkg-ubuntu-latest/ into dist/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}     # the bare version, e.g. 0.3.2
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256

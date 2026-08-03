@@ -218,6 +218,17 @@ The SBOM is a committed snapshot because our deps are pinned and change rarely; 
 `build/mingw-release/lib/credits/sbom.spdx.json` when a pinned version changes (see `sbom/README.md`).
 Extending the snapshot to the full bundled DLL graph is the separate SBOM item under **PATCH** above.
 
+### Release checksums — done (SHA-256 sidecars)
+
+**Done.** Packaging now emits a `<archive>.sha256` sidecar (sha256sum format) next to every CPack
+archive — both the `dev` and `cli` packages, in every config — via a `CPACK_POST_BUILD_SCRIPTS` hook
+([`cmake/cpack_checksums.cmake`](../cmake/cpack_checksums.cmake)). One sidecar per archive (rather than a
+single `SHA256SUMS.txt`) so nothing collides when several configs are uploaded to one Release. The hook
+hashes the CPack temp copy but writes the sidecar into `CPACK_OUTPUT_FILE_PREFIX` (`dist/`), where the
+release archives land. Users verify with `sha256sum -c <archive>.sha256` or `Get-FileHash`; the hash can
+be pasted into the release notes and the binaries uploaded to VirusTotal. Runs automatically from
+`cpack --preset …` / the dist workflows — no extra step.
+
 ---
 
 ## Release history & coordination
