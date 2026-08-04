@@ -245,6 +245,13 @@ also removes/changes the preset & CLI API — breaking, hence the minor. `0.3.1`
 FetchContent URL, so until a lib version is on GitHub Releases anyone without a local
 `LIBPLATEMAKER_DIR` gets a 404. Tag and upload the lib, then the GUI.
 
+**⏭️ Cut the next release through the GitHub Actions `Release` workflow**, not a manual local
+build + upload. Pushing a bare version tag (e.g. `0.3.2`) runs `.github/workflows/release.yml`:
+matrix build (MinGW + Linux) → provenance attestation → `dist/*` archives + `.sha256` uploaded as
+Release assets → VirusTotal scan (VT_API_KEY secret is set) appended to the release body. The current
+backlog since `0.3.1` is all infra (checksums, CI), so there's nothing to ship *yet* — but the next
+real change should validate this end-to-end path for the first time.
+
 **Lockstep on a lib bump the GUI needs.** The GUI pins the lib version it requires — currently
 `find_package(platemaker 0.3.1 CONFIG REQUIRED)` (1.3.0 adopts the 0.3.1 editor snapshot/restore) —
 so an older lib is rejected at configure time instead of failing at compile time. With the

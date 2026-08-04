@@ -141,6 +141,33 @@ gdb -p <pid> -batch -ex "thread apply all bt"
 
 Download the pre-built package for your platform from the [Releases page](https://github.com/ShadobaDev/PlateMaker/releases).
 
+### Verifying your download
+
+Every release archive ships a matching `<archive>.sha256` sidecar, and GitHub shows the SHA-256 next to
+each asset. Use either to confirm your download is intact and untampered.
+
+**Windows (PowerShell)** — print the hash and compare it to the `.sha256` file (or the hash GitHub shows):
+
+```powershell
+Get-FileHash platemaker-cli-0.3.1-windows-mingw-release.zip -Algorithm SHA256
+```
+
+**Linux / MSYS2** — `-c` checks the archive against its sidecar automatically (coreutils format):
+
+```bash
+sha256sum -c platemaker-cli-0.3.1-linux-x86_64-release.tar.gz.sha256
+# → platemaker-cli-0.3.1-linux-x86_64-release.tar.gz: OK
+```
+
+**VirusTotal (no upload needed).** VirusTotal identifies files by their SHA-256, so you can look up a scan
+by hash: paste the archive's SHA-256 into the search box at [virustotal.com](https://www.virustotal.com/),
+or open `https://www.virustotal.com/gui/file/<sha256>` directly. If the file has been scanned, its report
+appears; a release's notes may also link the report.
+
+> The archives are unsigned, so Windows may warn on the `.exe` inside (`SmartScreen` / "unknown
+> publisher"). That is expected — the checksum and VirusTotal checks above are how you verify the
+> download instead.
+
 ### What's in each package
 
 Each platform/build-type ships **two** archives — a `dev` package (to link against)
