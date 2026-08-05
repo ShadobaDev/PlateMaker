@@ -163,6 +163,23 @@ bool ProjectItem::sanitize(const std::vector<CanvasProfile>& workspaceProfiles)
             continue;
         }
 
+        // An input the last render produced output for but could not hash afterwards (locked /
+        // permission / offline) stays Error until the file becomes readable again. Try to hash now:
+        // success means access was restored → recover to Processed and adopt the current content as the
+        // verification baseline; failure means still unreachable → remain Error. Like Skipped, Error
+        // has an empty sha256 and does NOT mark the project out of date — that is exactly what stops the
+        // silent re-render loop (falling through to the empty-sha256 branch below would re-mark it
+        // Pending and reprocess everything forever).
+        if (file.status == FileStatus::Error) {
+            const std::string h =
+                Infrastructure::FileMetaData::computeFileSha256(file.filePath);
+            if (h.empty())
+                continue; // still unreadable — stay Error, do not force a re-render
+            file.sha256 = h;
+            file.status = FileStatus::Processed;
+            continue;
+        }
+
         // A page the last render skipped (no matching / linked canvas profile) stays Skipped as long
         // as the file is unchanged.  sanitize() is disk-based and cannot re-derive the profile match,
         // so it must NOT silently "un-skip" the page to Processed/Pending — doing so lost the render's
@@ -298,8 +315,12 @@ bool ProjectItem::inputsAllProcessed() const noexcept
     // Skipped counts as settled: a page with no matching canvas profile is not going to be rendered,
     // so it must not block the "inputs are clean → a partial re-render of dirty outputs suffices"
     // decision (otherwise a project with one permanently-skipped page could never take the partial path).
+    // Error counts as settled too: the page was rendered but is unverifiable (locked / offline); it must
+    // not force a full re-render, or the silent loop this status exists to break would return.
     for (const auto& inf : m_input_images)
-        if (inf.status != FileStatus::Processed && inf.status != FileStatus::Skipped)
+        if (inf.status != FileStatus::Processed &&
+            inf.status != FileStatus::Skipped   &&
+            inf.status != FileStatus::Error)
             return false;
     return !m_input_images.empty();
 }
@@ -412,7 +433,7 @@ void ProjectItem::rebuildLookupTables()
 // applyProcessingResults
 // ---------------------------------------------------------------------------
 
-void ProjectItem::applyProcessingResults(
+std::vector<ProcessingError> ProjectItem::applyProcessingResults(
     const std::vector<ProcessingSliceRecord>& records,
     const std::vector<AppliedCanvasProfile>&  appliedProfiles,
     const std::vector<std::string>&           skippedInputPaths,
@@ -420,6 +441,7 @@ void ProjectItem::applyProcessingResults(
     const std::string&                        outputDirectory,
     const std::string&                        timestamp)
 {
+    std::vector<ProcessingError> postRenderErrors; // returned: inputs that could not be hashed after render
     // Build contributesTo map: filePath → [output file names].
     std::unordered_map<std::string, std::vector<std::string>> contributes;
     for (const auto& rec : records)
@@ -455,6 +477,20 @@ void ProjectItem::applyProcessingResults(
             inf.sha256        = h;
             inf.status        = FileStatus::Processed;
             inf.lastProcessed = timestamp;
+        } else {
+            // The render succeeded and produced output from this input, but its content could not be
+            // hashed afterwards (locked / permission / offline). Leaving it Pending (the old
+            // `if (!h.empty())` skip) made sanitize() re-mark it Pending forever → the next render
+            // redid everything and overwrote the output, silently, without end. Mark it Error instead:
+            // it *was* rendered (record lastProcessed) but has no verification baseline (empty sha256),
+            // and Error is sticky + non-forcing in sanitize(), so the loop is broken. Surface it so the
+            // caller can tell the user which file to fix.
+            inf.status        = FileStatus::Error;
+            inf.lastProcessed = timestamp;
+            postRenderErrors.push_back(ProcessingError{
+                ProcessingErrorCode::InputHashFailed, ProcessingErrorCategory::Io,
+                "Input could not be read to verify after render (locked / permission / offline).",
+                inf.filePath, {}});
         }
         const auto it = contributes.find(inf.filePath);
         inf.contributesTo = (it != contributes.end())
@@ -503,6 +539,8 @@ void ProjectItem::applyProcessingResults(
     inputOrderAtRender = orderedInputUids();
 
     rebuildLookupTables();
+
+    return postRenderErrors;
 }
 
 // ---------------------------------------------------------------------------

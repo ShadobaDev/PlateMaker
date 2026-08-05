@@ -61,7 +61,8 @@ NLOHMANN_JSON_SERIALIZE_ENUM(FileStatus, {
     {FileStatus::Missing,        "Missing"},
     {FileStatus::Desynchronized, "Desynchronized"},
     {FileStatus::Done,           "Done"},
-    {FileStatus::Skipped,        "Skipped"}
+    {FileStatus::Skipped,        "Skipped"},
+    {FileStatus::Error,          "Error"}
 })
 
 // --- Struct codecs (declarations; defined in model_json.cpp) ---

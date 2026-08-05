@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.4.0] — 2026-08-05
+
+### Changed
+
+- **Breaking — the processing error channel is now typed.** `ProcessingOutcome::errorMessage` (a free
+  string) is replaced by `std::optional<Models::ProcessingError> error`, and
+  `ProjectItem::applyProcessingResults()` now **returns** `std::vector<Models::ProcessingError>`
+  (previously `void`). Consumers read `outcome.error->message` instead of `outcome.errorMessage`, and
+  should surface the vector returned by `applyProcessingResults()`. `outcome.failed` /
+  `outcome.cancelled` are unchanged (`failed == error.has_value()`).
+- **`Core::InputResult` gains `errorCode` / `errorCategory`** — the per-input skip reason
+  (`SkippedError`) now carries a stable machine tag alongside the existing `detail` string, so a
+  consumer can group/localise skips without parsing English. The file and message are still
+  `inputPath` / `detail` (no duplication).
+
+### Added
+
+- **`Models::ProcessingError` — one typed error vocabulary** (`code` + `category` + `message` + `file`
+  + `slice`) shared wherever a failure is consumed as a *result*: `ProcessingOutcome::error`, the
+  `applyProcessingResults()` return, and the `InputResult` tag. `ProcessingErrorCategory`
+  (`Load` / `ProfileMatch` / `Slice` / `Encode` / `Io`) and `ProcessingErrorCode` cover the pipeline's
+  fatal sites and the post-render hash failure. Deliberately **no** live `onError` callback: for a fatal
+  error the run returns immediately (read `outcome.error`), and per-input skips already flow through
+  `onInput`; `onLog(Error, …)` remains the human transcript.
+- **`FileStatus::Error`** — a new, sticky input status for a page that was rendered but whose content
+  hash could not be computed afterwards.
+- **Safety net for unforeseen faults.** `ProcessingPipeline::run()` now wraps its whole body so any
+  exception that escapes the inline handling (a bug, out-of-memory, a non-`std::exception` throw) becomes
+  a typed `Unexpected` / `Internal` failure on `outcome.error` instead of unwinding out of `run()` and
+  terminating the caller's worker thread; the CLI gained an equivalent top-level guard that prints a
+  reportable diagnostic. New `ProcessingErrorCode::Unexpected` + `ProcessingErrorCategory::Internal`.
+  (This handles C++ exceptions only — a hardware fault such as a segfault or null dereference is an OS
+  signal / SEH, not a C++ exception, and is out of scope; catching those needs a dedicated crash handler.)
+
+### Fixed
+
+- **An unreadable-after-render input no longer loops forever, silently.** When `computeFileSha256()`
+  returned `""` (indistinguishable for "absent" and "locked / denied / offline"),
+  `applyProcessingResults()` left a successfully-rendered input at `Pending`; `sanitize()` re-confirmed
+  `Pending`, so every subsequent render redid all the work and overwrote the output indefinitely with
+  nothing reported. Such an input is now set to `FileStatus::Error` (sticky, non-forcing) and returned
+  as a typed `InputHashFailed` failure; it recovers to `Processed` once the file can be read again.
+
+### CLI
+
+- **`process` gained structured, TTY-aware output** — a per-input tally (with the typed skip reason),
+  a strip-assembly marker, an in-place progress bar (plain lines when piped), timing, and dedicated
+  error sections that render `ProcessingError` fields (category / slice / file) plus the post-render
+  "unverified input(s)" list. `--json` is unchanged apart from a new `unverifiedInputs` array. Symbols
+  only, no colour, so redirected output stays clean.
+
 ## [0.3.1] — 2026-08-02
 
 ### Added

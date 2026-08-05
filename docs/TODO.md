@@ -62,44 +62,22 @@ vendored the way `lib/cmake/licenses/` already does for LGPL-2.1 and MIT.
 Breaking changes — a consumer must rebuild or adapt. These ship together, and the GUI pins the
 version in lockstep.
 
-### Structured error system
+### Structured error system — DONE (0.4.0)
 
-The pipeline currently reports failures as ad-hoc strings via the
-`ProcessingPipeline` log/`errorMessage` callbacks (the GUI shows them verbatim).
-Replace with structured error codes/categories (load / profile-match / slice /
-encode / io) carrying a stable code + message, so the GUI can localise, group and
-react (e.g. offer "open output folder", "re-scan inputs"). `ProcessingOutcome`
-would carry typed errors instead of a plain string.
+Landed. `Models::ProcessingError` (`code` + `category` `load`/`profile-match`/`slice`/`encode`/`io`
++ `message` + `file`/`slice`) is one typed vocabulary used wherever a failure is consumed as a
+*result*: `ProcessingOutcome::error` (replaces the free-text `errorMessage`), the value now returned by
+`ProjectItem::applyProcessingResults()`, and the `errorCode`/`errorCategory` tag on
+`Core::InputResult`. The silent unreadable-after-render loop is fixed via a sticky `FileStatus::Error`
+(non-forcing in `sanitize()`) plus the returned typed failure.
 
-**Concrete case to fold in — an unreadable file fails silently and loops forever.**
-`FileMetaData::computeFileSha256()` returns an empty string both when the file is absent and
-when it exists but cannot be opened; the two are indistinguishable. `applyProcessingResults()`
-then skips that input's update entirely (`if (!h.empty())` in
-`lib/src/models/project_item.cpp`), leaving `status`, `sha256` and `lastProcessed` untouched.
-An input that was never processed therefore stays `Pending` even after a successful render,
-`sanitize()` agrees, and the next render redoes all the work and overwrites the output —
-indefinitely, with nothing reported anywhere.
+**No `onError` callback** (revised from the original note above): a live `onError` was rejected as
+duplicative — for a *fatal* error the run returns immediately, so `outcome.error` is read at the same
+moment; a *non-fatal* per-input skip already flows through `onInput`. `onLog(Error, …)` stays as the
+human transcript. Errors are consumed as results, not as a second live stream.
 
-This is exactly how the non-ASCII path bug stayed invisible (fixed in 0.2.1). The cause is
-gone, the *mechanism* is not: a locked file, missing permissions, or an offline network drive
-all produce the same silent loop. Whatever shape the structured errors take, a hash that
-fails after a successful render has to surface — at minimum the input must not be left
-claiming a state the render did not reach.
-
-**Deliver it through the `ProcessingCallbacks` structure — a typed `onError`.** The `run()`
-callbacks already exist (`onProgress` / `onLog` / `onInput` / `onSlicingStarted` / `onSliceSaved`
-/ `onSliceSkipped`), so the live half of this system is a new field: `onError(ProcessingError)`
-carrying the **typed** error (stable code + category `load`/`profile-match`/`slice`/`encode`/`io`,
-the file/slice it happened on, maybe the exception type), fired from the catch sites. It is the
-live twin of the typed errors `ProcessingOutcome` would then carry.
-
-Deliberately **not** a string `onError` "like `onLog` but stronger": that was considered and
-rejected because it duplicates what already exists — `onLog(Error)`, `outcome.errorMessage`, and
-`onInput(InputResult{SkippedError, detail})` — and no consumer needs it. Keep the fatal/non-fatal
-line the current code already draws: a **fatal** error also sets `outcome.failed` (the return is
-the authoritative "did it fail"); a **non-fatal** per-input problem stays on `onInput`, so `onError`
-is not spammed for benign skips. The typed payload is also far cleaner across a future C boundary
-than string-scraping the log.
+Not yet wired (follow-ups, non-breaking): GUI localisation/grouping UI beyond surfacing category/code;
+a `ProfileMatch` fatal path (reserved category — implicit render stays non-fatal).
 
 ---
 

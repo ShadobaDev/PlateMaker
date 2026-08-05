@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -205,6 +206,49 @@ TEST(ImplicitRenderTest, NoProfilesAppendsEveryPage)
     ASSERT_TRUE(cap.byPath.count(b));
     EXPECT_EQ(cap.byPath[a].status, InputStatus::Appended);
     EXPECT_EQ(cap.byPath[b].status, InputStatus::Appended);
+}
+
+// A run where nothing loads (all inputs Missing) fails with a typed NoPagesLoaded error, not a string.
+TEST(ProcessingErrorTest, NoPagesLoadedSetsTypedError)
+{
+    TempDir tmp("nopages");
+    Models::InputFile missing;
+    missing.filePath = tmp.file("gone.png"); // never created on disk
+    missing.status   = Models::FileStatus::Missing;
+
+    InputCapture cap;
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::run(
+        {missing}, smallOutput(), /*palette*/ {}, /*projectIds*/ {},
+        tmp.dir(), cancel, cap.callbacks());
+
+    EXPECT_TRUE(outcome.failed);
+    ASSERT_TRUE(outcome.error.has_value());
+    EXPECT_EQ(outcome.error->code,     Models::ProcessingErrorCode::NoPagesLoaded);
+    EXPECT_EQ(outcome.error->category, Models::ProcessingErrorCategory::Load);
+    EXPECT_FALSE(outcome.error->message.empty());
+}
+
+// A single input that fails to load is a non-fatal skip carrying the typed InputLoadFailed tag.
+TEST(ProcessingErrorTest, PerInputLoadFailureCarriesTypedCode)
+{
+    TempDir tmp("badload");
+    const std::string good = writePng(tmp, "good.png", 200, 300);
+    const std::string bad  = tmp.file("bad.png");
+    { std::ofstream(bad, std::ios::binary) << "not a real image"; }
+
+    InputCapture cap;
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::run(
+        {input(good), input(bad)}, smallOutput(), /*palette*/ {}, /*projectIds*/ {},
+        tmp.dir(), cancel, cap.callbacks());
+
+    EXPECT_FALSE(outcome.failed) << "one good page keeps the run alive";
+    EXPECT_TRUE(contains(outcome.skippedPages, bad));
+    ASSERT_TRUE(cap.byPath.count(bad));
+    EXPECT_EQ(cap.byPath[bad].status,        InputStatus::SkippedError);
+    EXPECT_EQ(cap.byPath[bad].errorCode,     Models::ProcessingErrorCode::InputLoadFailed);
+    EXPECT_EQ(cap.byPath[bad].errorCategory, Models::ProcessingErrorCategory::Load);
 }
 
 } // namespace Platemaker::Core

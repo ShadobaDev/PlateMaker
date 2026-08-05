@@ -50,6 +50,7 @@
 #include <vector>
 #include "platemaker/platemaker_export.h"
 #include "platemaker/models/canvas_profile.hpp"
+#include "platemaker/models/processing_error.hpp"
 
 // Forward declarations only (no include, so Models stays independent of Infrastructure). The
 // project's profile-link fields are private; WorkspaceEditor is the sole runtime mutation authority
@@ -73,11 +74,16 @@ enum class FileStatus {
     Missing,        //!< File was registered but cannot be found on disk.
     Desynchronized, //!< Output is out-of-sync with the current input set.
     Done,           //!< Output slice is up-to-date with the current input set and workspace config.
-    Skipped         //!< Input the last render could not include: the file is missing or failed to
+    Skipped,        //!< Input the last render could not include: the file is missing or failed to
                     //!< load. A size mismatch is NOT a skip — an unmatched page is rendered without
                     //!< margins and ends up Processed with an empty canvasProfileId. Sticky across
                     //!< sanitize() while the file is unchanged. Distinct from Missing, which is a
                     //!< pre-render disk check, and from Pending, which was never rendered.
+    Error           //!< Input was rendered, but its content hash could not be computed afterwards
+                    //!< (locked file / denied permission / offline drive). The output exists; the
+                    //!< verification baseline does not. Sticky across sanitize() like Skipped and it
+                    //!< does NOT force a re-render — otherwise the project would silently reprocess
+                    //!< everything on every run forever. Recovers to Processed once the file hashes.
 };
 
 // ---------------------------------------------------------------------------
@@ -551,8 +557,15 @@ public:
      *                          \c effectiveCanvasProfileIds().
      * \param outputDirectory   Absolute path where output files were written.
      * \param timestamp         ISO 8601 string for \c InputFile::lastProcessed.
+     *
+     * \return The typed failures that happened *after* a successful render — one per input whose
+     *         content hash could not be computed (code \c InputHashFailed, category \c Io). Such an
+     *         input is set to \c FileStatus::Error rather than left \c Pending, so it no longer
+     *         silently forces a full re-render on every subsequent run. Empty on a clean apply. The
+     *         caller should surface these (CLI print / GUI log + tile) — ignoring them re-hides the
+     *         very failure this reports.
      */
-    void applyProcessingResults(
+    [[nodiscard]] std::vector<ProcessingError> applyProcessingResults(
         const std::vector<ProcessingSliceRecord>& records,
         const std::vector<AppliedCanvasProfile>&  appliedProfiles,
         const std::vector<std::string>&           skippedInputPaths,

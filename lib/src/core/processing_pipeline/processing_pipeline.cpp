@@ -85,6 +85,15 @@ ProcessingOutcome ProcessingPipeline::run(
 
     ProcessingOutcome outcome;
 
+    // Safety net for unforeseen faults. The pipeline handles expected failures inline (per-input load,
+    // save, slicing) and returns them typed; this outer guard converts anything that still escapes those
+    // blocks — an exception from setup / allocation / a dependency, or a non-std throw — into a typed
+    // Unexpected/Internal failure instead of unwinding out of run() and terminating the caller's (worker)
+    // thread. It captures a message for a bug report; it is NOT recovery, and it does NOT catch hardware
+    // faults such as a segfault or null dereference (those are OS signals / SEH, not C++ exceptions, and
+    // need a separate crash handler).
+    try {
+
     Scaler        scaler;
     MarginCropper cropper;
     ImageIO       imageIO;
@@ -188,15 +197,24 @@ ProcessingOutcome ProcessingPipeline::run(
             emitLog(callbacks.onLog, ProcessingLogLevel::Warning,
                     std::string("Skipping (") + e.what() + "): " + file.filePath);
             outcome.skippedPages.push_back(file.filePath);
-            if (callbacks.onInput)
-                callbacks.onInput({file.filePath, InputStatus::SkippedError, {}, e.what()});
+            if (callbacks.onInput) {
+                InputResult r;
+                r.inputPath     = file.filePath;
+                r.status        = InputStatus::SkippedError;
+                r.detail        = e.what();
+                r.errorCode     = ProcessingErrorCode::InputLoadFailed; // non-fatal: reported here, not on the outcome
+                r.errorCategory = ProcessingErrorCategory::Load;
+                callbacks.onInput(r);
+            }
         }
     }
 
     if (strip.totalHeight() == 0) {
-        outcome.failed       = true;
-        outcome.errorMessage = "No pages were loaded successfully.";
-        emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.errorMessage);
+        outcome.failed = true;
+        outcome.error  = ProcessingError{
+            ProcessingErrorCode::NoPagesLoaded, ProcessingErrorCategory::Load,
+            "No pages were loaded successfully.", {}, {}};
+        emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.error->message);
         return outcome;
     }
 
@@ -254,9 +272,11 @@ ProcessingOutcome ProcessingPipeline::run(
         try {
             imageIO.save(slice.image, outPath, outProfile);
         } catch (const std::exception& e) {
-            outcome.failed       = true;
-            outcome.errorMessage = "Failed to save '" + outName + "': " + e.what();
-            emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.errorMessage);
+            outcome.failed = true;
+            outcome.error  = ProcessingError{
+                ProcessingErrorCode::SliceEncodeFailed, ProcessingErrorCategory::Encode,
+                "Failed to save '" + outName + "': " + e.what(), {}, outName};
+            emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.error->message);
             return false;   // stop slicing
         }
 
@@ -280,9 +300,11 @@ ProcessingOutcome ProcessingPipeline::run(
         strip.sliceAll(outProfile.sliceHeight, outProfile.lastSlicePolicy,
                        cancel, onSlice);
     } catch (const std::exception& e) {
-        outcome.failed       = true;
-        outcome.errorMessage = std::string("Slicing failed: ") + e.what();
-        emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.errorMessage);
+        outcome.failed = true;
+        outcome.error  = ProcessingError{
+            ProcessingErrorCode::SlicingFailed, ProcessingErrorCategory::Slice,
+            std::string("Slicing failed: ") + e.what(), {}, {}};
+        emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.error->message);
         return outcome;
     }
 
@@ -295,6 +317,22 @@ ProcessingOutcome ProcessingPipeline::run(
         outcome.cancelled = true;
 
     return outcome;
+
+    } catch (const std::exception& e) {
+        outcome.failed = true;
+        outcome.error  = ProcessingError{
+            ProcessingErrorCode::Unexpected, ProcessingErrorCategory::Internal,
+            std::string("Unexpected internal error: ") + e.what(), {}, {}};
+        emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.error->message);
+        return outcome;
+    } catch (...) {
+        outcome.failed = true;
+        outcome.error  = ProcessingError{
+            ProcessingErrorCode::Unexpected, ProcessingErrorCategory::Internal,
+            "Unexpected internal error (non-standard exception).", {}, {}};
+        emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.error->message);
+        return outcome;
+    }
 }
 
 } // namespace Platemaker::Core

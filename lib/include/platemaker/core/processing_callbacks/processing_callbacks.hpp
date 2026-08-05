@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "platemaker/platemaker_export.h"
+#include "platemaker/models/processing_error.hpp"
 
 namespace Platemaker::Core {
 
@@ -65,6 +66,13 @@ struct InputResult {
     std::vector<std::string> unlinkedCandidateProfileIds; //!< Only for \c SkippedProfileNotLinked: ids of
                                                           //!< workspace profiles matching this image's size.
     std::string detail;                               //!< Human note for \c SkippedError (the error text); else empty.
+
+    // Typed tag for the \c SkippedError case, so a consumer can group / localise the skip reason
+    // without parsing \c detail. Only meaningful when \c status == SkippedError; ignored otherwise.
+    // Not a nested ProcessingError: the file is already \c inputPath and the message already \c detail —
+    // this just adds the stable machine code/category.
+    Models::ProcessingErrorCode     errorCode     = Models::ProcessingErrorCode::InputLoadFailed;
+    Models::ProcessingErrorCategory errorCategory = Models::ProcessingErrorCategory::Load;
 };
 
 /// Reported once, after the strip is assembled, before the first slice — via onSlicingStarted.

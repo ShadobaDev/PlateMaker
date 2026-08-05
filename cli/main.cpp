@@ -109,6 +109,9 @@
 #  endif
 #  include <windows.h>       // SetConsoleOutputCP, GetCommandLineW, CommandLineToArgvW
 #  include <shellapi.h>      // CommandLineToArgvW
+#  include <io.h>            // _isatty, _fileno (TTY detection for the process beauty-dump)
+#else
+#  include <unistd.h>        // isatty, fileno (TTY detection for the process beauty-dump)
 #endif
 
 namespace fs = std::filesystem;
@@ -930,6 +933,172 @@ static int cmdWorkspaceRmOutputProfile(const Opts& opts)
 }
 
 // ===========================================================================
+// process — human-friendly "beauty-dump" output (non-JSON mode)
+// ===========================================================================
+
+namespace {
+
+// UTF-8 byte sequences (the console is switched to CP_UTF8 in main() on Windows). Kept as explicit
+// bytes so they render identically regardless of the compiler's execution charset. Always followed by
+// a space at the use sites, so the hex escapes never merge with a trailing hex-letter.
+namespace sym {
+    constexpr const char* ok    = "\xE2\x9C\x94"; // heavy check   ✔
+    constexpr const char* warn  = "\xE2\x9A\xA0"; // warning sign  ⚠
+    constexpr const char* fail  = "\xE2\x9C\x96"; // heavy cross   ✖
+    constexpr const char* play  = "\xE2\x96\xB6"; // play triangle ▶
+    constexpr const char* dot   = "\xC2\xB7";     // middle dot    ·
+    constexpr const char* arrow = "\xE2\x86\x92"; // rightwards    →
+}
+
+bool stderrIsTty()
+{
+#if defined(_WIN32)
+    return _isatty(_fileno(stderr)) != 0;
+#else
+    return isatty(fileno(stderr)) != 0;
+#endif
+}
+
+const char* categoryTag(Platemaker::Models::ProcessingErrorCategory c)
+{
+    using C = Platemaker::Models::ProcessingErrorCategory;
+    switch (c) {
+        case C::Load:         return "load";
+        case C::ProfileMatch: return "profile-match";
+        case C::Slice:        return "slice";
+        case C::Encode:       return "encode";
+        case C::Io:           return "io";
+        case C::Internal:     return "internal";
+    }
+    return "error";
+}
+
+/**
+ * \brief Live, human-readable output for `process` — input tally, strip marker, slice progress and
+ *        typed error sections. Non-JSON mode only. Writes to stderr; on a TTY the progress bar
+ *        refreshes in place, otherwise it degrades to occasional plain lines. Symbols only, no colour.
+ */
+class ProcessDump {
+public:
+    explicit ProcessDump(bool tty) : m_tty(tty) {}
+
+    // Once per input in phase 1 — accumulate the tally and remember skip/error notes for the section.
+    void onInput(const Platemaker::Core::InputResult& r)
+    {
+        using Platemaker::Core::InputStatus;
+        switch (r.status) {
+            case InputStatus::Appended:                 ++m_appended;  break;
+            case InputStatus::AppendedWithoutProfile:   ++m_noProfile; break;
+            case InputStatus::AppendedProfileNotLinked: ++m_notLinked; break;
+            case InputStatus::SkippedMissing:
+                ++m_skipped;
+                m_notes.push_back(std::string("     ") + sym::warn + " " +
+                                  baseName(r.inputPath) + " \xE2\x80\x94 skipped (missing)");
+                break;
+            case InputStatus::SkippedError:
+                ++m_skipped;
+                m_notes.push_back(std::string("     ") + sym::warn + " " + baseName(r.inputPath) +
+                                  " \xE2\x80\x94 skipped (" + categoryTag(r.errorCategory) +
+                                  (r.detail.empty() ? std::string{} : ": " + r.detail) + ")");
+                break;
+            default: break;
+        }
+    }
+
+    // Phase-1 → phase-2 boundary: flush the Inputs section, then announce the strip.
+    void slicingStarted(int total)
+    {
+        printInputs();
+        std::cerr << "  Strip    assembled " << sym::arrow << " " << total << " slice(s)\n";
+    }
+
+    // Per-slice progress tick.
+    void progress(int done, int total, const std::string& name)
+    {
+        if (m_tty) {
+            constexpr int width = 24;
+            const int filled = total > 0 ? (done * width) / total : width;
+            std::string bar(static_cast<std::size_t>(filled), '#');
+            bar.append(static_cast<std::size_t>(width - filled), '-');
+            std::string line = "  Slices   [" + bar + "] " + std::to_string(done) + "/" +
+                               std::to_string(total) + "  " + name;
+            if (line.size() < m_lastLen) line.append(m_lastLen - line.size(), ' ');
+            m_lastLen = line.size();
+            std::cerr << '\r' << line << std::flush;
+            m_barActive = true;
+        } else {
+            const int pct = total > 0 ? (done * 100) / total : 100;
+            if (pct >= m_lastPct + 10 || done == total) {
+                m_lastPct = pct - (pct % 10);
+                std::cerr << "  Slices   " << done << "/" << total << " (" << pct << "%)\n";
+            }
+        }
+    }
+
+    void sliceSkipped() { ++m_cleanSkipped; }
+
+    void ensureInputsPrinted() { printInputs(); }
+
+    // Normal (non-failed) completion of the slice phase.
+    void finishSlices()
+    {
+        endBar();
+        if (m_cleanSkipped > 0)
+            std::cerr << "  Skipped  " << m_cleanSkipped
+                      << " clean slice(s) (partial re-render)\n";
+    }
+
+    // Fatal error: render the typed outcome error.
+    void failure(const std::optional<Platemaker::Models::ProcessingError>& err)
+    {
+        endBar();
+        printInputs();
+        std::cerr << sym::fail << " FAILED";
+        if (err) {
+            std::cerr << " \xE2\x80\x94 " << categoryTag(err->category);
+            if (!err->slice.empty()) std::cerr << " / " << err->slice;
+            std::cerr << "\n    " << err->message << "\n";
+        } else {
+            std::cerr << "\n";
+        }
+    }
+
+private:
+    void printInputs()
+    {
+        if (m_inputsPrinted) return;
+        m_inputsPrinted = true;
+        std::cerr << "  Inputs   " << m_appended << " appended";
+        if (m_noProfile) std::cerr << " " << sym::dot << " " << m_noProfile << " no-profile";
+        if (m_notLinked) std::cerr << " " << sym::dot << " " << m_notLinked << " unlinked";
+        if (m_skipped)   std::cerr << " " << sym::dot << " " << m_skipped << " skipped";
+        std::cerr << "\n";
+        for (const auto& n : m_notes) std::cerr << n << "\n";
+    }
+
+    void endBar()
+    {
+        if (m_barActive) { std::cerr << '\n'; m_barActive = false; }
+    }
+
+    static std::string baseName(const std::string& p)
+    {
+        const auto pos = p.find_last_of("/\\");
+        return pos == std::string::npos ? p : p.substr(pos + 1);
+    }
+
+    bool        m_tty;
+    int         m_appended = 0, m_noProfile = 0, m_notLinked = 0, m_skipped = 0, m_cleanSkipped = 0;
+    std::vector<std::string> m_notes;
+    bool        m_inputsPrinted = false;
+    bool        m_barActive     = false;
+    std::size_t m_lastLen       = 0;
+    int         m_lastPct       = -10;
+};
+
+} // namespace
+
+// ===========================================================================
 // platemaker process
 // ===========================================================================
 
@@ -1180,32 +1349,44 @@ static int cmdProcess(const Opts& opts)
     }
 
     // --- Pipeline ---
-    if (!jsonMode && partial) {
-        std::cerr << "Re-rendering " << dirtySlices.size()
-                  << " missing/modified slice(s) (inputs unchanged) ...\n";
-    } else if (!jsonMode) {
-        std::cerr << "Processing " << project.getInputImages().size() << " file(s)";
-        if (noProfile)
-            std::cerr << " [--no-profile: canvas profiles ignored]";
-        else if (hasProfiles)
-            std::cerr << " [" << ws.canvasProfiles().size()
-                      << " canvas profile(s), matching by width+height]";
-        std::cerr << " ...\n";
+    ProcessDump dump(stderrIsTty());
+    if (!jsonMode) {
+        std::cerr << sym::play << " " << project.name << " \xE2\x80\x94 ";
+        if (partial) {
+            std::cerr << "partial re-render of " << dirtySlices.size() << " slice(s)\n";
+        } else {
+            std::cerr << project.getInputImages().size() << " file(s)";
+            if (noProfile)
+                std::cerr << " " << sym::dot << " canvas profiles ignored";
+            else if (hasProfiles)
+                std::cerr << " " << sym::dot << " " << ws.canvasProfiles().size()
+                          << " canvas profile(s)";
+            std::cerr << "\n";
+        }
     }
 
     // The CLI never cancels, so it uses a token that stays unset.
     Platemaker::Infrastructure::CancellationToken cancelToken;
 
     Platemaker::Core::ProcessingCallbacks callbacks;
-    callbacks.onLog = [&](Platemaker::Core::ProcessingLogLevel level, const std::string& msg) {
-        using L = Platemaker::Core::ProcessingLogLevel;
-        if (level == L::Info) {
-            if (!jsonMode) std::cerr << "  " << msg << '\n';
-        } else {
-            std::cerr << (level == L::Error ? "Error: " : "Warning: ")
-                      << msg << '\n';
-        }
-    };
+    if (jsonMode) {
+        // JSON mode stays quiet on stdout; only surface warnings/errors on stderr.
+        callbacks.onLog = [](Platemaker::Core::ProcessingLogLevel level, const std::string& msg) {
+            using L = Platemaker::Core::ProcessingLogLevel;
+            if (level != L::Info)
+                std::cerr << (level == L::Error ? "Error: " : "Warning: ") << msg << '\n';
+        };
+    } else {
+        // Beauty-dump: the input tally / strip marker / progress bar cover the run, so onLog(Info/Warning)
+        // is intentionally not wired (it would duplicate onInput and onProgress). Fatal errors surface via
+        // outcome.error, post-render failures via applyProcessingResults()'s return — both below.
+        callbacks.onInput          = [&](const Platemaker::Core::InputResult& r)        { dump.onInput(r); };
+        callbacks.onSlicingStarted = [&](const Platemaker::Core::SlicingStarted& s)     { dump.slicingStarted(s.expectedSliceCount); };
+        callbacks.onProgress       = [&](const Platemaker::Core::ProcessingProgress& p) { dump.progress(p.sliceDone, p.sliceTotal, p.sliceName); };
+        callbacks.onSliceSkipped   = [&](const Platemaker::Core::SliceSkipped&)         { dump.sliceSkipped(); };
+    }
+
+    const auto t0 = std::chrono::steady_clock::now();
 
     const auto outcome = Platemaker::Core::ProcessingPipeline::run(
         project.inputsInOrder(),   // strip is built in `order` sequence, not stored-vector order
@@ -1217,14 +1398,19 @@ static int cmdProcess(const Opts& opts)
         callbacks,
         /*onlySlices*/ partial ? &dirtySlices : nullptr);
 
-    if (outcome.failed)
+    if (outcome.failed) {
+        if (!jsonMode) dump.failure(outcome.error);
         return 3;
+    }
+    if (!jsonMode) dump.finishSlices();
 
     // --- Update ProjectItem via library API, then save workspace ---
+    std::vector<Platemaker::Models::ProcessingError> postRenderErrors;
     if (partial) {
         project.applyPartialResults(outcome.records);
     } else {
-        project.applyProcessingResults(outcome.records, outcome.appliedProfiles,
+        postRenderErrors = project.applyProcessingResults(
+                                       outcome.records, outcome.appliedProfiles,
                                        outcome.skippedPages,
                                        effectiveProfiles, outputDir, nowIso8601());
 
@@ -1270,18 +1456,36 @@ static int cmdProcess(const Opts& opts)
     for (const auto& rec : outcome.records)
         outputFiles.push_back(rec.fileName);
 
+    const double elapsedSec =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
     if (jsonMode) {
+        std::vector<std::string> unverified;
+        unverified.reserve(postRenderErrors.size());
+        for (const auto& e : postRenderErrors) unverified.push_back(e.file);
+
         nlohmann::json j;
-        j["sliceCount"]   = static_cast<int>(outputFiles.size());
-        j["outputFiles"]  = outputFiles;
-        j["skippedPages"] = outcome.skippedPages;
-        j["cancelled"]    = outcome.cancelled;
-        j["incremental"]  = partial;
-        j["upToDate"]     = false;
+        j["sliceCount"]       = static_cast<int>(outputFiles.size());
+        j["outputFiles"]      = outputFiles;
+        j["skippedPages"]     = outcome.skippedPages;
+        j["unverifiedInputs"] = unverified;   // rendered but unhashable — see FileStatus::Error
+        j["cancelled"]        = outcome.cancelled;
+        j["incremental"]      = partial;
+        j["upToDate"]         = false;
         std::cout << j.dump() << '\n';
     } else {
-        std::cerr << "Done. " << outputFiles.size()
-                  << " slice(s) written to " << outputDir << '\n';
+        // Post-render hash failures: the render succeeded, but these inputs could not be verified and
+        // are now FileStatus::Error (they will not be silently reprocessed on the next run).
+        if (!postRenderErrors.empty()) {
+            std::cerr << "  " << sym::warn << " " << postRenderErrors.size()
+                      << " input(s) unverified after render (io):\n";
+            for (const auto& e : postRenderErrors)
+                std::cerr << "     " << e.file << "\n";
+        }
+        std::ostringstream secs;
+        secs << std::fixed << std::setprecision(1) << elapsedSec;
+        std::cerr << sym::ok << " Done in " << secs.str() << "s \xE2\x80\x94 "
+                  << outputFiles.size() << " slice(s) " << sym::arrow << " " << outputDir << "\n";
     }
 
     return 0;
@@ -1630,6 +1834,7 @@ static int cmdProjectStatus(const Opts& opts)
             case FileStatus::Desynchronized: return "DESYNC";
             case FileStatus::Done:           return "DONE";
             case FileStatus::Skipped:        return "SKIPPED";
+            case FileStatus::Error:          return "ERROR";
         }
         return "UNKNOWN";
     };
@@ -1824,6 +2029,12 @@ static int runCli(int argc, char** argv)
 
     int exitCode = 0;
 
+    // Top-level safety net: individual commands handle their expected errors and return a code; this
+    // catches anything unforeseen that still escapes (a bug, out-of-memory, a non-std throw) so the
+    // process reports a diagnostic instead of terminating. (A segfault / null dereference is not a C++
+    // exception and is not caught here — that would need a crash handler.)
+    try {
+
     if (argc < 2) {
         cmdHelp(argv[0]);
         exitCode = 1;
@@ -1893,6 +2104,16 @@ static int runCli(int argc, char** argv)
                       << "'. Run with --help for usage.\n";
             exitCode = 1;
         }
+    }
+
+    } catch (const std::exception& e) {
+        std::cerr << "Internal error: " << e.what() << '\n'
+                  << "This is a bug — please report it (with the command you ran) on the project's issue tracker.\n";
+        exitCode = 3;
+    } catch (...) {
+        std::cerr << "Internal error (non-standard exception).\n"
+                  << "This is a bug — please report it (with the command you ran) on the project's issue tracker.\n";
+        exitCode = 3;
     }
 
     vips_shutdown();

@@ -20,6 +20,7 @@
 #ifndef PLATEMAKER_CORE_PROCESSING_PIPELINE_HPP
 #define PLATEMAKER_CORE_PROCESSING_PIPELINE_HPP
 
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -42,9 +43,11 @@ struct ProcessingOutcome {
     std::vector<Models::ProcessingSliceRecord> records;      //!< One per saved slice, in order.
     std::vector<std::string>                   skippedPages; //!< Inputs that were skipped (missing / unmatched / load error).
     std::vector<Models::AppliedCanvasProfile>  appliedProfiles; //!< Canvas profile applied per input (see the Models type).
-    bool        cancelled = false; //!< True if cancellation cut the run short.
-    bool        failed    = false; //!< True if a fatal error aborted the run.
-    std::string errorMessage;      //!< Human-readable message when \c failed is true.
+    bool cancelled = false; //!< True if cancellation cut the run short.
+    bool failed    = false; //!< True if a fatal error aborted the run (== \c error.has_value()).
+    std::optional<Models::ProcessingError> error; //!< The fatal error, when \c failed. Replaces the old
+                                                  //!< free-text errorMessage: \c error->message carries the
+                                                  //!< text, \c error->code / \c category the machine tag.
 };
 
 /**
