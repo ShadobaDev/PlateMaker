@@ -93,7 +93,7 @@ jobs:
     env:
       VT_API_KEY: ${{ secrets.VT_API_KEY }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true      # flatten pkg-windows-latest/ + pkg-ubuntu-latest/ into dist/
