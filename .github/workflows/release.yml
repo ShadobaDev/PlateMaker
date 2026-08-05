@@ -69,7 +69,7 @@ jobs:
       # --- Provenance: cryptographically tie each archive to this repo/commit/run ---
       # Verifiable later with: gh attestation verify <archive> --repo ShadobaDev/PlateMaker
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: ${{ matrix.artifacts }}
 
