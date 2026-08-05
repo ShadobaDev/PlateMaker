@@ -33,6 +33,8 @@
   reportable diagnostic. New `ProcessingErrorCode::Unexpected` + `ProcessingErrorCategory::Internal`.
   (This handles C++ exceptions only — a hardware fault such as a segfault or null dereference is an OS
   signal / SEH, not a C++ exception, and is out of scope; catching those needs a dedicated crash handler.)
+  The CLI also installs `std::set_terminate` to print the in-flight exception on the `terminate` paths
+  (uncaught exception / `noexcept` violation / pure-virtual call) instead of aborting silently.
 
 ### Fixed
 

@@ -139,6 +139,17 @@ layer of indirection on top of the facade, and there is no use case for it today
 
 Investigations and test/dev work that ships no change in the library itself.
 
+### Crash handler for hard faults (segfault / SEH) — deferred, likely not worth it yet
+
+0.4.0 added a Layer-A safety net for **C++ exceptions** (the `ProcessingPipeline::run()` guard + the CLI
+top-level `try/catch` in `runCli`). Hard faults — SIGSEGV / null deref / Windows SEH — are **not** C++
+exceptions and need an OS-level handler in each app's `main()` (app-level, no lib change). Cost/benefit
+verdict (`temp/crash-handling-options.md`, §0): a minidump/Breakpad apparatus is disproportionate for a
+simple tool with a small user base; it only helps unreproducible **field** crashes, and archiving only
+libplatemaker's small `-g` symbols already covers the frames that matter. **Cheap CLI step, do anytime:**
+`std::set_terminate` in `main.cpp`. Defer the OS-level handler until field crashes justify it; the primary
+TODO item and full analysis live in the GUI repo / the linked note.
+
 ### Stage 1 integration tests (unit tests with real pixel data)
 
 Seven tests are currently stubbed with `GTEST_SKIP()` pending real image fixtures:

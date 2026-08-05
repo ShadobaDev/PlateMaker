@@ -86,7 +86,9 @@
 #include <cctype>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -2021,6 +2023,23 @@ static int cmdTemplate(const Opts& opts)
 // Real CLI logic. argv is always UTF-8 (guaranteed by the Windows main() below).
 static int runCli(int argc, char** argv)
 {
+    // Print the in-flight C++ exception on a terminate() (uncaught exception / noexcept violation /
+    // pure-virtual call / a throw during unwinding) so it is not a silent abort. Cheap C++-side hygiene
+    // (see docs/TODO.md); it does NOT catch a hardware fault such as a segfault — that is not a C++
+    // exception. The command dispatch below also has its own try/catch; this is the backstop for what
+    // escapes it (e.g. anything outside that block).
+    std::set_terminate([] {
+        if (std::exception_ptr e = std::current_exception()) {
+            try { std::rethrow_exception(e); }
+            catch (const std::exception& ex) { std::cerr << "Fatal: unhandled exception: " << ex.what() << '\n'; }
+            catch (...)                       { std::cerr << "Fatal: unhandled non-standard exception.\n"; }
+        } else {
+            std::cerr << "Fatal: terminate() called with no active exception.\n";
+        }
+        std::cerr.flush();
+        std::abort();
+    });
+
     if (VIPS_INIT(argv[0])) {
         std::cerr << "Fatal: libvips init failed: "
                   << vips_error_buffer() << '\n';
