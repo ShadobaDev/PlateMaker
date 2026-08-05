@@ -1,0 +1,44 @@
+# Drift guard for the third-party notices / SBOM.
+#
+# Every bundled Windows DLL must be mapped (licence + copyright) in lib/cmake/third_party.json, or
+# THIRD-PARTY-NOTICES.txt and the SBOM would silently under-disclose. This job downloads the pinned
+# libvips web-zip (the Windows superset of bundled DLLs) — no build — and fails if any DLL in its bin/
+# is not in the table. It runs when the table, the guard, or the pinned libvips version change, so a
+# web-build bump that adds a new dependency turns the check red before a release can ship it.
+name: Third-party coverage
+
+on:
+  push:
+    paths:
+      - 'lib/cmake/third_party.json'
+      - 'lib/cmake/check_thirdparty_coverage.cmake'
+      - 'CMakeLists.txt'          # the pinned PLATEMAKER_VIPS_WEB_VERSION lives here
+      - '.github/workflows/thirdparty-coverage.yml'
+  pull_request:
+    paths:
+      - 'lib/cmake/third_party.json'
+      - 'lib/cmake/check_thirdparty_coverage.cmake'
+      - 'CMakeLists.txt'
+  workflow_dispatch:
+
+jobs:
+  coverage:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the pinned libvips web-zip and check DLL coverage
+        shell: pwsh
+        run: |
+          $ver = (Select-String -Path CMakeLists.txt -Pattern 'PLATEMAKER_VIPS_WEB_VERSION "([0-9.]+)"' |
+                  Select-Object -First 1).Matches.Groups[1].Value
+          if (-not $ver) { throw "Could not read PLATEMAKER_VIPS_WEB_VERSION from CMakeLists.txt" }
+          $url = "https://github.com/libvips/build-win64-mxe/releases/download/v$ver/vips-dev-x64-web-$ver.zip"
+          Write-Host "libvips web-build: $ver"
+          Write-Host "downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile vips.zip
+          Expand-Archive -Path vips.zip -DestinationPath vips -Force
+          $bin = (Get-ChildItem -Path vips -Recurse -Directory -Filter bin | Select-Object -First 1).FullName
+          if (-not $bin) { throw "no bin/ directory found in the web-zip" }
+          Write-Host "checking DLLs in $bin"
+          cmake -DBIN_DIR="$bin" -DTABLE="lib/cmake/third_party.json" -P lib/cmake/check_thirdparty_coverage.cmake

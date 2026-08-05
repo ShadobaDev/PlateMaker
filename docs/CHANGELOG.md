@@ -26,6 +26,15 @@
   `onInput`; `onLog(Error, …)` remains the human transcript.
 - **`FileStatus::Error`** — a new, sticky input status for a page that was rendered but whose content
   hash could not be computed afterwards.
+- **Complete third-party notices for the bundled DLL graph.** The Windows packages now ship
+  `credits/THIRD-PARTY-NOTICES.txt`, `credits/licenses/` (18 canonical/upstream licence texts) and a
+  `credits/sbom.spdx.json` covering all 32 components (the 3 direct deps + the ~29 libvips runtime /
+  compiler-runtime DLLs — glib, libpng, libjpeg/mozjpeg, freetype, harfbuzz, cairo, pango, webp, …),
+  instead of only libvips + nlohmann/json. Generated at configure time (`cmake/gen_credits.cmake`) from
+  the web-build's authoritative `versions.json` + a curated `cmake/third_party.json`; a `Third-party
+  coverage` CI workflow fails if a bundled DLL is unmapped. The committed `sbom/` snapshot (GitHub
+  dependency graph) was refreshed to the full graph. (Legal note: `third_party.json` SPDX ids are
+  curated best-effort and pending a final review; libimagequant is disclosed as GPL-3.0-or-later.)
 - **Safety net for unforeseen faults.** `ProcessingPipeline::run()` now wraps its whole body so any
   exception that escapes the inline handling (a bug, out-of-memory, a non-`std::exception` throw) becomes
   a typed `Unexpected` / `Internal` failure on `outcome.error` instead of unwinding out of `run()` and

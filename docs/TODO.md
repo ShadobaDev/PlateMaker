@@ -17,21 +17,20 @@ work happens in.
   baseline — ship a MINOR before the pending PATCH and that patch becomes `0.3.1`, the next MINOR
   becomes `0.4.0`.
 
-Baseline: **0.3.1 released, 0.3.2 in progress** (`CMakeLists.txt`).
+Baseline: **0.3.1 released; 0.4.0 in progress** (`CMakeLists.txt`). The structured-error system (below)
+is breaking, so the in-progress `0.3.2` work (checksums, release CI) re-derives into `0.4.0`.
 
 ---
 
-## PATCH — next: 0.3.2
+## PATCH — next: 0.4.1
 
-Fixes and additive changes — nothing a consumer must react to. Code built against 0.3.1 keeps
-compiling. (These ride `0.3.2`; per the cascade rule above, whichever section releases first takes
-its slot and the rest re-derive.)
+Fixes and additive changes — nothing a consumer must react to. Code built against 0.4.0 keeps
+compiling. (These were slated for `0.3.2`, but `0.4.0` ships first — per the cascade rule above they
+re-derive to `0.4.1`.)
 
-### Persist last render log
+### ~~Persist last render log~~
 
-The GUI render log is in-memory only (cleared on exit). Optionally persist the
-last run's log (and the slice/skip summary) next to the workspace so a user can
-review what the previous render did.
+Moved to GUI
 
 ### Dynamic thread spawning for processing
 
@@ -41,23 +40,28 @@ pre-process could split the strip at input boundaries into segments that each
 yield a whole number of slices; independent segments could then be scaled/sliced
 on separate threads and the slice files numbered deterministically afterwards.
 
-### Third-party notices: extend the SBOM to the full bundled DLL graph
+### Third-party notices: full bundled DLL graph — DONE (0.4.0)
 
-**Foundation shipped in 0.3.0.** The package now emits `credits/sbom.spdx.json` (an SPDX 2.3 SBOM)
-plus `credits/licenses/` — but only for the **direct** dependencies (libvips, nlohmann/json). The
-Windows packages still ship the whole libvips dependency graph (~40 DLLs: glib, libpng, libjpeg,
-zlib, expat, …), several LGPL, and distributing them carries notice obligations that listing only
-"libvips" does not discharge. Both toolchains now bundle the same libvips web-build graph, so one
-closure covers MSVC and MinGW.
+Landed. The Windows packages now ship, in `credits/`:
+- **`THIRD-PARTY-NOTICES.txt`** — every bundled component (version, upstream, copyright, licence),
+- **`licenses/`** — 18 canonical/upstream licence texts,
+- **`sbom.spdx.json`** — 32 SPDX packages (the 3 direct deps + the ~29 libvips runtime / compiler-runtime
+  components).
 
-What remains is to enumerate that closure into the same SBOM (more `packages[]` entries + their
-licence texts). The DLL closure is already computed at install time
-(`_pm_install_mingw_dll_closure()`), so the list can be derived rather than maintained by hand; a
-scanner such as `syft` over the packaged `bin/` is the likely tool. Each DLL needs mapping to its
-SPDX licence and text — the web-zip build ships no per-DLL licence files, so canonical texts must be
-vendored the way `lib/cmake/licenses/` already does for LGPL-2.1 and MIT.
+Generated at configure time by [`cmake/gen_credits.cmake`](../lib/cmake/gen_credits.cmake) from the
+web-build's authoritative `versions.json` (versions) + the curated
+[`cmake/third_party.json`](../lib/cmake/third_party.json) (licence / copyright / homepage). The
+[`Third-party coverage`](../.github/workflows/thirdparty-coverage.yml) CI guard fails if a bundled DLL
+isn't mapped, so a libvips web-build bump can't ship a new undisclosed dependency. The committed
+`sbom/sbom.spdx.json` snapshot was refreshed to the full graph.
 
-## MINOR — next: 0.4.0
+**⚠ Flagged for a final legal pass before the public release:** the SPDX ids / copyrights in
+`third_party.json` are curated best-effort. Two strong-copyleft cases are disclosed as-is —
+**libimagequant is GPL-3.0-or-later** (dual w/ commercial) and the **MinGW libstdc++/libgcc are GPL-3.0
+WITH the GCC Runtime Library Exception**. Dropping libimagequant (unused PNG quantiser) via a custom
+libvips build would remove the only strong-copyleft *runtime* DLL — see the codec-slimming item below.
+
+## MINOR — in progress: 0.4.0
 
 Breaking changes — a consumer must rebuild or adapt. These ship together, and the GUI pins the
 version in lockstep.
@@ -228,7 +232,11 @@ GUI `1.0.0` → `1.0.1` → `1.1.0` → `1.2.0` → `1.3.0`.
 `applyProcessingResults()` two) — breaking, hence the minor, not `0.1.2`. `0.2.1` was additive
 plus fixes, so a patch. `0.2.2`'s additive work (buildInfo, SBOM) was folded into `0.3.0`, which
 also removes/changes the preset & CLI API — breaking, hence the minor. `0.3.1` was additive only
-(editor snapshot/restore, more presets, MinGW libvips slimming), so a patch. **In progress: `0.3.2`.**
+(editor snapshot/restore, more presets, MinGW libvips slimming), so a patch. The in-progress `0.3.2`
+work (checksums, release CI) never shipped alone: the **structured-error system is breaking, so it
+re-derives the in-progress release to `0.4.0`** (checksums/CI ride along). **In progress: `0.4.0`** —
+the first release to be cut through the CI workflow. **This is the version intended for public
+promotion (Reddit / itch.io).**
 
 **Order is forced: lib first.** The GUI pins `LIBPLATEMAKER_VERSION`, which also builds the
 FetchContent URL, so until a lib version is on GitHub Releases anyone without a local
@@ -241,7 +249,9 @@ Release assets → VirusTotal scan (VT_API_KEY secret is set) appended to the re
 backlog since `0.3.1` is all infra (checksums, CI), so there's nothing to ship *yet* — but the next
 real change should validate this end-to-end path for the first time.
 
-**Lockstep on a lib bump the GUI needs.** The GUI pins the lib version it requires — currently
-`find_package(platemaker 0.3.1 CONFIG REQUIRED)` (1.3.0 adopts the 0.3.1 editor snapshot/restore) —
-so an older lib is rejected at configure time instead of failing at compile time. With the
-config-version file now `SameMinorVersion`, that pin also rejects a later breaking `0.MINOR`.
+**Lockstep on a lib bump the GUI needs.** The GUI pins the lib version it requires — now
+`find_package(platemaker 0.4.0 CONFIG REQUIRED)` / `LIBPLATEMAKER_VERSION 0.4.0` (the GUI adopts the
+0.4.0 typed errors; 1.3.0 used 0.3.1) — so an older lib is rejected at configure time instead of
+failing at compile time. With the config-version file `SameMinorVersion`, that pin also rejects a later
+breaking `0.MINOR`. **Order for the 0.4.0 wave: tag+release the lib through CI first, then the GUI**
+(the GUI's FetchContent fallback 404s until the lib `0.4.0` assets are on Releases).

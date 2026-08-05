@@ -18,8 +18,12 @@ version bumps). The canonical copy is produced by the build:
 build/mingw-release/lib/credits/sbom.spdx.json
 ```
 
-Copy that over `sbom/sbom.spdx.json` and commit. (This snapshot lists the **direct** dependencies;
-extending it to the full bundled DLL graph is tracked in `docs/TODO.md`.)
+Copy that over `sbom/sbom.spdx.json` and commit. As of 0.4.0 this snapshot lists the **full bundled
+DLL graph** (libplatemaker + nlohmann/json + the ~29 libvips runtime / compiler-runtime components),
+generated from the web-build's `versions.json` + `lib/cmake/third_party.json` — so regenerate it after a
+`PLATEMAKER_VIPS_WEB_VERSION` bump too, not only on a direct-dep change. The
+[`Third-party coverage`](../.github/workflows/thirdparty-coverage.yml) workflow guards against a new
+bundled DLL being missed.
 
 > Note: enabling the graph needs *Dependency graph* turned on in the repo settings — on by default
 > for public repositories.

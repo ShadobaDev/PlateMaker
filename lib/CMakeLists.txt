@@ -150,18 +150,25 @@ endif()
 set(_pm_credits_dir "${CMAKE_CURRENT_BINARY_DIR}/credits")
 file(MAKE_DIRECTORY "${_pm_credits_dir}/licenses")
 
-# Licence texts are vendored (cmake/licenses/) so the package is deterministic across toolchains:
-# MSYS2 ships no libvips COPYING, and a system nlohmann install has no source tree to copy from.
-# Texts are canonical/immutable per licence. Files are named by SPDX id (deduplicated when a text is
-# shared) except a text carrying a unique copyright line (nlohmann's MIT), which keeps a
-# component-qualified name; the GUI viewer maps the SPDX id from linkedComponents() to these names.
-# libplatemaker uses its own repo LICENSE.LGPL (the LGPL-3.0 text).
-configure_file("${CMAKE_SOURCE_DIR}/LICENSE.LGPL"
-               "${_pm_credits_dir}/licenses/LGPL-3.0-or-later.txt" COPYONLY)
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/licenses/LGPL-2.1-or-later.txt"
-               "${_pm_credits_dir}/licenses/LGPL-2.1-or-later.txt" COPYONLY)
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/licenses/nlohmann_json.MIT.txt"
-               "${_pm_credits_dir}/licenses/nlohmann_json.MIT.txt" COPYONLY)
+# Licence texts are vendored in cmake/licenses/ (canonical SPDX / upstream texts) so the package is
+# deterministic across toolchains: MSYS2 ships no libvips COPYING, the web zip ships only its own LGPL,
+# and a system nlohmann install has no source tree to copy from. Copy the whole vendored set into
+# credits/licenses/; THIRD-PARTY-NOTICES.txt and the SBOM reference these by file name. (libplatemaker's
+# own LGPL-3.0 text is the same LGPL-3.0-or-later.txt.)
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/cmake/licenses/"
+     DESTINATION "${_pm_credits_dir}/licenses")
+
+# Third-party NOTICES + the bundled-dependency SBOM fragments (@_pm_extra_packages@ /
+# @_pm_extra_relationships@ below). Only meaningful on Windows, where we bundle the libvips DLL graph and
+# the compiler runtime; on Linux libvips is a system package and nothing is bundled, so the SBOM stays
+# the three core packages and no per-DLL notices are produced. The generator pulls authoritative versions
+# from the web-zip's versions.json and licence/copyright from cmake/third_party.json.
+set(_pm_extra_packages "")
+set(_pm_extra_relationships "")
+if(WIN32 AND DEFINED VIPS_ROOT_DIR)
+    set(_pm_versions_file "${VIPS_ROOT_DIR}/versions.json")
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/gen_credits.cmake")
+endif()
 
 string(TIMESTAMP _pm_sbom_created "%Y-%m-%dT%H:%M:%SZ" UTC)
 string(TIMESTAMP _pm_sbom_stamp   "%Y%m%d%H%M%S"       UTC)
