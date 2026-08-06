@@ -25,6 +25,7 @@
  *   platemaker project create  --workspace FILE --name NAME [--input DIR] [--output DIR]
  *   platemaker project mod     --workspace FILE --name NAME [--new-name N] [--input DIR] [--output DIR]
  *                              [--add-canvas-profile NAME] [--rm-canvas-profile NAME] [--output-profile ID]
+ *   platemaker project duplicate --workspace FILE --name NAME --new-name N [--output DIR]
  *   platemaker project rm      --workspace FILE --name NAME
  *   platemaker project status  --workspace FILE --name NAME
  *   platemaker process --workspace FILE
@@ -390,6 +391,9 @@ static int cmdHelp(const std::string& prog)
         << "           [--add-canvas-profile NAME]  link canvas profile to project\n"
         << "           [--rm-canvas-profile  NAME]  unlink canvas profile from project\n"
         << "           [--output-profile     ID]    assign output profile/preset (by id) to project\n"
+        << " platemaker project duplicate --workspace FILE --name NAME --new-name N [--output DIR]\n"
+        << "      Seed a new project from NAME: its input files + profile links only\n"
+        << "      (no outputs, no output directory, fresh render state).\n"
         << " platemaker project rm      --workspace FILE --name NAME\n"
         << " platemaker project status  --workspace FILE --name NAME\n"
         << "      Manage named projects (input directories) within a workspace.\n"
@@ -1739,6 +1743,81 @@ static int cmdProjectMod(const Opts& opts)
 }
 
 // ===========================================================================
+// platemaker project duplicate
+// ===========================================================================
+
+static int cmdProjectDuplicate(const Opts& opts)
+{
+    if (!opts.has("workspace")) {
+        std::cerr << "Error: --workspace FILE is required\n"; return 1;
+    }
+    if (!opts.has("name")) {
+        std::cerr << "Error: --name NAME is required (the project to copy)\n"; return 1;
+    }
+    if (!opts.has("new-name")) {
+        std::cerr << "Error: --new-name NAME is required (the copy's name)\n"; return 1;
+    }
+
+    const std::string wsFile  = opts.get("workspace");
+    const std::string srcName = opts.get("name");
+    const std::string newName = opts.get("new-name");
+
+    Workspace ws;
+    try {
+        ws = WorkspaceSerializer{}.load(wsFile);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n';
+        return 2;
+    }
+
+    // Locate the source project by name.
+    ProjectItem* src = nullptr;
+    for (auto& p : ws.projectItems)
+        if (p.name == srcName) { src = &p; break; }
+    if (!src) {
+        std::cerr << "Error: project '" << srcName << "' not found.\n"
+                  << "  Use 'workspace list-projects --workspace " << wsFile
+                  << "' to see available projects.\n";
+        return 1;
+    }
+
+    // The copy's name must be free.
+    for (const auto& p : ws.projectItems) {
+        if (p.name == newName) {
+            std::cerr << "Error: project '" << newName << "' already exists.\n";
+            return 1;
+        }
+    }
+
+    // Seed a new project from the source: input files + profile links (canvas + output) only. The
+    // output directory, the output slice list and all render state are dropped, so the copy starts
+    // fresh (inputs Pending) and renders into its own folder. The lib mints the fresh, workspace-unique
+    // project uid. (src may dangle once the vector grows on append — read the returned reference.)
+    ProjectItem& copy = WorkspaceEditor(ws).duplicateProject(*src, newName);
+
+    // A duplicate deliberately has no output directory — two projects writing one folder would
+    // overwrite each other's slices. Let the caller point it at its own here, as 'project create' does.
+    if (opts.has("output"))
+        copy.getOutputDirectory() = opts.get("output");
+
+    const std::size_t inputCount = copy.getInputImages().size();
+
+    try {
+        WorkspaceSerializer{}.save(ws, wsFile);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: cannot save workspace: " << e.what() << '\n';
+        return 2;
+    }
+
+    std::cerr << "Project '" << srcName << "' duplicated as '" << newName << "' ("
+              << inputCount << " input file(s)).\n";
+    if (!opts.has("output"))
+        std::cerr << "  Note: no output directory set — use 'project mod --name \"" << newName
+                  << "\" --output DIR' before rendering.\n";
+    return 0;
+}
+
+// ===========================================================================
 // platemaker project rm
 // ===========================================================================
 
@@ -2102,10 +2181,11 @@ static int runCli(int argc, char** argv)
             } else {
                 const std::string cmd2 = argv[2];
                 Opts opts = parseOpts(argc, argv, 3);
-                if      (cmd2 == "create") exitCode = cmdProjectCreate(opts);
-                else if (cmd2 == "mod")    exitCode = cmdProjectMod(opts);
-                else if (cmd2 == "rm")     exitCode = cmdProjectRm(opts);
-                else if (cmd2 == "status") exitCode = cmdProjectStatus(opts);
+                if      (cmd2 == "create")    exitCode = cmdProjectCreate(opts);
+                else if (cmd2 == "mod")       exitCode = cmdProjectMod(opts);
+                else if (cmd2 == "duplicate") exitCode = cmdProjectDuplicate(opts);
+                else if (cmd2 == "rm")        exitCode = cmdProjectRm(opts);
+                else if (cmd2 == "status")    exitCode = cmdProjectStatus(opts);
                 else {
                     std::cerr << "Unknown project subcommand '" << cmd2
                               << "'. Run with --help for usage.\n";

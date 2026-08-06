@@ -26,6 +26,12 @@
   `onInput`; `onLog(Error, …)` remains the human transcript.
 - **`FileStatus::Error`** — a new, sticky input status for a page that was rendered but whose content
   hash could not be computed afterwards.
+- **`WorkspaceEditor::duplicateProject(source, newName)`** — seeds a new project from an existing one,
+  copying its **input files** and **profile links** (`canvasProfileIds` + `outputProfileId`) only. The
+  output directory, the output slice list and all render state are deliberately dropped, so the copy
+  starts with `Pending` inputs and renders into its own folder. Mints a fresh workspace-unique project
+  uid (the source keeps its own) and fresh project-local input uids — no identifier collides. Enables
+  the GUI's "New from this…" action for the multi-publisher workflow.
 - **Complete third-party notices for the bundled DLL graph.** The Windows packages now ship
   `credits/THIRD-PARTY-NOTICES.txt`, `credits/licenses/` (18 canonical/upstream licence texts) and a
   `credits/sbom.spdx.json` covering all 32 components (the 3 direct deps + the ~29 libvips runtime /
@@ -56,6 +62,10 @@
 
 ### CLI
 
+- **`project duplicate --workspace F --name SRC --new-name COPY [--output DIR]`** — seeds a new project
+  from `SRC` (input files + profile links only; no outputs / output dir / render state), the CLI face of
+  `WorkspaceEditor::duplicateProject()`. Refuses a missing source or an already-taken name; without
+  `--output` it notes that the copy needs an output directory before rendering.
 - **`process` gained structured, TTY-aware output** — a per-input tally (with the typed skip reason),
   a strip-assembly marker, an in-place progress bar (plain lines when piped), timing, and dedicated
   error sections that render `ProcessingError` fields (category / slice / file) plus the post-render

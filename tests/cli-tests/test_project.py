@@ -174,6 +174,139 @@ def test_project_mod_not_found(tmp_path, platemaker_bin):
 
 
 # ---------------------------------------------------------------------------
+# project duplicate
+# ---------------------------------------------------------------------------
+
+def test_project_duplicate_basic(tmp_path, platemaker_bin):
+    """Duplicate seeds a second, distinct project from the source's inputs + profile."""
+    import json
+
+    ws = tmp_path / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    for i in range(3):
+        make_solid_png(pages / f"page_{i:03d}.png", 800, 1200)
+
+    _run(platemaker_bin, "project", "create",
+         "--workspace", str(ws), "--name", "Ch01",
+         "--input", str(pages), "--output", str(tmp_path / "out"))
+
+    r = _run(platemaker_bin, "project", "duplicate",
+             "--workspace", str(ws),
+             "--name", "Ch01",
+             "--new-name", "Ch01 PubX")
+    assert r.returncode == 0, r.stderr
+    assert "3 input file(s)" in r.stderr
+
+    data = json.loads(ws.read_text())
+    projects = {p["name"]: p for p in data["projectItems"]}
+    assert set(projects) == {"Ch01", "Ch01 PubX"}
+    src, dup = projects["Ch01"], projects["Ch01 PubX"]
+
+    # Fresh, distinct project uid.
+    assert dup["uid"] != src["uid"]
+    assert dup["uid"].startswith("proj-")
+
+    # Same input files (paths + order) but fresh input uids and Pending status.
+    assert [i["filePath"] for i in dup["inputFiles"]] == \
+           [i["filePath"] for i in src["inputFiles"]]
+    assert {i["uid"] for i in dup["inputFiles"]}.isdisjoint(
+           {i["uid"] for i in src["inputFiles"]})
+    assert all(i["status"] == "Pending" for i in dup["inputFiles"])
+
+    # The copy carries no render products and no output directory (must not clobber the source).
+    assert dup["outputDirectory"] == ""
+    assert dup["outputFiles"] == []
+
+
+def test_project_duplicate_drops_rendered_state(tmp_path, platemaker_bin):
+    """Even after the source is processed, the duplicate starts fresh (Pending, no outputs)."""
+    import json
+
+    ws = tmp_path / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    make_solid_png(pages / "page_001.png", 800, 1200)
+
+    _run(platemaker_bin, "project", "create",
+         "--workspace", str(ws), "--name", "Ch01",
+         "--input", str(pages), "--output", str(tmp_path / "out"))
+    r_proc = _run(platemaker_bin, "process",
+                  "--workspace", str(ws), "--project", "Ch01")
+    assert r_proc.returncode == 0, r_proc.stderr
+
+    _run(platemaker_bin, "project", "duplicate",
+         "--workspace", str(ws), "--name", "Ch01", "--new-name", "Ch01 Copy")
+
+    data = json.loads(ws.read_text())
+    projects = {p["name"]: p for p in data["projectItems"]}
+    src, dup = projects["Ch01"], projects["Ch01 Copy"]
+
+    # Source is fully rendered...
+    assert src["outputDirectory"] != ""
+    assert len(src["outputFiles"]) > 0
+    assert all(i["sha256"] != "" for i in src["inputFiles"])
+    # ...the duplicate has none of that.
+    assert dup["outputDirectory"] == ""
+    assert dup["outputFiles"] == []
+    assert all(i["status"] == "Pending" for i in dup["inputFiles"])
+    assert all(i["sha256"] == "" for i in dup["inputFiles"])
+
+
+def test_project_duplicate_with_output(tmp_path, platemaker_bin):
+    """--output points the copy at its own output directory immediately."""
+    import json
+
+    ws = tmp_path / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+    _run(platemaker_bin, "project", "create",
+         "--workspace", str(ws), "--name", "Ch01")
+
+    out = tmp_path / "pubx-out"
+    r = _run(platemaker_bin, "project", "duplicate",
+             "--workspace", str(ws), "--name", "Ch01",
+             "--new-name", "Ch01 PubX", "--output", str(out))
+    assert r.returncode == 0, r.stderr
+
+    data = json.loads(ws.read_text())
+    dup = next(p for p in data["projectItems"] if p["name"] == "Ch01 PubX")
+    assert dup["outputDirectory"] == str(out)
+
+
+def test_project_duplicate_source_not_found(tmp_path, platemaker_bin):
+    ws = tmp_path / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+    r = _run(platemaker_bin, "project", "duplicate",
+             "--workspace", str(ws), "--name", "NoSuch", "--new-name", "X")
+    assert r.returncode == 1
+    assert "not found" in r.stderr.lower()
+
+
+def test_project_duplicate_existing_new_name(tmp_path, platemaker_bin):
+    ws = tmp_path / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+    _run(platemaker_bin, "project", "create", "--workspace", str(ws), "--name", "Ch01")
+    _run(platemaker_bin, "project", "create", "--workspace", str(ws), "--name", "Ch02")
+
+    r = _run(platemaker_bin, "project", "duplicate",
+             "--workspace", str(ws), "--name", "Ch01", "--new-name", "Ch02")
+    assert r.returncode == 1
+    assert "already exists" in r.stderr
+
+
+def test_project_duplicate_missing_new_name(tmp_path, platemaker_bin):
+    ws = tmp_path / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+    _run(platemaker_bin, "project", "create", "--workspace", str(ws), "--name", "Ch01")
+
+    r = _run(platemaker_bin, "project", "duplicate",
+             "--workspace", str(ws), "--name", "Ch01")
+    assert r.returncode == 1
+
+
+# ---------------------------------------------------------------------------
 # project rm
 # ---------------------------------------------------------------------------
 

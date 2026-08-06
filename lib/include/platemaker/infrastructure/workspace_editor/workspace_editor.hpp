@@ -142,6 +142,31 @@ public:
      */
     Models::ProjectItem& addProject(std::string name);
 
+    /**
+     * \brief Creates a new project seeded from \p source — its input files and profile links only.
+     *
+     * A deliberately **naive** copy, not a render clone: it reproduces what defines the project's
+     * configuration and drops everything the source *produced*. Copied — the input file list (paths +
+     * strip order) and the profile links (\c canvasProfileIds + \c outputProfileId). Dropped — the
+     * output directory, the output slice list, and all render state (per-input hashes/status, canvas
+     * fingerprints, \c outputSignature and the render baselines). The copy's inputs therefore start
+     * \c Pending, so it renders from scratch into its own output folder.
+     *
+     * This is exactly what the multi-publisher workflow needs: sibling projects over the same pages
+     * that differ only in the output profile, each writing to its own directory. Clearing the output
+     * directory is intentional — two projects sharing one folder would overwrite each other's slices.
+     *
+     * The project uid is minted fresh and workspace-unique (only the workspace can guarantee that, as
+     * for \c addProject); the copied inputs get fresh project-local uids via
+     * \c ProjectItem::ensureUniqueFileUids().
+     *
+     * \param source  The project to seed from (typically one already in this workspace).
+     * \param newName Name for the new project.
+     * \return Reference to the newly appended project. Valid until the next mutation of the
+     *         workspace's project list.
+     */
+    Models::ProjectItem& duplicateProject(const Models::ProjectItem& source, std::string newName);
+
     // -----------------------------------------------------------------------
     // Project ↔ profile links
     // -----------------------------------------------------------------------

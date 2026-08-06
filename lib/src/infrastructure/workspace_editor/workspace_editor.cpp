@@ -266,6 +266,48 @@ Models::ProjectItem& WorkspaceEditor::addProject(std::string name)
     return m_ws.projectItems.back();
 }
 
+Models::ProjectItem& WorkspaceEditor::duplicateProject(const Models::ProjectItem& source,
+                                                       std::string newName)
+{
+    std::vector<std::string> taken;
+    taken.reserve(m_ws.projectItems.size());
+    for (const auto& p : m_ws.projectItems)
+        taken.push_back(p.uid);
+
+    Models::ProjectItem copy;
+    copy.name           = std::move(newName);
+    copy.uid            = makeUniqueId("proj", taken); // fresh, workspace-unique; the source keeps its own
+    copy.inputDirectory = source.inputDirectory;       // input-side hint (last-scanned folder); harmless
+
+    // Copy only the input *files* — path, strip order and the reusable cache thumbnail. Everything
+    // that describes a past render (sha256, status, contributesTo, canvasProfileId/fingerprint,
+    // lastProcessed) is deliberately left at its Pending default: this is a new project that has not
+    // rendered, not a clone of the source's results.
+    auto& dstInputs = copy.getInputImages();
+    dstInputs.reserve(source.getInputImages().size());
+    for (const auto& src : source.getInputImages()) {
+        Models::InputFile f;
+        f.filePath      = src.filePath;
+        f.order         = src.order;
+        f.thumbnailPath = src.thumbnailPath; // shared .platemaker-cache entry, safe to reuse
+        dstInputs.push_back(std::move(f));   // uid left empty → minted below
+    }
+    copy.ensureUniqueFileUids(); // fresh project-local input uids
+
+    // Carry the profile configuration the source rendered with, so the copy matches pages the same way
+    // (WorkspaceEditor is a friend of ProjectItem, like relinkProfileId above). The output profile is
+    // the field the multi-publisher workflow then changes per copy; the canvas links keep the crop/scale
+    // behaviour identical. Both ids resolve against the same workspace palettes, so no re-validation is
+    // needed. Output directory and the output slice list are intentionally NOT copied.
+    copy.m_canvasProfileIds = source.m_canvasProfileIds;
+    copy.m_outputProfileId  = source.m_outputProfileId;
+
+    copy.rebuildLookupTables(); // no outputs yet → empty tables, but keep the invariant explicit
+
+    m_ws.projectItems.push_back(std::move(copy));
+    return m_ws.projectItems.back();
+}
+
 // ---------------------------------------------------------------------------
 // Project ↔ profile links
 // ---------------------------------------------------------------------------

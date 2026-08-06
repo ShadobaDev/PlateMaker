@@ -311,6 +311,99 @@ TEST(WorkspaceEditorTest, AddProjectMintsAUniqueProjUidAndAppends)
 }
 
 // ---------------------------------------------------------------------------
+// Projects: duplicateProject — a naive seed (inputs + profile links), not a render clone
+// ---------------------------------------------------------------------------
+
+TEST(WorkspaceEditorTest, DuplicateProjectSeedsFromInputsAndProfilesOnly)
+{
+    Models::Workspace ws;
+    Infrastructure::WorkspaceEditor ed(ws);
+
+    const std::string cid = ed.addCanvasProfile(canvas("", "A", 800, 1000));
+    const std::string oid = ed.addOutputProfile(output("", "Mine"));
+
+    // Build a source project that looks fully rendered: linked profiles, an output directory, two
+    // processed inputs, an output slice, and the render baselines.
+    Models::ProjectItem& src = ed.addProject("Chapter 01");
+    const std::string srcUid = src.uid;
+    ASSERT_TRUE(ed.addCanvasProfileToProject(src, cid));
+    ASSERT_TRUE(ed.setProjectOutputProfile(src, oid));
+    src.getOutputDirectory()     = "C:/out/ch01";
+    src.inputDirectory           = "C:/in/ch01";
+    src.outputSignature          = "sig-xyz";
+    src.canvasProfileIdsAtRender = {cid};
+
+    Models::InputFile in0;
+    in0.uid = "file-aaa"; in0.filePath = "C:/in/ch01/p0.png"; in0.order = 0;
+    in0.sha256 = "deadbeef"; in0.status = Models::FileStatus::Processed;
+    in0.lastProcessed = "2026-01-01T00:00:00Z"; in0.contributesTo = {"output_001.png"};
+    in0.canvasProfileId = cid; in0.canvasFingerprint = "fp";
+    src.getInputImages().push_back(std::move(in0));
+
+    Models::InputFile in1;
+    in1.uid = "file-bbb"; in1.filePath = "C:/in/ch01/p1.png"; in1.order = 1;
+    in1.status = Models::FileStatus::Processed;
+    src.getInputImages().push_back(std::move(in1));
+    src.inputOrderAtRender = {"file-aaa", "file-bbb"};
+
+    Models::OutputFile out0;
+    out0.uid = "out-1"; out0.fileName = "output_001.png"; out0.sha256 = "cafebabe";
+    src.getOutputImages().push_back(std::move(out0));
+    src.rebuildLookupTables();
+
+    // Duplicate. (The push_back may reallocate, so read the source afterwards via index, not `src`.)
+    Models::ProjectItem& dup = ed.duplicateProject(ws.projectItems[0], "Chapter 01 (copy)");
+    ASSERT_EQ(ws.projectItems.size(), 2u);
+
+    // Identity: fresh workspace-unique project uid, the new name.
+    EXPECT_EQ(dup.name, "Chapter 01 (copy)");
+    EXPECT_EQ(dup.uid.rfind("proj-", 0), 0u);
+    EXPECT_NE(dup.uid, srcUid);
+
+    // Inputs: same files and order, but fresh project-local uids and NO render state (Pending).
+    const auto& di = dup.getInputImages();
+    ASSERT_EQ(di.size(), 2u);
+    EXPECT_EQ(di[0].filePath, "C:/in/ch01/p0.png");
+    EXPECT_EQ(di[0].order, 0);
+    EXPECT_EQ(di[1].filePath, "C:/in/ch01/p1.png");
+    EXPECT_EQ(di[1].order, 1);
+    for (const auto& f : di) {
+        EXPECT_FALSE(f.uid.empty());
+        EXPECT_NE(f.uid, "file-aaa");
+        EXPECT_NE(f.uid, "file-bbb");
+        EXPECT_TRUE(f.sha256.empty());
+        EXPECT_EQ(f.status, Models::FileStatus::Pending);
+        EXPECT_TRUE(f.contributesTo.empty());
+        EXPECT_TRUE(f.canvasProfileId.empty());
+        EXPECT_TRUE(f.canvasFingerprint.empty());
+        EXPECT_TRUE(f.lastProcessed.empty());
+    }
+
+    // Profile configuration is carried over; the input-side directory hint too.
+    ASSERT_EQ(dup.canvasProfileIds().size(), 1u);
+    EXPECT_EQ(dup.canvasProfileIds()[0], cid);
+    EXPECT_EQ(dup.outputProfileId(), oid);
+    EXPECT_EQ(dup.inputDirectory, "C:/in/ch01");
+
+    // Everything the source *produced* is dropped.
+    EXPECT_TRUE(dup.getOutputDirectory().empty());
+    EXPECT_TRUE(dup.getOutputImages().empty());
+    EXPECT_TRUE(dup.outputSignature.empty());
+    EXPECT_TRUE(dup.canvasProfileIdsAtRender.empty());
+    EXPECT_TRUE(dup.inputOrderAtRender.empty());
+
+    // The source is left completely untouched.
+    const auto& s = ws.projectItems[0];
+    EXPECT_EQ(s.uid, srcUid);
+    EXPECT_EQ(s.getOutputDirectory(), "C:/out/ch01");
+    ASSERT_EQ(s.getOutputImages().size(), 1u);
+    ASSERT_EQ(s.getInputImages().size(), 2u);
+    EXPECT_EQ(s.getInputImages()[0].uid, "file-aaa");
+    EXPECT_EQ(s.getInputImages()[0].sha256, "deadbeef");
+    EXPECT_EQ(s.getInputImages()[0].status, Models::FileStatus::Processed);
+}
+
+// ---------------------------------------------------------------------------
 // snapshotMeta / restoreMeta — workspace-level undo support
 // ---------------------------------------------------------------------------
 
