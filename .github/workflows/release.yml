@@ -33,7 +33,7 @@ jobs:
             artifacts: dist/*.tar.gz
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # --- Toolchain per OS -------------------------------------------------
       # Windows: MinGW (gcc + cmake + ninja) from MSYS2. The `msys2 {0}` shell on the build step below
