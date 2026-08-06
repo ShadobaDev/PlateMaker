@@ -172,11 +172,23 @@ Need: small test PNG fixtures in `tests/lib-unit-tests/fixtures/` and a test
 helper that calls `vips_init()`/`vips_shutdown()` in a `SetUpTestSuite` /
 `TearDownTestSuite` pair.
 
-### Custom libvips build to drop unused codecs (~9 MB) — LOW priority
+### Custom libvips build — drop the GPL dep (licensing) + unused codecs (~9 MB)
 
-After switching Windows to the prebuilt `vips-dev-x64-web` build, the bundled third-party DLLs are
-~40 / ~25 MB. The largest are **codecs Platemaker never uses** but that `libvips-42.dll` imports
-directly, so the install-time closure cannot prune them:
+Not for a near release, but strategically important — see the licensing driver below.
+
+**Primary driver — licensing / a future commercial dual-licence of libplatemaker.** The prebuilt
+`vips-dev-x64-web` build is compiled **with libimagequant (GPL-3.0)**, and `libvips-42.dll` imports it
+directly, so we ship `libimagequant.dll` in every Windows package. Linking a GPL library makes the
+distributed libvips binary a **GPL-3.0 combined work** — so our *bundled* distribution is effectively
+GPL-encumbered even though libplatemaker's source is LGPL, and even though we almost certainly never
+call the quantiser (we save truecolor PNG/JPEG/WebP, not 8-bit palette PNG). Today that is harmless
+(the GUI is GPL-3.0 anyway), **but it blocks a commercial dual-licence of libplatemaker**: you cannot
+offer the lib under a proprietary licence while its shipped runtime contains GPL code. Dropping
+libimagequant is the prerequisite. If PNG quantisation is ever actually needed, libvips can use
+**quantizr (MIT)** instead — a GPL-free swap (needs a Rust toolchain).
+
+**Secondary driver — size (~9 MB).** The prebuilt build also pulls codecs we never use, imported
+directly so the install-time closure cannot prune them:
 
 | DLL | Size | Format |
 |---|---|---|
@@ -184,13 +196,16 @@ directly, so the install-time closure cannot prune them:
 | `librsvg-2-2.dll` | 2.5 MB | SVG |
 | `libheif.dll` | 1.3 MB | HEIF |
 
-That is ~9 MB for formats we neither load nor save (we do PNG/JPEG/WebP/TIFF). The only way to shed
-them is a **custom libvips build** with those loaders disabled (e.g. `-Dheif=disabled -Dsvg=disabled`
-and dropping aom), replacing the FetchContent of the prebuilt zip. That would take the package under
-~17 MB, but it means owning a libvips build (meson/toolchain, per-arch, kept in step with the pinned
-version) instead of downloading an official zip — a real maintenance cost for a size-only win, hence
-low priority. Applies to both MSVC and MinGW (they now share the same web zip). No API/behaviour
-change — the same formats are still supported.
+~9 MB for formats we neither load nor save (PNG/JPEG/WebP/TIFF only).
+
+**The work.** Replace the FetchContent of the prebuilt zip with a **custom libvips build** (meson) that
+disables the GPL quantiser and the unused loaders — `-Dimagequant=disabled` (the licensing fix), plus
+`-Dheif=disabled -Dsvg=disabled` and dropping aom (the size win) — bringing the package under ~17 MB and,
+crucially, making the bundled runtime **GPL-free**. This means owning a libvips build (meson/toolchain,
+per-arch, kept in step with the pinned version) instead of downloading an official zip — a real
+maintenance cost, which is why it waits. Applies to both MSVC and MinGW (they share the same web zip).
+No API/behaviour change for the formats we support. When done, update `cmake/third_party.json` +
+`THIRD-PARTY-NOTICES.txt` (the coverage guard will flag the removed DLLs) and this note.
 
 ---
 
