@@ -99,7 +99,7 @@ jobs:
           merge-multiple: true      # flatten pkg-windows-latest/ + pkg-ubuntu-latest/ into dist/
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}     # the bare version, e.g. 0.3.2
           fail_on_unmatched_files: true
