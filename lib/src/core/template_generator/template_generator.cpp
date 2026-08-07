@@ -65,10 +65,13 @@ void TemplateGenerator::generate(
 {
     using namespace Models;
 
-#define GUIDLINES_ENABLED 0 // Cut of vibe-coded guide lines for now. Maybe resused in the future if needed.
+    // Compile-time switch for the safe-area border and slice-guide lines (sections 3 & 4 below).
+    // They are off for now; the code is kept behind this flag for possible future reuse. While it is
+    // 0, the guide lines are the only thing that reads outputProfile, so the parameter is unused.
+#define GUIDELINES_ENABLED 0
 
-#if !GUIDLINES_ENABLED
-    (void)outputProfile; // silence unused parameter warning since guide lines are currently disabled
+#if !GUIDELINES_ENABLED
+    (void)outputProfile; // unused while the guide lines (its only consumer) are compiled out
 #endif
     const int W = canvasProfile.canvasSize.width;
     const int H = canvasProfile.canvasSize.height;
@@ -143,9 +146,9 @@ void TemplateGenerator::generate(
     fillRect(canvas, safeR, m.top, m.right, safeHpx,  vis); // right strip
 
     // -----------------------------------------------------------------------
-    // 3. Draw safe-area border (2 px, dark charcoal, nearly opaque).
+    // 3. Draw safe-area border (2 px, dark charcoal, nearly opaque).  [compiled out — see the switch]
     // -----------------------------------------------------------------------
-#if GUIDLINES_ENABLED
+#if GUIDELINES_ENABLED
     constexpr RGBA kBorder{40, 40, 40, 220};
     constexpr int  kBW = 2;
     fillRect(canvas, safeL,        safeT,        safeW, kBW,         kBorder); // top
@@ -165,7 +168,7 @@ void TemplateGenerator::generate(
     //    Guide lines start at (safeT + scaledSliceH) and repeat every
     //    scaledSliceH pixels downward, stopping before safeB.
     // -----------------------------------------------------------------------
-#if GUIDLINES_ENABLED
+#if GUIDELINES_ENABLED
     if (outputProfile.targetWidth > 0 && outputProfile.sliceHeight > 0) {
         const double scaleFactor =
             static_cast<double>(W) / static_cast<double>(outputProfile.targetWidth);
@@ -198,6 +201,8 @@ void TemplateGenerator::generate(
 
     g_object_unref(canvas);
 }
+
+#undef GUIDELINES_ENABLED
 
 // ---------------------------------------------------------------------------
 // signature — canvas-only template identity

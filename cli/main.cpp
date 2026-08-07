@@ -377,7 +377,7 @@ static int cmdHelp(const std::string& prog)
         << "  template --workspace FILE --profile NAME --output FILE\n"
         << "           [--margins-tpl-color R,G,B[,A]]  [--background-tpl-color R,G,B[,A]]\n"
         << "      Generate a canvas template PNG for use as a Procreate guide layer.\n"
-        << "      The template shows margin zones, safe-area border, and slice guide lines.\n"
+        << "      The template shows the canvas background and margin zones.\n"
         << "      Colour resolution order (most to least specific):\n"
         << "        1. --margins-tpl-color / --background-tpl-color CLI arguments\n"
         << "        2. Colours stored in the named canvas profile (workspace JSON)\n"
@@ -2043,7 +2043,7 @@ static int cmdTemplate(const Opts& opts)
         return 1;
     }
 
-    // --- Resolve output profile (for slice guide positions) ---
+    // --- Resolve output profile (only consumed by the currently-disabled slice-guide lines) ---
     const OutputProfile outProfile = ws.outputProfiles().empty()
         ? OutputProfile{} : ws.outputProfiles().front();
 

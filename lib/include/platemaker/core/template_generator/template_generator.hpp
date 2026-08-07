@@ -29,13 +29,14 @@ namespace Platemaker::Core {
  *        as a reference layer before drawing.
  *
  * The generated template is a full-resolution image at the canvas size defined by
- * the supplied CanvasProfile.  It renders:
- * - A white background fill.
- * - A semi-transparent overlay on each margin zone, using CanvasProfile::visualColour.
- * - A solid border around the safe area boundary.
- * - Horizontal slice-cut guide lines at every \c OutputProfile::sliceHeight pixels
- *   (scaled by the ratio of canvasWidth / targetWidth so that the lines appear at
- *   the correct positions on the un-scaled canvas).
+ * the supplied CanvasProfile.  It currently renders:
+ * - A background-colour fill (CanvasProfile::backgroundColour).
+ * - A semi-transparent overlay on each margin zone (CanvasProfile::visualColour).
+ *
+ * A safe-area border and horizontal slice-cut guide lines (the latter positioned from
+ * \c OutputProfile::sliceHeight, scaled by canvasWidth / targetWidth) are implemented but
+ * **currently compiled out** behind the \c GUIDELINES_ENABLED switch in template_generator.cpp,
+ * kept for possible future reuse.  While they are disabled, \p outputProfile is unused.
  *
  * All drawing operations use libvips — there is no Qt dependency.
  *
@@ -51,13 +52,12 @@ public:
     /**
      * \brief Renders and saves a canvas template image to \p outputPath.
      *
-     * The canvas dimensions and margin zones are taken from \p canvasProfile.
-     * The slice-guide line positions are computed from \p outputProfile.sliceHeight
-     * scaled to the canvas coordinate space.
+     * The canvas dimensions and margin zones are taken from \p canvasProfile.  (The slice-guide
+     * lines that \p outputProfile would position are currently compiled out — see the class note.)
      *
      * \param canvasProfile The canvas profile defining canvas size, margins, and overlay colour.
-     * \param outputProfile The output profile supplying the target width and slice height used
-     *                      to compute guide-line positions on the canvas.
+     * \param outputProfile Reserved for the (currently disabled) slice-guide lines — their target
+     *                      width and slice height. Ignored while the guides are compiled out.
      * \param outputPath    Absolute path where the PNG template file will be written.
      *                      Parent directories must already exist.
      *
