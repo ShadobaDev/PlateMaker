@@ -325,6 +325,14 @@ set(_pm_search  \"${_vips_bin_dir}\")
 set(_pm_bindir  \"${CMAKE_INSTALL_BINDIR}\")" COMPONENT ${_component})
 
     install(CODE [==[
+        # Normalize backslash paths (e.g. C:\Windows\system32\kernel32.dll) to forward slashes before
+        # matching, so the POST_EXCLUDE_REGEXES "[Ss]ystem32" reliably drops system DLLs — and, on
+        # CMake 3.31+, so this call stops emitting a CMP0207 "policy not set" warning per system DLL
+        # (dozens in CI). Guarded: older CMake that predates the policy just skips it.
+        if(POLICY CMP0207)
+            cmake_policy(SET CMP0207 NEW)
+        endif()
+
         # _pm_search is a ';'-list of directories; it MUST be unquoted here so it expands to one
         # DIRECTORIES argument per directory. A quoted "${_pm_search}" is passed as a single "a;b"
         # string that GET_RUNTIME_DEPENDENCIES does NOT split, silently searching neither dir (that
