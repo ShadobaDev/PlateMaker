@@ -159,6 +159,21 @@ sha256sum -c platemaker-cli-0.3.1-linux-x86_64-release.tar.gz.sha256
 # → platemaker-cli-0.3.1-linux-x86_64-release.tar.gz: OK
 ```
 
+**Build provenance — proof GitHub built it from this repo.** Every release archive carries a GitHub
+**build-provenance attestation**: GitHub vouches that the file was produced by this repository's release
+workflow and records the exact source commit. Stronger than a checksum — you don't have to trust a hash
+*we* published.
+
+```bash
+gh attestation verify platemaker-cli-0.4.0-windows-mingw-release.zip --repo ShadobaDev/PlateMaker
+# → ✓ Verification succeeded!  (digest matches, built by this repo's release.yml at the tagged commit)
+```
+
+No tools? Open the repo's [Attestations](https://github.com/ShadobaDev/PlateMaker/attestations) page in a
+browser: each entry is a GitHub-verified build showing the file it covers (name + SHA-256), the source
+commit, and the workflow — GitHub confirming *"this archive was built here, from this commit."* Match that
+SHA-256 against your download's.
+
 **VirusTotal (no upload needed).** VirusTotal identifies files by their SHA-256, so you can look up a scan
 by hash: paste the archive's SHA-256 into the search box at [virustotal.com](https://www.virustotal.com/),
 or open `https://www.virustotal.com/gui/file/<sha256>` directly. If the file has been scanned, its report
