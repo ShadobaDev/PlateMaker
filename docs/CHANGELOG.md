@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.1] — unreleased
+
+### Added
+
+- **Windows version metadata on `libplatemaker.dll` and `platemaker-cli.exe`.** Both now carry a
+  `VERSIONINFO` resource (CompanyName, ProductName, File/ProductVersion from the project version,
+  description, copyright), so Explorer's *Details* tab and tools like Process Explorer show proper
+  identity instead of blanks. Generated from `PROJECT_VERSION` via `lib/cmake/version.rc.in` and
+  `cli/version.rc.in` (MinGW/windres, `WIN32`-only). The CLI resource declares its GPL-3.0-or-later
+  licence, the DLL its LGPL-3.0-or-later.
+
 ## [0.4.0] — 2026-08-05
 
 ### Changed

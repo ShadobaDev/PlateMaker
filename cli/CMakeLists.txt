@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.21)
 
 if(WIN32)
-    set(RESOURCE_FILES app.rc)
+    # app.rc supplies the icon; version.rc adds VERSIONINFO (Explorer Details / Process Explorer),
+    # generated from PROJECT_VERSION so it stays in sync. MinGW compiles both via windres.
+    enable_language(RC)
+    configure_file(version.rc.in "${CMAKE_CURRENT_BINARY_DIR}/version.rc" @ONLY)
+    set(RESOURCE_FILES app.rc "${CMAKE_CURRENT_BINARY_DIR}/version.rc")
 endif()
 
 add_executable(platemaker-cli

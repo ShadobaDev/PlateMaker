@@ -56,6 +56,15 @@ set_target_properties(platemaker-lib PROPERTIES
     SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 
+# Windows: embed version metadata (Explorer "Details" tab, Process Explorer) into libplatemaker.dll,
+# generated from PROJECT_VERSION so it stays in sync. MinGW compiles the .rc via windres; enable the RC
+# language explicitly since the project declares only CXX.
+if(WIN32)
+    enable_language(RC)
+    configure_file(cmake/version.rc.in "${CMAKE_CURRENT_BINARY_DIR}/platemaker-version.rc" @ONLY)
+    target_sources(platemaker-lib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/platemaker-version.rc")
+endif()
+
 # Namespaced alias — consumers use Platemaker::platemaker in target_link_libraries
 add_library(Platemaker::platemaker ALIAS platemaker-lib)
 
