@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 project(
     platemaker
-    VERSION 0.4.1
+    VERSION 0.4.2
     DESCRIPTION "Comic artist canvas tool — pre-processing and post-processing for Webtoon-style publishing"
     HOMEPAGE_URL "https://github.com/ShadobaDev/Platemaker"
     LANGUAGES CXX

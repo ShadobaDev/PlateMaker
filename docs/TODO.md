@@ -39,6 +39,68 @@ Binary-identity metadata; nothing a consumer must react to.
 
 Fixes and additive changes — nothing a consumer must react to; code built against 0.4.x keeps compiling.
 
+### EXIF orientation is ignored → camera-photo inputs render wrong (black band + wrong split)
+
+**Reported from a Windows 10 test with three 3264×2448 phone photos.** Two rendered fine, the third
+landed in its own output slice with a black band, instead of all three flowing into one continuous
+strip (`output_001` full + tail). See the GUI TODO's matching entry and `temp/win10/`.
+
+**Root cause: the pipeline assumes inputs have no meaningful EXIF orientation, which is false for
+camera JPEGs.** Two independent code paths read the image and neither normalises orientation, and
+they disagree:
+
+- **Matching reads raw header dimensions.** `headerDim()`
+  (`src/core/processing_pipeline/processing_pipeline.cpp:34-42`) returns `img->Xsize / img->Ysize`
+  straight from the header — the *stored* pixel dimensions, which ignore the EXIF `Orientation` tag.
+- **Scaling loads raw pixels, no auto-rotate.** `Scaler::scale(filePath, …)`
+  (`src/core/scaler/scaler.cpp:66`) uses `vips_image_new_from_file` + `vips_resize`; the comment
+  states the design assumption explicitly — *"Procreate exports are already in the correct
+  orientation … so no auto-rotation handling is needed here."*
+
+The test data breaks that assumption: all three files are stored `3264×2448` (landscape pixels) but
+carry EXIF `Orientation` = **3, 3, 6**. The third (`Orientation 6` = rotate 90°) is a *portrait*
+photo whose pixels are stored landscape. Every viewer shows it portrait; Platemaker sees landscape
+pixels, matches on landscape dimensions, and appends landscape pixels — so its geometry and the
+displayed reality diverge, which is what produces the black band and the mis-split. (The two
+`Orientation 3` = 180° images survive because a 180° image is still landscape either way; only the
+90°/270° cases visibly break.)
+
+**The exact black-band geometry still needs a debug render to pin** — but the defect is clear:
+orientation is neither applied to the pixels nor reflected in the dimensions used for matching.
+
+**Step 1 — instrument the pipeline geometry first (do this before any fix).** We are guessing at the
+black-band mechanism from thumbnails; add per-stage diagnostic logging so a render of the three
+`temp/win10/` photos prints exactly what happened. Emit (via the existing `onLog` channel, at
+`Info`/Debug level) for each input, in order:
+- **on read** — the raw header `Xsize × Ysize` and the EXIF `Orientation` tag (from
+  `vips_image_get_typeof(img, VIPS_META_ORIENTATION)` / `vips_image_get_int`);
+- **after scale** — the scaled buffer `width × height` returned by `Scaler::scale`;
+- **on strip append** — the entry's `startY` and cached `height`, and the running `m_totalHeight`
+  (`ScaledStrip::append`);
+- **on slice** — `numFull`, `tail`, and each slice's `[sliceStartY, sliceStartY+sliceHeight)` versus
+  which entries it overlaps (`sliceAll` / `buildSlice`).
+
+That trace makes the divergence explicit (where reserved geometry ≠ actual pixels, hence the black
+fill) and becomes the regression check after the fix — re-render the same three photos and confirm a
+single continuous strip. Keep it as a guarded/verbose log, not always-on spam.
+
+**Step 2 — fix: normalise to display orientation on load, in both paths:**
+- Apply `vips_autorot` (or load with autorotate) in `Scaler::scale(filePath)` so the strip is built
+  from display-correct pixels.
+- Read orientation-corrected dimensions in `headerDim()` (autorot then `Xsize/Ysize`) so matching
+  and scaling agree.
+- `vips_autorot` is **idempotent** for images with `Orientation` absent or `1` — so this is a no-op
+  for the "already correct" Procreate/exported case the current code was written for, and only
+  changes behaviour for the rotated camera photos it currently mishandles. Verify against a Procreate
+  export (no rotation) to confirm no regression, and re-test the three `temp/win10/` photos.
+- Decide the contract for a genuinely *portrait* page once corrected (e.g. a 2448×3264 page): it
+  should match a portrait canvas profile / render as a tall strip segment, which is the behaviour the
+  reporter expected.
+
+Semantically a **bugfix** (wrong output → correct output), so PATCH — but note it *changes the
+rendered result* for any workspace whose inputs carry a non-trivial EXIF orientation; call it out in
+the changelog.
+
 ### Dynamic thread spawning for processing
 
 `ProcessingPipeline` runs single-threaded because the virtual strip is built
