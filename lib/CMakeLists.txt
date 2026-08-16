@@ -131,6 +131,17 @@ configure_file(
     @ONLY
 )
 
+# Build-tree-only version marker (NOT installed, NOT public API): a single "@(#)…" string literal
+# embedded in the library and CLI binaries so the version is discoverable via `what` / `strings` on
+# platforms with no Windows VERSIONINFO resource (Linux/macOS). See cmake/ident.hpp.in. Resolvable as
+# <platemaker/ident.hpp> from both the lib and CLI via the target's BUILD_INTERFACE include dir; kept
+# out of the install(FILES) set below so package consumers never see the macro.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ident.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/platemaker/ident.hpp"
+    @ONLY
+)
+
 # ---------------------------------------------------------------------------
 # Credits — SPDX SBOM + third-party licence texts
 #

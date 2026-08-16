@@ -80,6 +80,7 @@
 #include <platemaker/models/project_item.hpp>
 #include <platemaker/models/workspace.hpp>
 #include <platemaker/version.hpp>
+#include <platemaker/ident.hpp> // PLATEMAKER_IDENT_STRING (build-tree-only version marker)
 
 #include <nlohmann/json.hpp>
 
@@ -121,6 +122,18 @@ namespace fs = std::filesystem;
 using namespace Platemaker::Models;
 using namespace Platemaker::Core;
 using namespace Platemaker::Infrastructure;
+
+namespace {
+// Embedded version marker so platemaker-cli reports its version *without being run* (the runtime twin
+// is `--version` above; this is the static, portable analogue of the Windows VERSIONINFO resource):
+//   what    platemaker-cli            →  platemaker <ver> (platemaker-cli)
+//   strings platemaker-cli | grep @(#)
+// `used` (GCC/Clang, incl. MinGW) stops the linker stripping this otherwise-unreferenced symbol.
+#if defined(__GNUC__) || defined(__clang__)
+[[maybe_unused]] __attribute__((used))
+#endif
+const char kPlatemakerIdent[] = PLATEMAKER_IDENT_STRING " (platemaker-cli)";
+} // namespace
 
 // ===========================================================================
 // Lightweight argument parser

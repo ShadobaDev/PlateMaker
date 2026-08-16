@@ -18,11 +18,27 @@
 #include <platemaker/infrastructure/build_info/build_info.hpp>
 
 #include <platemaker/version.hpp>
+#include <platemaker/ident.hpp> // PLATEMAKER_IDENT_STRING (build-tree-only version marker)
 
 #include <string>
 
 #include <nlohmann/json.hpp> // NLOHMANN_JSON_VERSION_* (build-time)
 #include <vips/vips.h>       // vips_version() (runtime)
+
+namespace {
+
+// Embedded version marker so the shipped libplatemaker.so/.dll reports its version *without being
+// run* — the portable analogue of the Windows VERSIONINFO resource (which only PE binaries carry).
+//   what    libplatemaker.so.0.4.1            →  platemaker <ver> (libplatemaker)
+//   strings libplatemaker.so.0.4.1 | grep @(#)
+// `used` (GCC/Clang, incl. MinGW) stops the linker stripping this otherwise-unreferenced symbol; it
+// lives in this library TU so it lands in the library binary itself.
+#if defined(__GNUC__) || defined(__clang__)
+[[maybe_unused]] __attribute__((used))
+#endif
+const char kPlatemakerIdent[] = PLATEMAKER_IDENT_STRING " (libplatemaker)";
+
+} // namespace
 
 namespace Platemaker::Infrastructure {
 

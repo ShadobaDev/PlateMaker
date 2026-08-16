@@ -14,23 +14,30 @@ work happens in.
 - A change that only forces a patch may still be **bundled into a higher release** if it ships
   alongside bigger work. The header is the floor, not an assignment.
 - **Cascade.** Whichever section releases first takes its slot; the rest re-derive from the new
-  baseline — ship a MINOR before the pending PATCH and that patch becomes `0.3.1`, the next MINOR
-  becomes `0.4.0`.
+  baseline — ship a MINOR before a pending PATCH and the patch re-derives onto the new baseline.
 
-Baseline: **0.3.1 released; 0.4.0 in progress** (`CMakeLists.txt`). The structured-error system (below)
-is breaking, so the in-progress `0.3.2` work (checksums, release CI) re-derives into `0.4.0`.
+Baseline: **0.4.0 released (2026-08-05); 0.4.1 in progress** (`CMakeLists.txt`). 0.4.1 is binary-identity
+metadata only — additive/fixes — so it is a **PATCH**: code built against 0.4.0 keeps compiling.
 
 ---
 
-## PATCH — next: 0.4.1
+## Done — 0.4.1 (PATCH)
 
-Fixes and additive changes — nothing a consumer must react to. Code built against 0.4.0 keeps
-compiling. (These were slated for `0.3.2`, but `0.4.0` ships first — per the cascade rule above they
-re-derive to `0.4.1`.)
+Binary-identity metadata; nothing a consumer must react to.
 
-### ~~Persist last render log~~
+- **Windows `VERSIONINFO`** on `libplatemaker.dll` and `platemaker-cli.exe` — Explorer's *Details* tab
+  and Process Explorer show proper identity instead of blanks. Generated from `PROJECT_VERSION` via
+  `lib/cmake/version.rc.in` / `cli/version.rc.in` (MinGW/windres, `WIN32`-only).
+- **Embedded `@(#)` version marker** on the library and CLI binaries (all platforms) — the version is
+  discoverable *without running the binary* where there is no `VERSIONINFO` resource (Linux/macOS):
+  `what libplatemaker.so.<ver>` or `strings … | grep '@(#)'`. Build-tree-only `lib/cmake/ident.hpp.in`,
+  kept from stripping with `__attribute__((used))`. Portable companion to the `.so` `SOVERSION`.
 
-Moved to GUI
+---
+
+## PATCH — future
+
+Fixes and additive changes — nothing a consumer must react to; code built against 0.4.x keeps compiling.
 
 ### Dynamic thread spawning for processing
 
@@ -40,45 +47,12 @@ pre-process could split the strip at input boundaries into segments that each
 yield a whole number of slices; independent segments could then be scaled/sliced
 on separate threads and the slice files numbered deterministically afterwards.
 
-### Third-party notices: full bundled DLL graph — DONE (0.4.0)
+---
 
-Landed. The Windows packages now ship, in `credits/`:
-- **`THIRD-PARTY-NOTICES.txt`** — every bundled component (version, upstream, copyright, licence),
-- **`licenses/`** — 18 canonical/upstream licence texts,
-- **`sbom.spdx.json`** — 32 SPDX packages (the 3 direct deps + the ~29 libvips runtime / compiler-runtime
-  components).
+## MINOR — follow-ups (non-breaking) on the 0.4.0 structured-error system
 
-Generated at configure time by [`cmake/gen_credits.cmake`](../lib/cmake/gen_credits.cmake) from the
-web-build's authoritative `versions.json` (versions) + the curated
-[`cmake/third_party.json`](../lib/cmake/third_party.json) (licence / copyright / homepage). The
-[`Third-party coverage`](../.github/workflows/thirdparty-coverage.yml) CI guard fails if a bundled DLL
-isn't mapped, so a libvips web-build bump can't ship a new undisclosed dependency. The committed
-`sbom/sbom.spdx.json` snapshot was refreshed to the full graph.
-
-**⚠ Flagged for a final legal pass before the public release:** the SPDX ids / copyrights in
-`third_party.json` are curated best-effort. Two strong-copyleft cases are disclosed as-is —
-**libimagequant is GPL-3.0-or-later** (dual w/ commercial) and the **MinGW libstdc++/libgcc are GPL-3.0
-WITH the GCC Runtime Library Exception**. Dropping libimagequant (unused PNG quantiser) via a custom
-libvips build would remove the only strong-copyleft *runtime* DLL — see the codec-slimming item below.
-
-## MINOR — in progress: 0.4.0
-
-Breaking changes — a consumer must rebuild or adapt. These ship together, and the GUI pins the
-version in lockstep.
-
-### Structured error system — DONE (0.4.0)
-
-Landed. `Models::ProcessingError` (`code` + `category` `load`/`profile-match`/`slice`/`encode`/`io`
-+ `message` + `file`/`slice`) is one typed vocabulary used wherever a failure is consumed as a
-*result*: `ProcessingOutcome::error` (replaces the free-text `errorMessage`), the value now returned by
-`ProjectItem::applyProcessingResults()`, and the `errorCode`/`errorCategory` tag on
-`Core::InputResult`. The silent unreadable-after-render loop is fixed via a sticky `FileStatus::Error`
-(non-forcing in `sanitize()`) plus the returned typed failure.
-
-**No `onError` callback** (revised from the original note above): a live `onError` was rejected as
-duplicative — for a *fatal* error the run returns immediately, so `outcome.error` is read at the same
-moment; a *non-fatal* per-input skip already flows through `onInput`. `onLog(Error, …)` stays as the
-human transcript. Errors are consumed as results, not as a second live stream.
+The structured error system shipped in **0.4.0** (breaking; typed `ProcessingError`, the
+`applyProcessingResults()` return, the `InputResult` tag). What is left is additive and not yet wired:
 
 Not yet wired (follow-ups, non-breaking): GUI localisation/grouping UI beyond surfacing category/code;
 a `ProfileMatch` fatal path (reserved category — implicit render stays non-fatal).
@@ -209,64 +183,31 @@ No API/behaviour change for the formats we support. When done, update `cmake/thi
 
 ---
 
-## No versioned changes
-
-### Add dependency manifest — done (SBOM submission)
-
-**Done.** GitHub's Dependency graph could not read our CMake dependencies (FetchContent / find_package /
-prebuilt libvips zip), and it does **not** ingest an SBOM merely committed to the repo — the *Export
-SBOM* button only exports. So instead of a fake `package.json`, we feed the graph through the
-**Dependency Submission API**: a committed SPDX snapshot at [`sbom/sbom.spdx.json`](../sbom/sbom.spdx.json)
-is submitted by [`.github/workflows/dependency-submission.yml`](../.github/workflows/dependency-submission.yml)
-(via `advanced-security/spdx-dependency-submission-action`) on every push touching `sbom/`. This lists
-the direct deps (libvips, nlohmann/json) with their `purl`s, so the graph populates and Dependabot can
-raise CVE alerts.
-
-The SBOM is a committed snapshot because our deps are pinned and change rarely; regenerate it from
-`build/mingw-release/lib/credits/sbom.spdx.json` when a pinned version changes (see `sbom/README.md`).
-Extending the snapshot to the full bundled DLL graph is the separate SBOM item under **PATCH** above.
-
-### Release checksums — done (SHA-256 sidecars)
-
-**Done.** Packaging now emits a `<archive>.sha256` sidecar (sha256sum format) next to every CPack
-archive — both the `dev` and `cli` packages, in every config — via a `CPACK_POST_BUILD_SCRIPTS` hook
-([`cmake/cpack_checksums.cmake`](../cmake/cpack_checksums.cmake)). One sidecar per archive (rather than a
-single `SHA256SUMS.txt`) so nothing collides when several configs are uploaded to one Release. The hook
-hashes the CPack temp copy but writes the sidecar into `CPACK_OUTPUT_FILE_PREFIX` (`dist/`), where the
-release archives land. Users verify with `sha256sum -c <archive>.sha256` or `Get-FileHash`; the hash can
-be pasted into the release notes and the binaries uploaded to VirusTotal. Runs automatically from
-`cpack --preset …` / the dist workflows — no extra step.
-
----
-
 ## Release history & coordination
 
-**Shipped:** `0.1.0` → `0.1.1` → `0.2.0` → `0.2.1` → `0.3.0` → `0.3.1` (lib);
-GUI `1.0.0` → `1.0.1` → `1.1.0` → `1.2.0` → `1.3.0`.
+**Shipped:** `0.1.0` → `0.1.1` → `0.2.0` → `0.2.1` → `0.3.0` → `0.3.1` → `0.4.0` (lib);
+GUI `1.0.0` → `1.0.1` → `1.1.0` → `1.2.0` → `1.3.0` → `1.4.0`.
 `0.2.0` broke the API against `0.1.1` (`ProjectItem::sanitize()` gained a required parameter,
-`applyProcessingResults()` two) — breaking, hence the minor, not `0.1.2`. `0.2.1` was additive
-plus fixes, so a patch. `0.2.2`'s additive work (buildInfo, SBOM) was folded into `0.3.0`, which
-also removes/changes the preset & CLI API — breaking, hence the minor. `0.3.1` was additive only
-(editor snapshot/restore, more presets, MinGW libvips slimming), so a patch. The in-progress `0.3.2`
-work (checksums, release CI) never shipped alone: the **structured-error system is breaking, so it
-re-derives the in-progress release to `0.4.0`** (checksums/CI ride along). **In progress: `0.4.0`** —
-the first release to be cut through the CI workflow. **This is the version intended for public
-promotion (Reddit / itch.io).**
+`applyProcessingResults()` two) — breaking, hence the minor. `0.2.1` was additive plus fixes, so a
+patch. `0.2.2`'s additive work (buildInfo, SBOM) folded into `0.3.0`, which also removes/changes the
+preset & CLI API — breaking, hence the minor. `0.3.1` was additive only (editor snapshot/restore, more
+presets, MinGW libvips slimming), so a patch. `0.4.0` (2026-08-05) shipped the **breaking structured-error
+system** (typed `ProcessingError`) plus `duplicateProject` and the checksums/release-CI infra — the first
+release cut through the CI workflow, and **the version used for public promotion (Reddit / itch.io)**.
+`0.4.1` (in progress) is metadata only (VERSIONINFO + `@(#)` marker), so a patch.
 
 **Order is forced: lib first.** The GUI pins `LIBPLATEMAKER_VERSION`, which also builds the
 FetchContent URL, so until a lib version is on GitHub Releases anyone without a local
 `LIBPLATEMAKER_DIR` gets a 404. Tag and upload the lib, then the GUI.
 
-**⏭️ Cut the next release through the GitHub Actions `Release` workflow**, not a manual local
-build + upload. Pushing a bare version tag (e.g. `0.3.2`) runs `.github/workflows/release.yml`:
-matrix build (MinGW + Linux) → provenance attestation → `dist/*` archives + `.sha256` uploaded as
-Release assets → VirusTotal scan (VT_API_KEY secret is set) appended to the release body. The current
-backlog since `0.3.1` is all infra (checksums, CI), so there's nothing to ship *yet* — but the next
-real change should validate this end-to-end path for the first time.
+**⏭️ Cut releases through the GitHub Actions `Release` workflow**, not a manual local build + upload.
+Pushing a bare version tag runs `.github/workflows/release.yml`: matrix build (MinGW + Linux) →
+provenance attestation → `dist/*` archives + `.sha256` uploaded as Release assets → VirusTotal scan
+(VT_API_KEY secret is set) appended to the release body.
 
-**Lockstep on a lib bump the GUI needs.** The GUI pins the lib version it requires — now
+**Lockstep on a lib bump the GUI needs.** The GUI pins the lib version it requires — currently
 `find_package(platemaker 0.4.0 CONFIG REQUIRED)` / `LIBPLATEMAKER_VERSION 0.4.0` (the GUI adopts the
-0.4.0 typed errors; 1.3.0 used 0.3.1) — so an older lib is rejected at configure time instead of
-failing at compile time. With the config-version file `SameMinorVersion`, that pin also rejects a later
-breaking `0.MINOR`. **Order for the 0.4.0 wave: tag+release the lib through CI first, then the GUI**
-(the GUI's FetchContent fallback 404s until the lib `0.4.0` assets are on Releases).
+0.4.0 typed errors) — so an older lib is rejected at configure time. With the config-version file
+`SameMinorVersion`, that pin also rejects a later breaking `0.MINOR`. For the **0.4.1 wave**, releasing
+the lib lets the GUI bump its pin to `0.4.1` so the bundled `libplatemaker.dll` carries the new metadata;
+0.4.1 is additive, so the bump is a one-liner with no code change.

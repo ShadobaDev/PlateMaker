@@ -11,6 +11,14 @@
   `cli/version.rc.in` (MinGW/windres, `WIN32`-only). The CLI resource declares its GPL-3.0-or-later
   licence, the DLL its LGPL-3.0-or-later.
 
+- **Embedded version marker (all platforms).** `libplatemaker.so`/`.dll` and `platemaker-cli` now carry
+  a single `@(#)platemaker <version> (component)` string literal, so the version is discoverable
+  *without running the binary* on platforms that have no Windows `VERSIONINFO` resource (Linux/macOS):
+  `what libplatemaker.so.<ver>` or `strings … | grep '@(#)'`. This is the portable companion to the
+  Windows metadata above (and to the shared library's `SOVERSION`/versioned filename). Generated from
+  `PROJECT_VERSION` via a build-tree-only `lib/cmake/ident.hpp.in` (never installed, not public API);
+  the symbol is kept from being stripped with `__attribute__((used))` on GCC/Clang.
+
 ## [0.4.0] — 2026-08-05
 
 ### Changed
