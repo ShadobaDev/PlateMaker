@@ -30,6 +30,7 @@ endif()
 # ---------------------------------------------------------------------------
 add_executable(platemaker-lib-tests
     test_pixel_buffer.cpp
+    test_log.cpp
     test_scaled_strip.cpp
     test_workspace_serializer.cpp
     test_canvas_profile_matcher.cpp

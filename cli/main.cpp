@@ -71,6 +71,7 @@
 #include <platemaker/infrastructure/control/cancellation_token.hpp>
 #include <platemaker/infrastructure/id_generator/id_generator.hpp>
 #include <platemaker/infrastructure/image_io/image_io.hpp>
+#include <platemaker/infrastructure/log/log.hpp>
 #include <platemaker/infrastructure/workspace_editor/workspace_editor.hpp>
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
@@ -87,6 +88,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -1399,6 +1401,8 @@ static int cmdProcess(const Opts& opts)
         // Beauty-dump: the input tally / strip marker / progress bar cover the run, so onLog(Info/Warning)
         // is intentionally not wired (it would duplicate onInput and onProgress). Fatal errors surface via
         // outcome.error, post-render failures via applyProcessingResults()'s return — both below.
+        // (Per-component diagnostic tracing is a separate channel: the --trace shadow argument, handled
+        // in runCli(); its output goes to the logger's sink on stderr, clear of the progress bar.)
         callbacks.onInput          = [&](const Platemaker::Core::InputResult& r)        { dump.onInput(r); };
         callbacks.onSlicingStarted = [&](const Platemaker::Core::SlicingStarted& s)     { dump.slicingStarted(s.expectedSliceCount); };
         callbacks.onProgress       = [&](const Platemaker::Core::ProcessingProgress& p) { dump.progress(p.sliceDone, p.sliceTotal, p.sliceName); };
@@ -2112,6 +2116,34 @@ static int cmdTemplate(const Opts& opts)
 // main
 // ===========================================================================
 
+// Shadow global argument: --trace=0xHEX (or a decimal / 0-prefixed value) turns on the library's
+// per-component diagnostic logging (Platemaker::Infrastructure::Log). The value is a bitmask, one
+// bit per component — see log.hpp for the assignment (0x1 ProcessingPipeline, 0x2 Scaler,
+// 0x4 ScaledStrip, …; ~0 / a big hex enables everything). Recognised anywhere on the command line
+// and consumed here, so ordinary subcommand parsing ignores it. Output goes to the logger sink
+// (stderr by default). Off unless requested — a normal run stays silent.
+static void applyTraceArg(int argc, char** argv)
+{
+    for (int i = 1; i < argc; ++i) {
+        const std::string a = argv[i];
+        std::string val;
+        if (a.rfind("--trace=", 0) == 0)          val = a.substr(8);
+        else if (a == "--trace" && i + 1 < argc)  val = argv[++i];
+        else                                      continue;
+        if (val.empty()) continue;
+
+        try {
+            const std::uint64_t mask = std::stoull(val, nullptr, 0); // base 0: 0x… hex or decimal
+            Platemaker::Infrastructure::Log::setEnabledComponents(mask);
+            std::cerr << "Diagnostic tracing enabled (components 0x"
+                      << std::hex << mask << std::dec << ").\n";
+        } catch (const std::exception&) {
+            std::cerr << "Ignoring invalid --trace value '" << val
+                      << "' (expected a bitmask, e.g. --trace=0x7).\n";
+        }
+    }
+}
+
 // Real CLI logic. argv is always UTF-8 (guaranteed by the Windows main() below).
 static int runCli(int argc, char** argv)
 {
@@ -2137,6 +2169,9 @@ static int runCli(int argc, char** argv)
                   << vips_error_buffer() << '\n';
         return 2;
     }
+
+    // Global diagnostic-tracing switch, applied before any command runs.
+    applyTraceArg(argc, argv);
 
     int exitCode = 0;
 

@@ -11,6 +11,7 @@ set(PLATEMAKER_SOURCES
     # Infrastructure — control
     src/infrastructure/control/cancellation_token.cpp
     src/infrastructure/id_generator/id_generator.cpp
+    src/infrastructure/log/log.cpp
 
     # Core pipeline
     src/core/pixel_buffer/pixel_buffer.cpp

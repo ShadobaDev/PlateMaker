@@ -39,7 +39,12 @@ Binary-identity metadata; nothing a consumer must react to.
 
 Fixes and additive changes — nothing a consumer must react to; code built against 0.4.x keeps compiling.
 
-### EXIF orientation is ignored → camera-photo inputs render wrong (black band + wrong split)
+### Multi-source slices get a black band, and EXIF orientation is ignored → camera-photo inputs render wrong
+
+> **Update 2026-08-17 — Step 1 (diagnostic instrumentation) is done and has been run against the
+> three `temp/win10/` photos. It overturned the single-cause hypothesis below: there are TWO
+> independent defects, and the *black band* is the bigger, more general one — it is a
+> `vips_arrayjoin` layout bug, not the EXIF issue. See "Step 1 — findings" further down.**
 
 **Reported from a Windows 10 test with three 3264×2448 phone photos.** Two rendered fine, the third
 landed in its own output slice with a black band, instead of all three flowing into one continuous
@@ -65,41 +70,76 @@ displayed reality diverge, which is what produces the black band and the mis-spl
 `Orientation 3` = 180° images survive because a 180° image is still landscape either way; only the
 90°/270° cases visibly break.)
 
-**The exact black-band geometry still needs a debug render to pin** — but the defect is clear:
-orientation is neither applied to the pixels nor reflected in the dimensions used for matching.
+**Step 1 — instrument the pipeline geometry first (DONE).** Rather than guess at the black-band
+mechanism from thumbnails, the library now has a small **component-gated diagnostic logger**
+(`platemaker/infrastructure/log/log.hpp`, `Infrastructure::Log`). Each component owns one bit of
+a runtime `uint64` mask (`0x1` ProcessingPipeline, `0x2` Scaler, `0x4` ScaledStrip, …); the mask
+defaults to 0 so the library is silent unless a host opts components in. Every geometry line lives in
+the component that owns it: **ProcessingPipeline** logs each input's header `Xsize×Ysize` + EXIF
+`Orientation`; **Scaler** logs `src → scaled` dims; **ScaledStrip** logs each `append`
+(`startY`/`height`/`totalHeight`), the `sliceAll` totals (`numFull`/`tail`), and — the decisive one —
+each `buildSlice` as `req=[startY,endY) built=W×H parts=N` with every source segment. The CLI turns it
+on with the shadow argument `--trace=0x…`; output goes to the logger sink (stderr by default). There
+are no severity levels — only the per-component on/off gate. (This replaced an earlier throwaway
+`PLATEMAKER_GEOM_TRACE` env-var trace routed through `onLog`.)
 
-**Step 1 — instrument the pipeline geometry first (do this before any fix).** We are guessing at the
-black-band mechanism from thumbnails; add per-stage diagnostic logging so a render of the three
-`temp/win10/` photos prints exactly what happened. Emit (via the existing `onLog` channel, at
-`Info`/Debug level) for each input, in order:
-- **on read** — the raw header `Xsize × Ysize` and the EXIF `Orientation` tag (from
-  `vips_image_get_typeof(img, VIPS_META_ORIENTATION)` / `vips_image_get_int`);
-- **after scale** — the scaled buffer `width × height` returned by `Scaler::scale`;
-- **on strip append** — the entry's `startY` and cached `height`, and the running `m_totalHeight`
-  (`ScaledStrip::append`);
-- **on slice** — `numFull`, `tail`, and each slice's `[sliceStartY, sliceStartY+sliceHeight)` versus
-  which entries it overlaps (`sliceAll` / `buildSlice`).
+Reproduce (uses only the three photos, isolated from the PNG screenshots in `temp/win10/`; `0x7`
+= ProcessingPipeline | Scaler | ScaledStrip):
 
-That trace makes the divergence explicit (where reserved geometry ≠ actual pixels, hence the black
-fill) and becomes the regression check after the fix — re-render the same three photos and confirm a
-single continuous strip. Keep it as a guarded/verbose log, not always-on spam.
+```powershell
+platemaker-cli process --workspace ws.platemaker.json --input <dir-with-3-jpgs> `
+    --output out --no-profile --target-width 800 --slice-height 1280 --trace=0x7
+```
 
-**Step 2 — fix: normalise to display orientation on load, in both paths:**
-- Apply `vips_autorot` (or load with autorotate) in `Scaler::scale(filePath)` so the strip is built
-  from display-correct pixels.
-- Read orientation-corrected dimensions in `headerDim()` (autorot then `Xsize/Ysize`) so matching
-  and scaling agree.
-- `vips_autorot` is **idempotent** for images with `Orientation` absent or `1` — so this is a no-op
-  for the "already correct" Procreate/exported case the current code was written for, and only
-  changes behaviour for the rotated camera photos it currently mishandles. Verify against a Procreate
-  export (no rotation) to confirm no regression, and re-test the three `temp/win10/` photos.
-- Decide the contract for a genuinely *portrait* page once corrected (e.g. a 2448×3264 page): it
-  should match a portrait canvas profile / render as a tall strip segment, which is the behaviour the
-  reporter expected.
+**Step 1 — findings (captured 2026-08-17). Two independent defects:**
 
-Semantically a **bugfix** (wrong output → correct output), so PATCH — but note it *changes the
-rendered result* for any workspace whose inputs carry a non-trivial EXIF orientation; call it out in
-the changelog.
+**(A) `vips_arrayjoin` black-band padding — this is the black band, and it is NOT the EXIF issue.**
+The trace showed `buildSlice 0 req=[0,1280) built=800x1800 parts=3` — the parts summed to
+600+600+80=1280 but the slice came out **1800** tall with a solid black bottom third (verified
+visually). Isolating it with *two* plain `Orientation 3` photos and `--slice-height 800` reproduced it
+with no rotation in play: `buildSlice 0 req=[0,800) built=800x1200` (parts 600+200). Root cause:
+`ScaledStrip::buildSlice()`'s
+multi-part branch joins with `vips_arrayjoin(parts, …, "across", 1, …)`, and **arrayjoin sizes every
+grid cell to the largest input** (default `vspacing` = max height). So any slice that combines sources
+of *unequal contributed height* becomes `N × maxHeight` tall, the shorter parts black-filled. This
+fires on ordinary multi-page strips whenever a slice boundary falls inside a page — it is only masked
+in the author's normal workflow because tall pages make most slices single-source (the single-part
+branch is correct and does no join). The three short landscape photos force multi-source slices and
+expose it.
+
+**(B) EXIF orientation is ignored** (the original hypothesis, still true and separate). All three
+files are stored `3264×2448`; orientations `3, 3, 6`. The `Orientation 6` photo (a portrait shot)
+scaled to `800×600` **landscape** instead of `~800×1066` portrait, and the two output files each
+inherited their first source's `orientation` tag (`output_001`→`3`, `output_002`→`6`), so viewers
+re-rotate them inconsistently. Autorotation is applied nowhere.
+
+**These compound but are fixed separately. Autorot alone (old Step 2) does NOT remove the black band.**
+
+**Step 2a — fix the join (black band; the priority, and general).** Replace the padding `arrayjoin`
+in `ScaledStrip::buildSlice()` with a tight vertical concatenation of the same-width parts — fold
+`vips_join(a, b, &out, VIPS_DIRECTION_VERTICAL, nullptr)` over `parts` (or `vips_arrayjoin` with an
+explicit `vspacing`/tight layout that does not pad). Assert `built.height == sliceH` (except an
+intentional `PadWhite` tail) as a post-condition so this can never silently regress. Regression check:
+re-render the three photos with `PLATEMAKER_GEOM_TRACE=1` and confirm every `built=` equals the
+requested slice height and no output exceeds it.
+
+**Step 2b — normalise to display orientation on load, in both paths.** Apply `vips_autorot` (or load
+with autorotate) in `Scaler::scale(filePath)` so the strip is built from display-correct pixels; read
+orientation-corrected dimensions in `headerGeometry()` (autorot then `Xsize/Ysize`) so matching and
+scaling agree; and strip/normalise the `orientation` tag on output so slices are not re-rotated by
+viewers. `vips_autorot` is **idempotent** for `Orientation` absent/`1`, so this is a no-op for the
+already-correct Procreate case and only changes the rotated camera photos. Decide the contract for a
+genuinely *portrait* page once corrected (e.g. `2448×3264`): match a portrait canvas profile / render
+as a tall strip segment, which is what the reporter expected.
+
+Both are **bugfixes** (wrong output → correct output), so PATCH — but both *change the rendered result*
+(2a for any multi-page strip with non-aligned boundaries; 2b for any EXIF-rotated input); call them
+out in the changelog.
+
+**Also seen (separate, file to its own entry if confirmed): mixed band counts abort a whole render.**
+Rendering the `temp/win10/` folder *including* its PNG screenshots failed hard with
+`arrayjoin: not one band or 4 bands` — the pipeline does not normalise band count (RGB vs RGBA vs
+grey) before joining, so one odd input kills the run instead of being coerced or skipped.
 
 ### Dynamic thread spawning for processing
 
