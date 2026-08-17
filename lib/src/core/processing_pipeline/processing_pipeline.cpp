@@ -18,6 +18,7 @@
 #include <platemaker/core/scaler/scaler.hpp>
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/infrastructure/image_io/image_io.hpp>
+#include <platemaker/infrastructure/log/log.hpp>
 
 #include <vips/vips.h>
 
@@ -29,19 +30,37 @@ namespace Platemaker::Core {
 
 namespace {
 
-// Reads an image's pixel dimension from its header only (no pixel decode).
-// Returns -1 on error.
-int headerDim(const std::string& filePath, bool wantWidth)
+// Image geometry read from the header only (no pixel decode): the raw stored
+// dimensions plus the EXIF Orientation tag if the file carries one. `width`/`height`
+// are -1 on error. Note these are the *stored* pixel dimensions — they ignore the
+// Orientation tag, exactly as matching currently consumes them.
+struct HeaderGeometry {
+    int  width          = -1;
+    int  height         = -1;
+    int  orientation    = 1;      // EXIF Orientation (1 = normal); 1 when the tag is absent
+    bool hasOrientation = false;  // whether the file actually carried an Orientation tag
+};
+
+HeaderGeometry headerGeometry(const std::string& filePath)
 {
+    HeaderGeometry geo;
     VipsImage* img = vips_image_new_from_file(
         filePath.c_str(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr);
     if (!img) {
         vips_error_clear();
-        return -1;
+        return geo;
     }
-    const int dim = wantWidth ? img->Xsize : img->Ysize;
+    geo.width  = img->Xsize;
+    geo.height = img->Ysize;
+    if (vips_image_get_typeof(img, VIPS_META_ORIENTATION) != 0) {
+        int o = 0;
+        if (vips_image_get_int(img, VIPS_META_ORIENTATION, &o) == 0) {
+            geo.orientation    = o;
+            geo.hasOrientation = true;
+        }
+    }
     g_object_unref(img);
-    return dim;
+    return geo;
 }
 
 std::string zeroPad(int n, int width)
@@ -99,6 +118,8 @@ ProcessingOutcome ProcessingPipeline::run(
     ImageIO       imageIO;
     ScaledStrip   strip;
 
+    namespace Log = Platemaker::Infrastructure::Log;
+
     const bool hasProfiles = !canvasProfiles.empty();
     CanvasProfileMatcher matcher(canvasProfiles, canvasProfileIds);
 
@@ -124,10 +145,20 @@ ProcessingOutcome ProcessingPipeline::run(
         std::vector<std::string> candidateIds;
 
         try {
+            HeaderGeometry geo;
+            if (hasProfiles || Log::isEnabled(Log::ProcessingPipeline))
+                geo = headerGeometry(file.filePath);
+            PLATEMAKER_LOG(Log::ProcessingPipeline,
+                    "read " + file.filePath + ": header "
+                    + std::to_string(geo.width) + "x" + std::to_string(geo.height)
+                    + ", EXIF orientation "
+                    + (geo.hasOrientation ? std::to_string(geo.orientation)
+                                          : std::string("none")));
+
             const CanvasProfile* matchedProfile = nullptr;
             if (hasProfiles) {
-                const int w = headerDim(file.filePath, true);
-                const int h = headerDim(file.filePath, false);
+                const int w = geo.width;
+                const int h = geo.height;
                 if (w <= 0 || h <= 0)
                     throw std::runtime_error("cannot determine image dimensions");
 

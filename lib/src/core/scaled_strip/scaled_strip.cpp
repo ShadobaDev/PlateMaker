@@ -20,6 +20,8 @@
 
 #include <platemaker/core/scaled_strip/scaled_strip.hpp>
 
+#include <platemaker/infrastructure/log/log.hpp>
+
 #include <vips/vips.h>
 
 #include <algorithm>
@@ -27,6 +29,8 @@
 #include <string>
 
 namespace Platemaker::Core {
+
+namespace { namespace Log = Platemaker::Infrastructure::Log; }
 
 // ---------------------------------------------------------------------------
 // append
@@ -45,6 +49,13 @@ void ScaledStrip::append(ScaledImage image)
     entry.height = image.buffer.height();
     entry.image  = std::move(image);
     m_totalHeight += entry.height;
+
+    PLATEMAKER_LOG(Log::ScaledStrip,
+            "append " + entry.image.sourceFilePath + ": "
+            + std::to_string(m_width) + "x" + std::to_string(entry.height)
+            + " at startY=" + std::to_string(entry.startY)
+            + " -> totalHeight=" + std::to_string(m_totalHeight));
+
     m_entries.push_back(std::move(entry));
 }
 
@@ -131,22 +142,60 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
         result.image = PixelBuffer{parts[0]};
         // Ownership transferred to PixelBuffer — do not unref.
     } else {
-        // Multi-source slice: join vertically (across=1 → single column).
-        VipsImage* joined = nullptr;
-        if (vips_arrayjoin(parts.data(), &joined,
-                static_cast<int>(parts.size()),
-                "across", 1,
-                nullptr) != 0)
-        {
-            for (VipsImage* p : parts) g_object_unref(p);
-            throw std::runtime_error(
-                "ScaledStrip::buildSlice() — vips_arrayjoin failed "
-                "(slice " + std::to_string(index) + "): " +
-                vips_error_buffer());
+        // Multi-source slice: concatenate the parts vertically, edge to edge. All parts share
+        // m_width (they were extracted at that width); only their heights differ.
+        //
+        // vips_arrayjoin was WRONG here: it lays the inputs out in a uniform grid whose cells are
+        // sized to the *tallest* input (vspacing defaults to the max height), padding every shorter
+        // cell with background. Unequal-height parts therefore produced an N×maxHeight slice with a
+        // black band instead of a tight sum-of-heights strip (see docs/TODO.md). vips_join places two
+        // images top-to-bottom with no padding when their widths already match, so fold it over the
+        // parts: acc = join(acc, parts[i]).
+        VipsImage* acc      = parts[0]; // borrowed from `parts`; freed in the final unref loop
+        bool       accOwned = false;    // true once `acc` is an intermediate we created and must free
+        for (std::size_t i = 1; i < parts.size(); ++i) {
+            VipsImage* joined = nullptr;
+            if (vips_join(acc, parts[i], &joined, VIPS_DIRECTION_VERTICAL, nullptr) != 0) {
+                if (accOwned) g_object_unref(acc);
+                for (VipsImage* p : parts) g_object_unref(p);
+                throw std::runtime_error(
+                    "ScaledStrip::buildSlice() — vips_join failed "
+                    "(slice " + std::to_string(index) + "): " +
+                    vips_error_buffer());
+            }
+            if (accOwned) g_object_unref(acc); // release the previous intermediate
+            acc      = joined;                 // vips_join references its inputs, so they stay alive
+            accOwned = true;
         }
-        // vips_arrayjoin adds its own reference to the inputs; safe to unref ours.
+        // Each join took its own reference to the parts it consumed; drop ours.
         for (VipsImage* p : parts) g_object_unref(p);
-        result.image = PixelBuffer{joined};
+        result.image = PixelBuffer{acc}; // takes ownership of the final joined image
+    }
+
+    // Diagnostic: the requested slice window against what was actually built, plus every
+    // source segment. When `built` height ≠ the requested (sliceEndY - sliceStartY), the join
+    // padded the slice — the black-band divergence. See docs/TODO.md.
+    PLATEMAKER_LOG(Log::ScaledStrip, [&] {
+        std::string s = "buildSlice " + std::to_string(index)
+                + " req=[" + std::to_string(sliceStartY) + "," + std::to_string(sliceEndY) + ")"
+                + " built=" + std::to_string(result.image.width()) + "x"
+                + std::to_string(result.image.height())
+                + " parts=" + std::to_string(result.sourceMap.size());
+        for (const auto& seg : result.sourceMap)
+            s += "; " + seg.sourceFilePath + " srcY=" + std::to_string(seg.srcY)
+                 + " h=" + std::to_string(seg.height);
+        return s;
+    }());
+
+    // Invariant: the overlapping entries tile the slice window exactly, so the built strip must be
+    // exactly the requested height (single- and multi-source alike). A mismatch means a join padded
+    // the slice (the old arrayjoin black-band bug) — fail loudly rather than emit a padded panel.
+    if (result.image.height() != sliceH) {
+        throw std::runtime_error(
+            "ScaledStrip::buildSlice() — slice " + std::to_string(index) +
+            " built height " + std::to_string(result.image.height()) +
+            " != requested " + std::to_string(sliceH) +
+            " (a join padded the slice — see docs/TODO.md)");
     }
 
     return result;
@@ -193,6 +242,12 @@ void ScaledStrip::sliceAll(
 
     const int numFull = m_totalHeight / sliceHeight;
     const int tail    = m_totalHeight % sliceHeight;
+
+    PLATEMAKER_LOG(Log::ScaledStrip,
+            "sliceAll totalHeight=" + std::to_string(m_totalHeight)
+            + " sliceHeight=" + std::to_string(sliceHeight)
+            + " numFull=" + std::to_string(numFull)
+            + " tail=" + std::to_string(tail));
 
     // --- Full slices ---
     for (int i = 0; i < numFull; ++i) {

@@ -36,10 +36,14 @@
 
 #include <platemaker/core/scaler/scaler.hpp>
 
+#include <platemaker/infrastructure/log/log.hpp>
+
 #include <vips/vips.h>
 
 #include <stdexcept>
 #include <string>
+
+namespace { namespace Log = Platemaker::Infrastructure::Log; }
 
 namespace Platemaker::Core {
 
@@ -78,8 +82,10 @@ ScaledImage Scaler::scale(const std::string& filePath, int targetWidth) const
             "Scaler::scale() — source image '" + filePath + "' has zero width");
     }
 
+    const int    srcW   = loaded->Xsize;
+    const int    srcH   = loaded->Ysize;
     const double hscale = static_cast<double>(targetWidth) /
-                          static_cast<double>(loaded->Xsize);
+                          static_cast<double>(srcW);
 
     // vips_resize() scales by a factor, preserving aspect ratio (vscale defaults
     // to hscale when omitted).  Unlike vips_thumbnail, it does not reorder access
@@ -92,6 +98,11 @@ ScaledImage Scaler::scale(const std::string& filePath, int targetWidth) const
             "': " + vips_error_buffer());
     }
     g_object_unref(loaded); // resize holds its own reference; release ours
+
+    PLATEMAKER_LOG(Log::Scaler,
+            "scale(file) " + filePath + ": " + std::to_string(srcW) + "x"
+            + std::to_string(srcH) + " -> " + std::to_string(out->Xsize) + "x"
+            + std::to_string(out->Ysize));
 
     return ScaledImage{PixelBuffer{out}, filePath};
 }
@@ -120,8 +131,10 @@ ScaledImage Scaler::scale(PixelBuffer buffer, std::string sourceFilePath, int ta
         throw std::runtime_error(
             "Scaler::scale() — source buffer has zero width");
     }
+    const int    srcW   = buffer.width();
+    const int    srcH   = buffer.height();
     const double hscale = static_cast<double>(targetWidth) /
-                          static_cast<double>(buffer.width());
+                          static_cast<double>(srcW);
 
     VipsImage* out = nullptr;
     if (vips_resize(buffer.get(), &out, hscale, nullptr) != 0) {
@@ -129,6 +142,11 @@ ScaledImage Scaler::scale(PixelBuffer buffer, std::string sourceFilePath, int ta
             "Scaler::scale() — vips_resize failed for '" + sourceFilePath +
             "': " + vips_error_buffer());
     }
+
+    PLATEMAKER_LOG(Log::Scaler,
+            "scale(buffer) " + sourceFilePath + ": " + std::to_string(srcW) + "x"
+            + std::to_string(srcH) + " -> " + std::to_string(out->Xsize) + "x"
+            + std::to_string(out->Ysize));
 
     return ScaledImage{PixelBuffer{out}, std::move(sourceFilePath)};
 }

@@ -123,6 +123,15 @@ intentional `PadWhite` tail) as a post-condition so this can never silently regr
 re-render the three photos with `PLATEMAKER_GEOM_TRACE=1` and confirm every `built=` equals the
 requested slice height and no output exceeds it.
 
+> **Step 2a — DONE (2026-08-17).** `ScaledStrip::buildSlice()` now folds
+> `vips_join(…, VIPS_DIRECTION_VERTICAL)` over the same-width parts instead of the padding
+> `vips_arrayjoin`, and asserts `built.height == sliceH` as a post-condition (throws on a padded slice).
+> Verified on the three `temp/win10/` photos (`--trace=0x7`): the multi-source slice now reads
+> `buildSlice 0 req=[0,1280) built=800x1280 parts=3` (600+600+80 — was `800x1800` with a black band);
+> tail `buildSlice 1 built=800x520 parts=1`. Two clean output files, exit 0, assertion silent, full
+> suite **145/145** green. **Still pending: Step 2b** — the same trace confirms the `Orientation 6`
+> photo still scales landscape `800x600`, so the EXIF defect is untouched and separate.
+
 **Step 2b — normalise to display orientation on load, in both paths.** Apply `vips_autorot` (or load
 with autorotate) in `Scaler::scale(filePath)` so the strip is built from display-correct pixels; read
 orientation-corrected dimensions in `headerGeometry()` (autorot then `Xsize/Ysize`) so matching and

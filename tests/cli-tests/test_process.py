@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
+import shutil
 import subprocess
 
 import pytest
@@ -22,6 +24,11 @@ from helpers import create_workspace, add_profile, make_solid_png
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+# Real phone-camera JPEGs used by the docs/TODO.md Step 2a/2b regression tests
+# below — see fixtures/real_photos/README.md for provenance and EXIF details.
+FIXTURES_DIR    = pathlib.Path(__file__).parent / "fixtures" / "real_photos"
+ORIENTATION_6_PHOTO = "20161127_144117.jpg"  # the portrait shot, stored landscape
 
 def _run_process(
     platemaker_bin: pathlib.Path,
@@ -445,3 +452,181 @@ def test_process_incremental_reprocesses_changed_file(
         "Expected reprocessing, but 'nothing to do' appeared in stderr"
     )
     assert len(sorted(output_dir.glob("output_*.png"))) == 6
+
+
+# ---------------------------------------------------------------------------
+# Diagnostic tracing (--trace shadow argument)
+# ---------------------------------------------------------------------------
+
+def test_process_trace_enables_component_logs(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    The --trace=<bitmask> shadow argument turns on the library's per-component
+    diagnostic logging without changing the outcome. Bits (see log.hpp):
+    0x1 ProcessingPipeline · 0x2 Scaler · 0x4 ScaledStrip.
+
+    Runs a render with all three enabled (0x7) and asserts the run still succeeds
+    and that each component's tag appears on stderr (the default logger sink).
+    """
+    input_dir  = tmp_workspace / "input"
+    output_dir = tmp_workspace / "output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    _make_pages(input_dir, 3, width=800, height=2560)
+
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
+
+    result = _run_process(platemaker_bin, ws, output_dir,
+                          ["--input", str(input_dir), "--trace=0x7"])
+    assert result.returncode == 0, f"traced process failed:\n{result.stderr}"
+
+    # Tracing does not disturb the produced output.
+    assert len(sorted(output_dir.glob("output_*.png"))) == 6
+
+    # Each traced component logs at least once, tagged by name, to stderr.
+    assert "[Scaler]" in result.stderr, result.stderr
+    assert "[ScaledStrip]" in result.stderr, result.stderr
+    assert "[ProcessingPipeline]" in result.stderr, result.stderr
+
+
+def test_process_without_trace_is_quiet(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """A normal render emits no component-trace lines (the logger defaults to all-off)."""
+    input_dir  = tmp_workspace / "input"
+    output_dir = tmp_workspace / "output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    _make_pages(input_dir, 3, width=800, height=2560)
+
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
+
+    result = _run_process(platemaker_bin, ws, output_dir,
+                          ["--input", str(input_dir)])
+    assert result.returncode == 0, f"process failed:\n{result.stderr}"
+
+    for tag in ("[Scaler]", "[ScaledStrip]", "[ProcessingPipeline]"):
+        assert tag not in result.stderr, f"unexpected trace {tag} in a non-traced run:\n{result.stderr}"
+
+
+# ---------------------------------------------------------------------------
+# Real-photo regression (docs/TODO.md Step 2a / Step 2b)
+# ---------------------------------------------------------------------------
+#
+# Synthetic solid-colour PNGs can't reproduce either bug: their EXIF is empty
+# and their heights are always chosen as clean multiples of slice_height.
+# These three real phone-camera JPEGs (mixed EXIF Orientation, non-multiple
+# pixel heights) are what originally exposed both defects — see
+# fixtures/real_photos/README.md.
+
+def test_process_real_photos_no_black_band(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    Step 2a regression: multi-source slices must come out tight, never padded
+    to the tallest contributing part (the old vips_arrayjoin black band).
+
+    All three 3264x2448 photos scale to 800x600 at target-width=800 (EXIF
+    orientation is not yet applied — that's Step 2b, covered separately
+    below). Total scaled height 1800px / slice-height 1280 → one full slice
+    (600+600+80 from the three sources) plus a 520px tail — the exact
+    breakdown recorded in docs/TODO.md's Step 2a verification, reproduced
+    here from --trace=0x7 instead of by hand.
+    """
+    input_dir  = tmp_workspace / "input"
+    output_dir = tmp_workspace / "output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    for photo in sorted(FIXTURES_DIR.glob("*.jpg")):
+        shutil.copy(photo, input_dir / photo.name)
+
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
+
+    result = _run_process(platemaker_bin, ws, output_dir,
+                          ["--input", str(input_dir), "--trace=0x7"])
+    assert result.returncode == 0, f"process failed:\n{result.stderr}"
+
+    slices = sorted(output_dir.glob("output_*.png"))
+    assert len(slices) == 2, (
+        f"Expected 2 slices (1280 + 520 tail), got {len(slices)}: "
+        f"{[p.name for p in slices]}"
+    )
+
+    # Every buildSlice trace line: built height must equal the requested
+    # window, and never exceed it (the black-band signature was built >
+    # requested, e.g. 800x1800 for a req=[0,1280) window).
+    build_lines = re.findall(
+        r"buildSlice (\d+) req=\[(\d+),(\d+)\) built=(\d+)x(\d+) parts=(\d+)",
+        result.stderr,
+    )
+    assert len(build_lines) == 2, f"Expected 2 buildSlice trace lines:\n{result.stderr}"
+
+    for idx, start, end, _w, h, _parts in build_lines:
+        requested = int(end) - int(start)
+        assert int(h) == requested, (
+            f"slice {idx}: built height {h} != requested {requested} "
+            f"(a join padded the slice)\n{result.stderr}"
+        )
+
+    # Pin the exact breakdown from docs/TODO.md's manual verification.
+    _, _, _, w0, h0, parts0 = build_lines[0]
+    assert (w0, h0, parts0) == ("800", "1280", "3")
+    _, _, _, w1, h1, parts1 = build_lines[1]
+    assert (w1, h1, parts1) == ("800", "520", "1")
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Step 2b (EXIF autorotate) not implemented yet — see docs/TODO.md. "
+           "Remove this xfail when Scaler applies vips_autorot.",
+)
+def test_process_real_photos_orientation_applied(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    Step 2b (not yet implemented): the Orientation=6 photo is a portrait
+    shot stored as landscape 3264x2448. Once Scaler autorotates on load, it
+    must scale to a *portrait* 800xN (N > 800), not today's landscape 800x600.
+
+    strict=True: once Step 2b lands this test starts passing, which XPASSes
+    and fails the suite — a deliberate nudge to delete the xfail marker
+    instead of letting it silently rot.
+    """
+    input_dir  = tmp_workspace / "input"
+    output_dir = tmp_workspace / "output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    for photo in sorted(FIXTURES_DIR.glob("*.jpg")):
+        shutil.copy(photo, input_dir / photo.name)
+
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
+
+    result = _run_process(platemaker_bin, ws, output_dir,
+                          ["--input", str(input_dir), "--trace=0x2"])
+    assert result.returncode == 0, f"process failed:\n{result.stderr}"
+
+    pattern = re.compile(
+        r"scale\(file\) .*" + re.escape(ORIENTATION_6_PHOTO)
+        + r": \d+x\d+ -> (\d+)x(\d+)"
+    )
+    match = pattern.search(result.stderr)
+    assert match, f"no Scaler trace line for {ORIENTATION_6_PHOTO}:\n{result.stderr}"
+
+    out_w, out_h = int(match.group(1)), int(match.group(2))
+    assert out_h > out_w, (
+        f"{ORIENTATION_6_PHOTO} scaled to {out_w}x{out_h} (landscape) — "
+        "expected portrait (height > width) once autorotate is applied"
+    )

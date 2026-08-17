@@ -22,8 +22,8 @@
  * \copyright Copyright (c) 2026 ShadobaDev
  */
 
-#ifndef PLATEMAKER_INFRASTRUCTURE_LOGGING_LOG_HPP
-#define PLATEMAKER_INFRASTRUCTURE_LOGGING_LOG_HPP
+#ifndef PLATEMAKER_INFRASTRUCTURE_LOG_LOG_HPP
+#define PLATEMAKER_INFRASTRUCTURE_LOG_LOG_HPP
 
 #include "platemaker/platemaker_export.h"
 
@@ -109,4 +109,4 @@ PLATEMAKER_EXPORT void write(std::uint64_t component, std::string_view message);
             ::Platemaker::Infrastructure::Log::write((component), (message));    \
     } while (0)
 
-#endif // PLATEMAKER_INFRASTRUCTURE_LOGGING_LOG_HPP
+#endif // PLATEMAKER_INFRASTRUCTURE_LOG_LOG_HPP
