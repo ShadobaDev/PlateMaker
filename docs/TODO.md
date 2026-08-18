@@ -132,6 +132,31 @@ requested slice height and no output exceeds it.
 > suite **145/145** green. **Still pending: Step 2b** — the same trace confirms the `Orientation 6`
 > photo still scales landscape `800x600`, so the EXIF defect is untouched and separate.
 
+> **Follow-up — GUI output *tile* still showed the black band after 2a, though the file on disk was
+> correct (`800x1280`).** Root cause was a *third*, independent lib bug: `ThumbnailCache` keyed its
+> on-disk preview on the source *path* alone and only checked existence, so an overwritten `output_00N`
+> slice kept serving the previous render's (black-band) thumbnail — inputs were fine because their
+> files never change. `getOrGenerate()` now also compares the cached thumbnail's mtime against the
+> source and regenerates when the source is newer (same digest file, no orphans). New
+> `tests/lib-unit-tests/test_thumbnail_cache.cpp` pins both directions (regenerate-on-overwrite,
+> reuse-when-unchanged). **147/147 green.** To see it in an already-open GUI: rebuild lib+GUI, then
+> re-render or reopen the project so the tiles re-request thumbnails.
+
+> **Follow-up — re-rendering `output_00N.jpg` failed with `unable to open for write … Invalid
+> argument`.** Surfaced by the thumbnail-freshness change above: the GUI re-read each output file every
+> render to refresh its preview, so a render's in-place overwrite of a slice raced the tile's read handle
+> on Windows (a sharing violation surfacing as `EINVAL`). Reproduced deterministically with two lib
+> primitives on two threads (`tests/lib-unit-tests/test_image_io_concurrency.cpp`).
+>
+> This exposed an architectural seam and was resolved by a **render output contract** (SPECIFICATION
+> §7.0, shipping in **0.5.0**), *not* a workaround: **G1** `ImageIO::save()` publishes atomically
+> (temp + rename); **G4** a locked destination throws `OutputLockedError` → `ProcessingErrorCode::
+> OutputLocked` — the lib **does not poll/retry**, the consumer decides; **G3 / Arch C** the pipeline
+> optionally warms `ThumbnailCache` from the in-RAM slice (`generate(path, PixelBuffer)` overload,
+> `ProcessingPipeline::run(..., thumbnailCacheDir)`) before `onSliceSaved`, so the GUI's
+> `getOrGenerate(path)` is a cache hit and never re-reads the output during a run. (The earlier 20×25 ms
+> retry mentioned in prior notes was replaced by G4.) **151/151 green.**
+
 **Step 2b — normalise to display orientation on load, in both paths.** Apply `vips_autorot` (or load
 with autorotate) in `Scaler::scale(filePath)` so the strip is built from display-correct pixels; read
 orientation-corrected dimensions in `headerGeometry()` (autorot then `Xsize/Ysize`) so matching and

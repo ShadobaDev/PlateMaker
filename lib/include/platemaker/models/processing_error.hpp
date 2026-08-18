@@ -47,6 +47,9 @@ enum class ProcessingErrorCode {
     NoPagesLoaded,    //!< Load   — the strip was empty after phase 1 (nothing loaded successfully).
     InputLoadFailed,  //!< Load   — one input's decode / dimensions / crop / scale threw (non-fatal skip).
     SliceEncodeFailed,//!< Encode — ImageIO::save threw while writing a slice (fatal).
+    OutputLocked,     //!< Io     — a saved slice could not be published because another process holds the
+                      //!<          destination (Explorer preview / antivirus / an open viewer). The lib does
+                      //!<          not poll; the consumer decides — warn the user to close it, or retry.
     SlicingFailed,    //!< Slice  — strip slicing threw (fatal).
     InputHashFailed,  //!< Io     — an input could not be hashed *after* a successful render
                       //!<          (locked / permission / offline) — the silent-loop case.

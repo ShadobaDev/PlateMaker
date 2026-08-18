@@ -19,6 +19,9 @@
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/infrastructure/image_io/image_io.hpp>
 #include <platemaker/infrastructure/log/log.hpp>
+#include <platemaker/infrastructure/thumbnail_cache/thumbnail_cache.hpp>
+
+#include <optional>
 
 #include <vips/vips.h>
 
@@ -96,11 +99,14 @@ ProcessingOutcome ProcessingPipeline::run(
     const std::string&                        outputDir,
     const Infrastructure::CancellationToken&  cancel,
     const ProcessingCallbacks&                callbacks,
-    const std::unordered_set<std::string>*    onlySlices)
+    const std::unordered_set<std::string>*    onlySlices,
+    const std::string&                        thumbnailCacheDir)
 {
     using namespace Platemaker::Models;
     using Platemaker::Infrastructure::FileMetaData;
     using Platemaker::Infrastructure::ImageIO;
+    using Platemaker::Infrastructure::OutputLockedError;
+    using Platemaker::Infrastructure::ThumbnailCache;
 
     ProcessingOutcome outcome;
 
@@ -287,6 +293,19 @@ ProcessingOutcome ProcessingPipeline::run(
     }
     outcome.records.reserve(static_cast<std::size_t>(renderTotal));
 
+    // Optional (Arch C — see the "render output contract" in docs/SPECIFICATION.md): pre-warm a
+    // thumbnail cache from each slice's in-RAM pixels, so a consumer never re-reads a freshly-written
+    // output to preview it. Constructed once; a bad dir just disables previews for this run, not the run.
+    std::optional<ThumbnailCache> thumbCache;
+    if (!thumbnailCacheDir.empty()) {
+        try {
+            thumbCache.emplace(thumbnailCacheDir);
+        } catch (const std::exception& e) {
+            emitLog(callbacks.onLog, ProcessingLogLevel::Warning,
+                    std::string("Thumbnail previews disabled: ") + e.what());
+        }
+    }
+
     int savedCount = 0;
     const auto onSlice = [&](SliceResult&& slice) -> bool {
         const std::string outName = sliceName(slice.index);
@@ -302,6 +321,13 @@ ProcessingOutcome ProcessingPipeline::run(
 
         try {
             imageIO.save(slice.image, outPath, outProfile);
+        } catch (const OutputLockedError& e) {
+            outcome.failed = true;
+            outcome.error  = ProcessingError{
+                ProcessingErrorCode::OutputLocked, ProcessingErrorCategory::Io,
+                e.what(), outPath, outName};
+            emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.error->message);
+            return false;   // stop slicing
         } catch (const std::exception& e) {
             outcome.failed = true;
             outcome.error  = ProcessingError{
@@ -309,6 +335,18 @@ ProcessingOutcome ProcessingPipeline::run(
                 "Failed to save '" + outName + "': " + e.what(), {}, outName};
             emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.error->message);
             return false;   // stop slicing
+        }
+
+        // Pre-warm the thumbnail cache from the in-RAM slice (before onSliceSaved), so a consumer's
+        // getOrGenerate(outPath) is a cache hit and never re-reads the freshly-written output during the
+        // run. Best-effort — a preview failure must not fail the render.
+        if (thumbCache) {
+            try {
+                thumbCache->generate(outPath, slice.image);
+            } catch (const std::exception& e) {
+                emitLog(callbacks.onLog, ProcessingLogLevel::Warning,
+                        "Thumbnail preview for '" + outName + "' skipped: " + e.what());
+            }
         }
 
         ProcessingSliceRecord rec;

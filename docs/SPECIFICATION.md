@@ -506,6 +506,39 @@ strip for that project is reprocessed regardless of individual file hashes.
 
 ## 7. Image Processing Pipeline Details
 
+### 7.0 Render output contract (lib ↔ consumer)
+
+The pipeline **produces** output slice files; a consumer (the Qt GUI, the CLI, a future web backend)
+**reacts** to them. This is the boundary that keeps a consumer from racing the writer — e.g. reading a
+slice to build a thumbnail while a re-render overwrites it (which on Windows fails the write with
+`unable to open for write`). The split:
+
+**The library guarantees**
+- **G1 — Atomic publish.** `ImageIO::save()` encodes to a temp sibling and renames it over the
+  destination, so `onSliceSaved(path)` fires only once the file is complete and closed. A reader opening
+  `path` after that signal sees the whole slice or nothing — never a partially-written frame.
+- **G2 — No hidden threads or lingering handles.** `ProcessingCallbacks` fire **synchronously on the
+  caller's thread**; the pipeline spawns no threads and holds no output handle after `onSliceSaved`.
+- **G3 — (opt-in) Live previews without a re-read.** When `ProcessingPipeline::run(..., thumbnailCacheDir)`
+  is given a cache dir, the pipeline warms `ThumbnailCache` from the **in-RAM** slice — via
+  `ThumbnailCache::generate(outputPath, pixelBuffer)`, sharing the one shrink+write path with the
+  file-reading `generate` — *before* `onSliceSaved`. A consumer's later `getOrGenerate(outputPath)` is
+  then a cache hit that never opens the output. Empty dir → no thumbnails (CLI default).
+- **G4 — Locked destination → typed error, no poll.** If another process holds the destination so the
+  publish cannot complete, `save()` throws `OutputLockedError`, which the pipeline reports as
+  `ProcessingErrorCode::OutputLocked`. The library **does not** retry — retry policy belongs to the
+  consumer.
+
+**The consumer is responsible for**
+- **C1** — Treating `onSliceSaved(path)` as the single "ready" signal: never read `path` before it, or
+  during a run that may rewrite it.
+- **C2** — All threading/marshalling (run the pipeline on a worker thread; marshal callbacks to the UI).
+- **C3** — Not building live previews by reading output files: use the warmed cache (G3) during a run, and
+  the file-reading `ThumbnailCache::getOrGenerate` only **at rest** (no active run), where reading is safe.
+- **C4** — Serialising its own reads against re-renders, and applying per-slice UI updates in order.
+- **C5** — Deciding what `OutputLocked` means to the user (warn "close the program holding the file", or
+  retry).
+
 ### Standard pipeline (no margins)
 ```
 For each PageItem in order:

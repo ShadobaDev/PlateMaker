@@ -21,6 +21,8 @@
 
 #include "platemaker/platemaker_export.h"
 
+#include <platemaker/core/pixel_buffer/pixel_buffer.hpp>
+
 #include <string>
 
 namespace Platemaker::Infrastructure {
@@ -68,6 +70,22 @@ public:
      * \throws std::runtime_error if thumbnail generation fails.
      */
     [[nodiscard]] std::string getOrGenerate(const std::string& sourceFilePath);
+
+    /**
+     * \brief Writes a thumbnail for \p sourceFilePath from an **in-RAM image**, not by reading the file.
+     *
+     * Pre-warms the cache from pixels a caller already holds — e.g. the render pipeline just produced a
+     * slice — so a later \c getOrGenerate(sourceFilePath) is a cache hit and the freshly-written output is
+     * never re-read. \p sourceFilePath is only the digest key (where the thumbnail is filed); the pixels
+     * come from \p image. Shares the same shrink (to 200 px) + atomic write as the file-reading path — one
+     * mechanism, two sources. Always (re)writes, overwriting any existing thumbnail for the key.
+     *
+     * \param sourceFilePath Absolute path the thumbnail represents (the cache key).
+     * \param image          The in-RAM image to shrink; not read from disk. Must be valid.
+     * \return Absolute path to the written thumbnail PNG.
+     * \throws std::runtime_error if generation or the atomic write fails.
+     */
+    std::string generate(const std::string& sourceFilePath, const Core::PixelBuffer& image);
 
     /**
      * \brief Returns the expected thumbnail path without generating it.

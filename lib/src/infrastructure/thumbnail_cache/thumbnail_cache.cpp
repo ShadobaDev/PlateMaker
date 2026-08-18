@@ -4,7 +4,11 @@
  *
  * Thumbnails are stored in the configured \c .platemaker-cache/ directory and
  * are named by a hex digest of the source file path so that renames produce
- * orphan entries rather than stale hits.
+ * orphan entries rather than stale hits.  Because the digest is path-only, a file
+ * overwritten in place (each re-render rewrites the same \c output_00N slice) keeps
+ * its digest; \c getOrGenerate() therefore also checks the cached thumbnail's mtime
+ * against the source and regenerates when the source is newer, so a stale preview
+ * (the old black-band slice) is never served.
  *
  * This implementation has zero Qt dependency.  The GUI layer is responsible for
  * running \c getOrGenerate() on a background thread (e.g. via \c QtConcurrent::run())
@@ -53,6 +57,23 @@ namespace {
     std::ostringstream oss;
     oss << std::hex << std::setw(16) << std::setfill('0') << h;
     return oss.str();
+}
+
+// A cached thumbnail is only usable if it is at least as new as its source. The cache filename is
+// keyed on the source *path* alone, so a file that is overwritten in place (every re-render rewrites
+// the same output_00N slice) keeps its digest — and a pure existence check would then serve the
+// previous render's thumbnail forever (the black-band slice was the visible symptom). Comparing
+// mtimes invalidates that without accumulating orphans: generate() rewrites the same digest file.
+// If either timestamp cannot be read, treat the cache as stale and regenerate (safe default).
+[[nodiscard]] bool thumbnailIsFresh(const std::string& sourceFilePath,
+                                    const std::string& thumbnailFilePath)
+{
+    namespace fs = std::filesystem;
+    std::error_code ecSrc, ecThumb;
+    const auto srcTime   = fs::last_write_time(utf8ToPath(sourceFilePath),    ecSrc);
+    const auto thumbTime = fs::last_write_time(utf8ToPath(thumbnailFilePath), ecThumb);
+    if (ecSrc || ecThumb) return false;
+    return thumbTime >= srcTime;
 }
 
 } // anonymous namespace
@@ -110,15 +131,49 @@ bool ThumbnailCache::isCached(const std::string& sourceFilePath) const
 
 std::string ThumbnailCache::getOrGenerate(const std::string& sourceFilePath)
 {
-    if (isCached(sourceFilePath)) {
-        return thumbnailPath(sourceFilePath);
+    const std::string thumb = thumbnailPath(sourceFilePath);
+    // Existence alone is not enough: the digest is path-only, so an in-place overwrite (a re-render
+    // rewriting the same output slice) reuses the digest. Also require the cached thumbnail to be at
+    // least as new as the source, or a stale preview (e.g. the old black-band slice) would persist.
+    if (isCached(sourceFilePath) && thumbnailIsFresh(sourceFilePath, thumb)) {
+        return thumb;
     }
     return generate(sourceFilePath);
 }
 
 // ---------------------------------------------------------------------------
-// generate — create and write a 200 px thumbnail via libvips
+// generate — shrink a source to a 200 px thumbnail and publish it atomically.
+// Two overloads share the shrink params and the write; only the shrink *source*
+// differs: a file (vips_thumbnail) or an in-RAM image (vips_thumbnail_image).
 // ---------------------------------------------------------------------------
+
+namespace {
+
+// Consume an already-shrunk thumbnail image (takes ownership) and write it to destPath **atomically**:
+// pngsave to a temp sibling, then rename over destPath. Atomicity keeps a concurrent reader from ever
+// seeing a partially-written thumbnail — the same guarantee ImageIO::save gives outputs.
+void writeThumbnail(const std::string& destPath, VipsImage* shrunk)
+{
+    namespace fs = std::filesystem;
+    Core::PixelBuffer buf{shrunk}; // takes ownership; frees on scope exit
+
+    const std::string tmpPath = destPath + ".pmtmp";
+    if (vips_pngsave(buf.get(), tmpPath.c_str(), nullptr) != 0) {
+        const std::string err = vips_error_buffer();
+        std::error_code rmEc; fs::remove(utf8ToPath(tmpPath), rmEc);
+        throw std::runtime_error(
+            "ThumbnailCache — failed to write thumbnail '" + destPath + "': " + err);
+    }
+    std::error_code ec;
+    fs::rename(utf8ToPath(tmpPath), utf8ToPath(destPath), ec);
+    if (ec) {
+        std::error_code rmEc; fs::remove(utf8ToPath(tmpPath), rmEc);
+        throw std::runtime_error(
+            "ThumbnailCache — could not publish thumbnail '" + destPath + "': " + ec.message());
+    }
+}
+
+} // anonymous namespace
 
 std::string ThumbnailCache::generate(const std::string& sourceFilePath)
 {
@@ -134,15 +189,29 @@ std::string ThumbnailCache::generate(const std::string& sourceFilePath)
             "ThumbnailCache::generate() — vips_thumbnail failed for '" +
             sourceFilePath + "': " + vips_error_buffer());
     }
+    writeThumbnail(destPath, out);
+    return destPath;
+}
 
-    Core::PixelBuffer buf{out};
-
-    if (vips_pngsave(buf.get(), destPath.c_str(), nullptr) != 0) {
+std::string ThumbnailCache::generate(const std::string& sourceFilePath, const Core::PixelBuffer& image)
+{
+    if (!image.isValid()) {
         throw std::runtime_error(
-            "ThumbnailCache::generate() — failed to write thumbnail '" +
-            destPath + "': " + vips_error_buffer());
+            "ThumbnailCache::generate() — in-RAM source image is empty for '" + sourceFilePath + "'");
     }
+    const std::string destPath = thumbnailPath(sourceFilePath);
 
+    VipsImage* out = nullptr;
+    if (vips_thumbnail_image(image.get(), &out, 200,
+            "no_rotate", TRUE,
+            "size",      VIPS_SIZE_DOWN,
+            nullptr) != 0)
+    {
+        throw std::runtime_error(
+            "ThumbnailCache::generate() — vips_thumbnail_image failed for '" +
+            sourceFilePath + "': " + vips_error_buffer());
+    }
+    writeThumbnail(destPath, out);
     return destPath;
 }
 

@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.5.0] — unreleased
+
+Defines a **render output contract** (SPECIFICATION §7.0) that keeps a consumer from racing the
+pipeline's writes — the root cause of the GUI's intermittent `unable to open for write` render failures —
+and folds in the diagnostic logger and the multi-source slice fix from the interim commits. Breaking only
+because `ProcessingPipeline::run()` gained a trailing parameter: source-compatible via its default, but
+the mangled symbol changes, so the GUI pins the version in lockstep.
+
+### Changed
+
+- **`ProcessingPipeline::run()` gains an optional trailing `thumbnailCacheDir`.** When non-empty, the
+  pipeline warms a `ThumbnailCache` rooted there from each slice's **in-RAM** pixels — *before*
+  `onSliceSaved` fires — so a consumer's `getOrGenerate(outputPath)` is a cache hit and never re-reads a
+  freshly-written output during a run. Empty (default) → no thumbnails; the CLI and headless callers pay
+  nothing. Defaulted, so existing source compiles unchanged.
+
+### Added
+
+- **Component-gated diagnostic logger** (`Infrastructure::Log`). A runtime `uint64` bitmask, one bit per
+  component (ProcessingPipeline / Scaler / ScaledStrip / …), all-off by default, with a swappable sink
+  (stderr by default) and no severity levels; `PLATEMAKER_LOG(component, msg)` builds the message only
+  when the component is enabled (`setEnabledComponents` / `enable` / `disable` / `isEnabled`). The logger
+  is wired into Scaler, ScaledStrip and ProcessingPipeline (each logs its geometry). The CLI gains a
+  `--trace=0xMASK` shadow argument to flip components on.
+- **Atomic output publish + `OutputLockedError`.** `ImageIO::save()` now encodes to a temp sibling and
+  renames it over the destination (whole-or-nothing; a reader never sees a partial slice). If another
+  process holds the destination, it throws `OutputLockedError`, which the pipeline surfaces as the new
+  `ProcessingErrorCode::OutputLocked` — the library does **not** poll/retry; the consumer owns that
+  policy. Fixes intermittent `unable to open for write … Invalid argument` render aborts on Windows.
+- **`ThumbnailCache::generate(sourceFilePath, const Core::PixelBuffer&)`** — an in-RAM overload that
+  shrinks a caller-supplied image (no file read) and files it under the source path's digest, sharing the
+  atomic shrink+write core with the file-reading `generate`. Lets the pipeline pre-warm the cache from
+  pixels it already holds. Thumbnail writes are now atomic too.
+
+### Fixed
+
+- **Multi-source slices no longer get a black band.** `ScaledStrip::buildSlice()` folds `vips_join`
+  (vertical) over the same-width parts instead of `vips_arrayjoin`, which sized every grid cell to the
+  tallest part and black-filled the rest — so any slice combining sources of unequal contributed height
+  (short camera photos, a page boundary falling mid-slice) came out padded to `N × maxHeight`. Asserts
+  `built.height == the requested slice height` as a post-condition, so it can never silently regress.
+- **`headerDim()` → `headerGeometry()`**, which now also reads the EXIF `Orientation` tag (surfaced in
+  the trace). Groundwork only — the pipeline still renders from the stored pixels; honouring Orientation
+  on load is tracked separately (see `docs/TODO.md`).
+- Internal: `log.hpp` include guard renamed (`…LOGGING…` → `…LOG…`) to match the header path.
+
+### Tests
+
+- Logger gating + macro laziness; the in-RAM `ThumbnailCache` overload and its warm-→-cache-hit guarantee;
+  `ImageIO::save` reporting `OutputLocked` on a held destination (no poll); a deterministic reproduction
+  of the output read/write race. CLI tests assert `--trace` toggles the per-component log tags.
+
 ## [0.4.1] — 2026-08-16
 
 ### Added

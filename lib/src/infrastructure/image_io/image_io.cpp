@@ -11,9 +11,11 @@
  */
 
 #include <platemaker/infrastructure/image_io/image_io.hpp>
+#include <platemaker/infrastructure/file/path_utf8.hpp>
 
 #include <vips/vips.h>
 
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 
@@ -68,13 +70,29 @@ void ImageIO::save(
         throw std::runtime_error("ImageIO::save() — pixel buffer is empty");
     }
 
+    namespace fs = std::filesystem;
+
+    // Encode to a temporary sibling first, then atomically rename it over the destination. Rationale:
+    //
+    //  1. A reader can hold the destination open the instant we go to overwrite it — the GUI
+    //     regenerates each slice's thumbnail right after it is saved, and antivirus / Explorer's
+    //     preview / an open image viewer do the same. On Windows that read handle makes an in-place
+    //     open-for-write fail hard ("unable to open for write, Invalid argument"), aborting the whole
+    //     render. Encoding into an unshared temp name never collides; only the quick rename touches
+    //     the destination, and it is retried past a transient reader.
+    //  2. The published file is therefore never a half-written slice — a viewer sees either the old
+    //     file or the whole new one, never a truncated frame.
+    //
+    // The *save calls are format-explicit, so the ".pmtmp" extension does not affect the encoder.
+    const std::string tmpPath = outputPath + ".pmtmp";
+
     int result = -1;
 
     switch (profile.outputFormat) {
 
         // --- PNG (lossless) ---
         case Models::OutputFormat::PNG:
-            result = vips_pngsave(buffer.get(), outputPath.c_str(),
+            result = vips_pngsave(buffer.get(), tmpPath.c_str(),
                 "compression", profile.pngOptions.compression,
                 "interlace",   profile.pngOptions.interlaced ? 1 : 0,
                 nullptr);
@@ -93,7 +111,7 @@ void ImageIO::save(
                 case Models::JpegSubsampling::YUV_420: subsampleMode = 1; break;
             }
 
-            result = vips_jpegsave(buffer.get(), outputPath.c_str(),
+            result = vips_jpegsave(buffer.get(), tmpPath.c_str(),
                 "Q",               profile.jpegOptions.quality,
                 "optimize_coding", profile.jpegOptions.optimize   ? 1 : 0,
                 "interlace",       profile.jpegOptions.progressive ? 1 : 0,
@@ -104,7 +122,7 @@ void ImageIO::save(
 
         // --- WebP ---
         case Models::OutputFormat::WebP:
-            result = vips_webpsave(buffer.get(), outputPath.c_str(),
+            result = vips_webpsave(buffer.get(), tmpPath.c_str(),
                 "Q",        profile.webpOptions.quality,
                 "lossless", profile.webpOptions.lossless ? 1 : 0,
                 "effort",   profile.webpOptions.effort,
@@ -113,9 +131,26 @@ void ImageIO::save(
     }
 
     if (result != 0) {
+        const std::string err = vips_error_buffer();
+        std::error_code rmEc;
+        fs::remove(utf8ToPath(tmpPath), rmEc); // don't leave a partial temp behind
         throw std::runtime_error(
-            "ImageIO::save() — failed to write '" + outputPath + "': " +
-            vips_error_buffer());
+            "ImageIO::save() — failed to write '" + outputPath + "': " + err);
+    }
+
+    // Publish: rename the temp over the destination. std::filesystem::rename replaces an existing target
+    // atomically. It fails while another process holds the destination (Explorer preview / antivirus /
+    // an open viewer). The lib does **not** poll or retry — that policy belongs to the consumer — so a
+    // locked destination surfaces immediately as a typed OutputLockedError, which the pipeline maps to
+    // ProcessingErrorCode::OutputLocked.
+    std::error_code ec;
+    fs::rename(utf8ToPath(tmpPath), utf8ToPath(outputPath), ec);
+    if (ec) {
+        std::error_code rmEc;
+        fs::remove(utf8ToPath(tmpPath), rmEc);
+        throw OutputLockedError(
+            "ImageIO::save() — could not replace '" + outputPath +
+            "' (is it open in another program?): " + ec.message());
     }
 }
 

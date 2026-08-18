@@ -78,6 +78,13 @@ public:
      *                         output file name is in the set are encoded, hashed, saved and
      *                         recorded; all others are skipped (the strip is still assembled and
      *                         sliced once).  Null → render every slice (full render).
+     * \param thumbnailCacheDir Optional. When non-empty, each saved slice's preview is written into a
+     *                         \c ThumbnailCache rooted here — from the **in-RAM** slice, with no
+     *                         re-read of the output — *before* \c onSliceSaved fires. A consumer that
+     *                         later calls \c ThumbnailCache::getOrGenerate(path) on the same dir then
+     *                         gets a cache hit and never opens the output during the run. Warming a
+     *                         thumbnail is best-effort: a failure is logged, not fatal. Empty → no
+     *                         thumbnails (the CLI default; headless callers pay nothing).
      * \return A \c ProcessingOutcome with per-slice records, skipped pages and flags.
      */
     [[nodiscard]] static ProcessingOutcome run(
@@ -87,8 +94,9 @@ public:
         const std::vector<std::string>&            canvasProfileIds,
         const std::string&                         outputDir,
         const Infrastructure::CancellationToken&   cancel,
-        const ProcessingCallbacks&                 callbacks    = {},
-        const std::unordered_set<std::string>*     onlySlices   = nullptr);
+        const ProcessingCallbacks&                 callbacks         = {},
+        const std::unordered_set<std::string>*     onlySlices        = nullptr,
+        const std::string&                         thumbnailCacheDir = {});
 };
 
 } // namespace Platemaker::Core

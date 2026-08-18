@@ -14,6 +14,7 @@
 #ifndef PLATEMAKER_INFRASTRUCTURE_IMAGE_IO_HPP
 #define PLATEMAKER_INFRASTRUCTURE_IMAGE_IO_HPP
 
+#include <stdexcept>
 #include <string>
 
 #include "platemaker/platemaker_export.h"
@@ -23,6 +24,19 @@
 #include <platemaker/models/output_profile.hpp>
 
 namespace Platemaker::Infrastructure {
+
+/**
+ * \brief Thrown by \c ImageIO::save() when the destination cannot be published because another process
+ *        holds it open (Explorer's preview, antivirus, an image viewer).
+ *
+ * Distinct from a generic write failure so a caller (the pipeline) can report it as the typed
+ * \c Models::ProcessingErrorCode::OutputLocked and leave any retry policy to the consumer — the lib
+ * itself never polls. Thrown and caught entirely within libplatemaker (it never crosses a DLL boundary).
+ */
+class PLATEMAKER_EXPORT OutputLockedError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 /**
  * \class ImageIO
@@ -66,12 +80,17 @@ public:
      * per-format option struct (\c jpegOptions / \c pngOptions / \c webpOptions) is
      * applied; the others are ignored.
      *
+     * The write is **atomic**: the bytes are encoded to a temporary sibling and then renamed over
+     * \p outputPath, so a reader never sees a half-written file and \p outputPath is replaced whole.
+     *
      * \param buffer     The pixel data to save.  Must be valid.
      * \param outputPath Absolute path of the output file.  The file is created or
      *                   overwritten.  Parent directories must exist.
      * \param profile    Output profile supplying the format and encoding options.
      *
-     * \throws std::runtime_error if the write operation fails.
+     * \throws OutputLockedError if the destination cannot be replaced because another process holds it
+     *                           open (the lib does not retry — see \c ProcessingErrorCode::OutputLocked).
+     * \throws std::runtime_error if encoding otherwise fails.
      */
     void save(
         const Core::PixelBuffer&     buffer,
