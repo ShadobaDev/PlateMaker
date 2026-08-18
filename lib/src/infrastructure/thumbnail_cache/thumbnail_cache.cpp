@@ -145,6 +145,8 @@ std::string ThumbnailCache::getOrGenerate(const std::string& sourceFilePath)
 // generate — shrink a source to a 200 px thumbnail and publish it atomically.
 // Two overloads share the shrink params and the write; only the shrink *source*
 // differs: a file (vips_thumbnail) or an in-RAM image (vips_thumbnail_image).
+// Both auto-rotate by default (no "no_rotate"), so a preview matches the render's
+// display orientation; a no-op for untagged images (rendered slices, PNG exports).
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -181,7 +183,6 @@ std::string ThumbnailCache::generate(const std::string& sourceFilePath)
 
     VipsImage* out = nullptr;
     if (vips_thumbnail(sourceFilePath.c_str(), &out, 200,
-            "no_rotate", TRUE,
             "size",      VIPS_SIZE_DOWN,
             nullptr) != 0)
     {
@@ -203,7 +204,6 @@ std::string ThumbnailCache::generate(const std::string& sourceFilePath, const Co
 
     VipsImage* out = nullptr;
     if (vips_thumbnail_image(image.get(), &out, 200,
-            "no_rotate", TRUE,
             "size",      VIPS_SIZE_DOWN,
             nullptr) != 0)
     {

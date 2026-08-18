@@ -83,7 +83,7 @@ on with the shadow argument `--trace=0x…`; output goes to the logger sink (std
 are no severity levels — only the per-component on/off gate. (This replaced an earlier throwaway
 `PLATEMAKER_GEOM_TRACE` env-var trace routed through `onLog`.)
 
-Reproduce (uses only the three photos, isolated from the PNG screenshots in `temp/win10/`; `0x7`
+Reproduce (uses only the three photos, isolated from the PNG screenshots in `tests/cli-tests/fixtures/real_photos/`; `0x7`
 = ProcessingPipeline | Scaler | ScaledStrip):
 
 ```powershell
@@ -157,18 +157,20 @@ requested slice height and no output exceeds it.
 > `getOrGenerate(path)` is a cache hit and never re-reads the output during a run. (The earlier 20×25 ms
 > retry mentioned in prior notes was replaced by G4.) **151/151 green.**
 
-**Step 2b — normalise to display orientation on load, in both paths.** Apply `vips_autorot` (or load
-with autorotate) in `Scaler::scale(filePath)` so the strip is built from display-correct pixels; read
-orientation-corrected dimensions in `headerGeometry()` (autorot then `Xsize/Ysize`) so matching and
-scaling agree; and strip/normalise the `orientation` tag on output so slices are not re-rotated by
-viewers. `vips_autorot` is **idempotent** for `Orientation` absent/`1`, so this is a no-op for the
-already-correct Procreate case and only changes the rotated camera photos. Decide the contract for a
-genuinely *portrait* page once corrected (e.g. `2448×3264`): match a portrait canvas profile / render
-as a tall strip segment, which is what the reporter expected.
+> **Step 2b — DONE (2026-08-19; ships in 0.5.0).** `Scaler::scale(filePath)` and `ImageIO::load()` now
+> `vips_autorot` on load (idempotent for untagged/Procreate inputs), `headerGeometry()` reports display
+> dimensions (transposed for Orientation 5–8) so matching agrees with the pixels, and `ImageIO::save()`
+> drops source EXIF/XMP/IPTC (keeping ICC) so no stray orientation/camera metadata reaches the output.
+> Verified on the three real photos: the Orientation‑6 shot scales portrait `800×1067` (strip total
+> `2267`, was `1800`), the two Orientation‑3 shots render upright, outputs carry no orientation tag. The
+> portrait‑page "contract" needed no special‑casing — an autorotated portrait just scales to
+> `targetWidth` and contributes its taller height, exactly as the reporter expected. Thumbnail previews
+> autorotate too (`ThumbnailCache` dropped `no_rotate`), so input tiles match the render. Tests:
+> `ScalerTest.AutorotatesOrientation6ToPortrait` + the CLI real‑photo orientation test. **153/153 green.**
 
-Both are **bugfixes** (wrong output → correct output), so PATCH — but both *change the rendered result*
-(2a for any multi-page strip with non-aligned boundaries; 2b for any EXIF-rotated input); call them
-out in the changelog.
+Both **2a and 2b** were bugfixes (wrong output → correct output) but each *changes the rendered result*
+(2a for any multi‑page strip with non‑aligned boundaries; 2b for any EXIF‑rotated input) — called out in
+the `[0.5.0]` changelog. **The win10 render bug is now fully closed.**
 
 **Also seen (separate, file to its own entry if confirmed): mixed band counts abort a whole render.**
 Rendering the `temp/win10/` folder *including* its PNG screenshots failed hard with

@@ -40,6 +40,19 @@ Core::PixelBuffer ImageIO::load(const std::string& filePath) const
             vips_error_buffer());
     }
 
+    // Normalise to display orientation first: MarginCropper crops in display coordinates and the scaler
+    // builds the strip from these pixels, so both must see the upright image. vips_autorot rotates per the
+    // EXIF Orientation and drops the tag; a no-op when Orientation is absent or 1 (see Scaler::scale).
+    VipsImage* upright = nullptr;
+    if (vips_autorot(image, &upright, nullptr) != 0) {
+        g_object_unref(image);
+        throw std::runtime_error(
+            "ImageIO::load() — vips_autorot failed for '" + filePath + "': " +
+            vips_error_buffer());
+    }
+    g_object_unref(image);
+    image = upright;
+
     // Attempt to normalise the colour profile to sRGB using any embedded ICC
     // profile.  If none is present or the transform fails, continue with the
     // original image (most Procreate exports are already sRGB).
@@ -95,6 +108,7 @@ void ImageIO::save(
             result = vips_pngsave(buffer.get(), tmpPath.c_str(),
                 "compression", profile.pngOptions.compression,
                 "interlace",   profile.pngOptions.interlaced ? 1 : 0,
+                "keep",        VIPS_FOREIGN_KEEP_ICC, // rendered slice: drop source EXIF/XMP/IPTC, keep colour
                 nullptr);
             break;
 
@@ -116,6 +130,7 @@ void ImageIO::save(
                 "optimize_coding", profile.jpegOptions.optimize   ? 1 : 0,
                 "interlace",       profile.jpegOptions.progressive ? 1 : 0,
                 "subsample_mode",  subsampleMode,
+                "keep",            VIPS_FOREIGN_KEEP_ICC, // drop source EXIF (orientation/camera/thumbnail), keep colour
                 nullptr);
             break;
         }
@@ -126,6 +141,7 @@ void ImageIO::save(
                 "Q",        profile.webpOptions.quality,
                 "lossless", profile.webpOptions.lossless ? 1 : 0,
                 "effort",   profile.webpOptions.effort,
+                "keep",     VIPS_FOREIGN_KEEP_ICC, // rendered slice: drop source EXIF/XMP/IPTC, keep colour
                 nullptr);
             break;
     }

@@ -534,12 +534,11 @@ def test_process_real_photos_no_black_band(
     Step 2a regression: multi-source slices must come out tight, never padded
     to the tallest contributing part (the old vips_arrayjoin black band).
 
-    All three 3264x2448 photos scale to 800x600 at target-width=800 (EXIF
-    orientation is not yet applied — that's Step 2b, covered separately
-    below). Total scaled height 1800px / slice-height 1280 → one full slice
-    (600+600+80 from the three sources) plus a 520px tail — the exact
-    breakdown recorded in docs/TODO.md's Step 2a verification, reproduced
-    here from --trace=0x7 instead of by hand.
+    With EXIF autorotate (Step 2b) applied, the two Orientation-3 photos scale
+    to landscape 800x600 and the Orientation-6 photo to portrait 800x1067.
+    Total scaled height 2267px / slice-height 1280 → one full slice
+    (600+600+80 from the three sources) plus a 987px tail — reproduced here
+    from --trace=0x7 instead of by hand.
     """
     input_dir  = tmp_workspace / "input"
     output_dir = tmp_workspace / "output"
@@ -558,7 +557,7 @@ def test_process_real_photos_no_black_band(
 
     slices = sorted(output_dir.glob("output_*.png"))
     assert len(slices) == 2, (
-        f"Expected 2 slices (1280 + 520 tail), got {len(slices)}: "
+        f"Expected 2 slices (1280 + 987 tail), got {len(slices)}: "
         f"{[p.name for p in slices]}"
     )
 
@@ -582,26 +581,17 @@ def test_process_real_photos_no_black_band(
     _, _, _, w0, h0, parts0 = build_lines[0]
     assert (w0, h0, parts0) == ("800", "1280", "3")
     _, _, _, w1, h1, parts1 = build_lines[1]
-    assert (w1, h1, parts1) == ("800", "520", "1")
+    assert (w1, h1, parts1) == ("800", "987", "1")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Step 2b (EXIF autorotate) not implemented yet — see docs/TODO.md. "
-           "Remove this xfail when Scaler applies vips_autorot.",
-)
 def test_process_real_photos_orientation_applied(
     platemaker_bin: pathlib.Path,
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    Step 2b (not yet implemented): the Orientation=6 photo is a portrait
-    shot stored as landscape 3264x2448. Once Scaler autorotates on load, it
-    must scale to a *portrait* 800xN (N > 800), not today's landscape 800x600.
-
-    strict=True: once Step 2b lands this test starts passing, which XPASSes
-    and fails the suite — a deliberate nudge to delete the xfail marker
-    instead of letting it silently rot.
+    Step 2b regression (EXIF autorotate): the Orientation=6 photo is a portrait
+    shot stored as landscape 3264x2448. Scaler autorotates it on load, so it
+    must scale to a *portrait* 800xN (N > 800), not a landscape 800x600.
     """
     input_dir  = tmp_workspace / "input"
     output_dir = tmp_workspace / "output"

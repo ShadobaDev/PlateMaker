@@ -33,10 +33,10 @@ namespace Platemaker::Core {
 
 namespace {
 
-// Image geometry read from the header only (no pixel decode): the raw stored
-// dimensions plus the EXIF Orientation tag if the file carries one. `width`/`height`
-// are -1 on error. Note these are the *stored* pixel dimensions — they ignore the
-// Orientation tag, exactly as matching currently consumes them.
+// Image geometry read from the header only (no pixel decode): the *display* dimensions plus the EXIF
+// Orientation tag if the file carries one. `width`/`height` are -1 on error. For Orientation 5–8 (the
+// 90°/270° cases) the stored width/height are transposed, so this reports the size the autorotated scaler
+// produces — keeping canvas-profile matching in agreement with what the render builds.
 struct HeaderGeometry {
     int  width          = -1;
     int  height         = -1;
@@ -61,6 +61,11 @@ HeaderGeometry headerGeometry(const std::string& filePath)
             geo.orientation    = o;
             geo.hasOrientation = true;
         }
+    }
+    // Orientation 5–8 rotate by 90°/270°, transposing the displayed image. Report the display size (what
+    // the autorotated scaler produces) so matching and rendering agree; 1–4 keep the stored dimensions.
+    if (geo.orientation >= 5 && geo.orientation <= 8) {
+        const int t = geo.width; geo.width = geo.height; geo.height = t;
     }
     g_object_unref(img);
     return geo;

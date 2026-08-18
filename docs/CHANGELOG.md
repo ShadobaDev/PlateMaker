@@ -41,16 +41,23 @@ the mangled symbol changes, so the GUI pins the version in lockstep.
   tallest part and black-filled the rest — so any slice combining sources of unequal contributed height
   (short camera photos, a page boundary falling mid-slice) came out padded to `N × maxHeight`. Asserts
   `built.height == the requested slice height` as a post-condition, so it can never silently regress.
-- **`headerDim()` → `headerGeometry()`**, which now also reads the EXIF `Orientation` tag (surfaced in
-  the trace). Groundwork only — the pipeline still renders from the stored pixels; honouring Orientation
-  on load is tracked separately (see `docs/TODO.md`).
+- **EXIF `Orientation` is now honoured on load (both pipelines).** Camera JPEGs store landscape pixels
+  plus an Orientation tag; the pipeline ignored it, so a portrait photo rendered on its side, `180°`
+  shots rendered upside‑down, and outputs inherited the source tag so viewers re‑rotated them.
+  `Scaler::scale(filePath)` and `ImageIO::load()` now `vips_autorot` on load (idempotent for the
+  untagged/`1` case — a no‑op for Procreate exports), `headerGeometry()` reports the display dimensions
+  (transposed for Orientation 5–8) so canvas‑profile matching agrees with the rendered pixels, and
+  `ImageIO::save()` drops source EXIF/XMP/IPTC (keeping the ICC colour profile) so a rendered slice
+  carries no stray camera metadata or orientation. (`headerDim()` was renamed `headerGeometry()`.)
 - Internal: `log.hpp` include guard renamed (`…LOGGING…` → `…LOG…`) to match the header path.
 
 ### Tests
 
 - Logger gating + macro laziness; the in-RAM `ThumbnailCache` overload and its warm-→-cache-hit guarantee;
   `ImageIO::save` reporting `OutputLocked` on a held destination (no poll); a deterministic reproduction
-  of the output read/write race. CLI tests assert `--trace` toggles the per-component log tags.
+  of the output read/write race; `Scaler` autorotating an Orientation‑6 image to portrait and leaving an
+  untagged image unchanged. CLI tests assert `--trace` toggles the per-component log tags, and render the
+  three real EXIF photos (`fixtures/real_photos/`) to pin no‑black‑band geometry and portrait autorotation.
 
 ## [0.4.1] — 2026-08-16
 

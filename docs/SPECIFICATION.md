@@ -562,6 +562,19 @@ strip.sliceAll(sliceHeight, lastSlicePolicy)
   → saveEach(outputDir, "output_NNN.png", startIndex)
 ```
 
+### Orientation & output metadata
+
+Both pipelines **normalise to display orientation on load**: `Scaler::scale(filePath)` (standard) and
+`ImageIO::load()` (margin‑aware) apply `vips_autorot`, which rotates a camera JPEG's pixels per its EXIF
+`Orientation` tag and drops the tag. It is **idempotent** for the untagged / `Orientation 1` case, so
+Procreate‑style exports (the main workflow) are unaffected; only rotated photos change. So matching sees
+the same size the render produces, `headerGeometry()` reports **display** dimensions (width/height
+transposed for the 90°/270° tags 5–8). On save, `ImageIO::save()` strips source EXIF/XMP/IPTC (keeping the
+ICC colour profile), so a rendered slice never carries the source's orientation, camera fields, GPS or
+embedded thumbnail — a viewer shows it exactly as built. A genuinely portrait page needs no special
+handling: once autorotated it simply scales to `targetWidth` and contributes its taller height to the
+vertical strip.
+
 ### Template generation pipeline
 ```
 createBlank(canvasProfile.canvasSize, white)

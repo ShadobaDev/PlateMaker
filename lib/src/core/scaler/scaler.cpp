@@ -59,14 +59,9 @@ ScaledImage Scaler::scale(const std::string& filePath, int targetWidth) const
             std::to_string(targetWidth) + ")");
     }
 
-    // Load with VIPS_ACCESS_RANDOM so that the entire image is decoded into
-    // a flat in-memory buffer (for PNG/JPEG/TIFF).  Downstream operations can
-    // then read any row in any order without sequential-access restrictions.
-    //
-    // Note: "no_rotate" is a vips_thumbnail-specific option and is NOT
-    // supported by the generic vips_image_new_from_file() / pngload path.
-    // Procreate exports are already in the correct orientation (EXIF rotation
-    // is baked into the canvas), so no auto-rotation handling is needed here.
+    // Load with VIPS_ACCESS_RANDOM so the whole image is decoded into a flat in-memory buffer, so every
+    // downstream op (resize, extract, join, save) can read tiles in any order without the "out of order
+    // read" failures that vips_thumbnail's SEQUENTIAL mode triggers (see the file header).
     VipsImage* loaded = vips_image_new_from_file(filePath.c_str(),
         "access", VIPS_ACCESS_RANDOM,
         nullptr);
@@ -81,6 +76,22 @@ ScaledImage Scaler::scale(const std::string& filePath, int targetWidth) const
         throw std::runtime_error(
             "Scaler::scale() — source image '" + filePath + "' has zero width");
     }
+
+    // Normalise to display orientation: rotate the pixels per the EXIF Orientation tag and drop the tag.
+    // Camera JPEGs store landscape pixels plus an Orientation tag; without this a rotated photo is built
+    // into the strip sideways / upside-down and the saved slice inherits the tag so viewers re-rotate it.
+    // vips_autorot is idempotent when Orientation is absent or 1 (Procreate exports carry no tag), so this
+    // is a no-op there and only changes genuinely rotated inputs. It preserves random access, so the
+    // "out of order read" guarantee above still holds.
+    VipsImage* upright = nullptr;
+    if (vips_autorot(loaded, &upright, nullptr) != 0) {
+        g_object_unref(loaded);
+        throw std::runtime_error(
+            "Scaler::scale() — vips_autorot failed for '" + filePath + "': " +
+            vips_error_buffer());
+    }
+    g_object_unref(loaded); // autorot holds its own reference
+    loaded = upright;       // continue with the display-correct image
 
     const int    srcW   = loaded->Xsize;
     const int    srcH   = loaded->Ysize;
