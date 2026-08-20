@@ -125,13 +125,39 @@ void ImageIO::save(
                 case Models::JpegSubsampling::YUV_420: subsampleMode = 1; break;
             }
 
-            result = vips_jpegsave(buffer.get(), tmpPath.c_str(),
+            // JPEG cannot carry an alpha channel. The strip may be RGBA when any source had
+            // transparency (ScaledStrip promotes to the widest band layout so mixed RGB/RGBA inputs
+            // join cleanly). Flatten over white here — the one place dropping alpha is unavoidable,
+            // dictated by the format, not our assembly. White matches the PadWhite/EXTEND_WHITE tail
+            // convention; for the promoted, fully-opaque regions the composite is pixel-identical
+            // regardless of background, so only genuinely-transparent pixels are affected.
+            VipsImage* encodeSrc = buffer.get();
+            VipsImage* flattened = nullptr; // owned only if we flatten
+            if (vips_image_hasalpha(encodeSrc)) {
+                double bg[3] = { 255.0, 255.0, 255.0 };
+                VipsArrayDouble* white = vips_array_double_new(bg, 3);
+                const int frc = vips_flatten(encodeSrc, &flattened, "background", white, nullptr);
+                vips_area_unref(VIPS_AREA(white));
+                if (frc != 0) {
+                    const std::string err = vips_error_buffer();
+                    std::error_code rmEc;
+                    fs::remove(utf8ToPath(tmpPath), rmEc);
+                    throw std::runtime_error(
+                        "ImageIO::save() — failed to flatten alpha for JPEG '" + outputPath +
+                        "': " + err);
+                }
+                encodeSrc = flattened;
+            }
+
+            result = vips_jpegsave(encodeSrc, tmpPath.c_str(),
                 "Q",               profile.jpegOptions.quality,
                 "optimize_coding", profile.jpegOptions.optimize   ? 1 : 0,
                 "interlace",       profile.jpegOptions.progressive ? 1 : 0,
                 "subsample_mode",  subsampleMode,
                 "keep",            VIPS_FOREIGN_KEEP_ICC, // drop source EXIF (orientation/camera/thumbnail), keep colour
                 nullptr);
+
+            if (flattened) g_object_unref(flattened);
             break;
         }
 

@@ -81,6 +81,36 @@ TrackedSource appendSource(ScaledStrip& strip, int width, int height, std::strin
     return src;
 }
 
+/// Appends a synthetic sRGB source with an explicit band count: 3 = RGB, 4 = RGBA (genuine
+/// alpha, so vips_image_hasalpha() is true). Returns a handle that observes the image the strip
+/// stores — for the RGB case that is exactly the image normalizeBandCounts() wraps with addalpha,
+/// so releasing the wrapper cascades to releasing it, which is what releasedByStrip() detects.
+TrackedSource appendRgbSource(ScaledStrip& strip, int width, int height, int bands, std::string path)
+{
+    VipsImage* black = nullptr;
+    EXPECT_EQ(vips_black(&black, width, height, "bands", 3, nullptr), 0)
+        << "vips_black failed: " << vips_error_buffer();
+
+    VipsImage* srgb = nullptr;
+    EXPECT_EQ(vips_copy(black, &srgb, "interpretation", VIPS_INTERPRETATION_sRGB, nullptr), 0)
+        << "vips_copy failed: " << vips_error_buffer();
+    g_object_unref(black);
+
+    VipsImage* stored = srgb;
+    if (bands >= 4) {
+        VipsImage* withAlpha = nullptr;
+        EXPECT_EQ(vips_addalpha(srgb, &withAlpha, nullptr), 0)
+            << "vips_addalpha failed: " << vips_error_buffer();
+        g_object_unref(srgb);
+        stored = withAlpha;
+    }
+
+    TrackedSource src{stored, std::move(path)};
+    g_object_ref(stored);  // observation reference; PixelBuffer takes the original
+    strip.append(ScaledImage{PixelBuffer{stored}, src.path});
+    return src;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -283,6 +313,97 @@ TEST(ScaledStripTest, SliceAllStopsWhenCancelled)
         [&](SliceResult&&) { ++seen; return true; });
 
     EXPECT_EQ(seen, 0);
+}
+
+// ---------------------------------------------------------------------------
+// ScaledStrip — band-count normalisation
+//
+// vips_join demands equal band counts. A strip mixing RGB (3-band) and RGBA
+// (4-band) sources used to abort the whole render at the first slice straddling
+// the boundary. sliceAll() now promotes to the widest layout first (opaque alpha
+// added, never flattened), so the join succeeds and alpha is preserved.
+// ---------------------------------------------------------------------------
+
+TEST(ScaledStripTest, SliceAllNormalisesMixedRgbAndRgbaStrip)
+{
+    // 3-band RGB then 4-band RGBA; slice height 150 over two 100px sources → slice 0 straddles the
+    // boundary and would join a 3-band part with a 4-band part. Every emitted slice must be RGBA.
+    ScaledStrip strip;
+    appendRgbSource(strip, 800, 100, 3, "rgb.jpg");
+    appendRgbSource(strip, 800, 100, 4, "rgba.png");
+
+    Infrastructure::CancellationToken cancel;
+    int seen = 0;
+    EXPECT_NO_THROW(
+        strip.sliceAll(150, Models::LastSlicePolicy::KeepAsIs, cancel,
+            [&](SliceResult&& s) {
+                EXPECT_EQ(vips_image_get_bands(s.image.get()), 4)
+                    << "mixed strip must be promoted to RGBA (slice " << s.index << ")";
+                ++seen;
+                return true;
+            }));
+    EXPECT_EQ(seen, 2);
+}
+
+TEST(ScaledStripTest, SliceAllLeavesUniformRgbStripThreeBand)
+{
+    // All-RGB strip: promotion is a no-op — no phantom alpha is added, output stays 3-band.
+    ScaledStrip strip;
+    appendRgbSource(strip, 800, 100, 3, "a.jpg");
+    appendRgbSource(strip, 800, 100, 3, "b.jpg");
+
+    Infrastructure::CancellationToken cancel;
+    int seen = 0;
+    strip.sliceAll(150, Models::LastSlicePolicy::KeepAsIs, cancel,
+        [&](SliceResult&& s) {
+            EXPECT_EQ(vips_image_get_bands(s.image.get()), 3)
+                << "uniform RGB strip must remain 3-band";
+            ++seen;
+            return true;
+        });
+    EXPECT_EQ(seen, 2);
+}
+
+TEST(ScaledStripTest, MixedBandStripStillReleasesSourcesTheCursorHasPassed)
+{
+    // The band-count path must not break the memory contract. normalizeBandCounts() only reads
+    // headers and appends lazy colourspace/addalpha nodes — it never pulls pixels — so sources are
+    // still decoded lazily and released once the slice cursor passes them. Here a 3-band + 4-band
+    // strip forces the promotion path (not the early-out): the RGB source is wrapped with addalpha,
+    // and the wrapper must not pin the underlying image. One 100px source per 100px slice, so slice i
+    // draws only from source i — exactly the release pattern of the uniform-strip test, but proven
+    // through the wrapping path. Every slice comes out RGBA, confirming promotion actually ran.
+    ScaledStrip strip;
+    const TrackedSource rgb  = appendRgbSource(strip, 800, 100, 3, "rgb.jpg");   // wrapped by addalpha
+    const TrackedSource rgba = appendRgbSource(strip, 800, 100, 4, "rgba.png");  // already widest
+    ASSERT_EQ(strip.totalHeight(), 200);
+
+    Infrastructure::CancellationToken cancel;
+    int seen = 0;
+    strip.sliceAll(100, Models::LastSlicePolicy::KeepAsIs, cancel,
+        [&](SliceResult&& slice) {
+            EXPECT_EQ(slice.index, seen);
+            EXPECT_EQ(vips_image_get_bands(slice.image.get()), 4)
+                << "mixed strip must be promoted to RGBA (slice " << seen << ")";
+
+            switch (seen) {
+                case 0:
+                    EXPECT_FALSE(rgb.releasedByStrip())  << "source 0 is in the current slice";
+                    break;
+                case 1:
+                    EXPECT_TRUE(rgb.releasedByStrip())
+                        << "source 0 is behind the cursor — its addalpha wrapper must have been released";
+                    EXPECT_FALSE(rgba.releasedByStrip()) << "source 1 is in the current slice";
+                    break;
+                default:
+                    ADD_FAILURE() << "unexpected slice index " << seen;
+            }
+
+            ++seen;
+            return true;
+        });
+
+    EXPECT_EQ(seen, 2);
 }
 
 // ---------------------------------------------------------------------------

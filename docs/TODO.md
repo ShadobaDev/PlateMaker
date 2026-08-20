@@ -172,10 +172,15 @@ Both **2a and 2b** were bugfixes (wrong output → correct output) but each *cha
 (2a for any multi‑page strip with non‑aligned boundaries; 2b for any EXIF‑rotated input) — called out in
 the `[0.5.0]` changelog. **The win10 render bug is now fully closed.**
 
-**Also seen (separate, file to its own entry if confirmed): mixed band counts abort a whole render.**
-Rendering the `temp/win10/` folder *including* its PNG screenshots failed hard with
-`arrayjoin: not one band or 4 bands` — the pipeline does not normalise band count (RGB vs RGBA vs
-grey) before joining, so one odd input kills the run instead of being coerced or skipped.
+**Mixed band counts abort a whole render — DONE (2026-08-20; ships in 0.5.0).** Rendering the
+`temp/win10/` folder *including* its PNG screenshots failed hard: originally `arrayjoin: not one band or
+4 bands`, and after Step 2a swapped in `vips_join` the same cause surfaced as `vips_join failed: … images
+must have the same number of bands`. Root cause was never the join op — the pipeline did not normalise band
+count (RGB vs RGBA vs grey) before joining, so one odd input killed the run. Fixed by normalising the strip
+**before slicing**: `ScaledStrip::sliceAll()` promotes every entry to the widest band layout (non-RGB
+colourspaces → sRGB, then opaque alpha added where missing) — promote-only, never flattening the user's
+pixels. `ImageIO::save()` drops alpha only for JPEG (which can't carry it), keeping it for PNG/WebP.
+Reproduced on the win10 mixed set (now exits 0 to both PNG and JPEG) and pinned by lib + CLI tests.
 
 ### Dynamic thread spawning for processing
 

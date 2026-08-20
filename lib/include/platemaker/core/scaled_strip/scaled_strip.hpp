@@ -226,6 +226,30 @@ private:
      * \param sliceStartY Y position of the slice about to be built.
      */
     void releaseConsumedEntries(int sliceStartY) noexcept;
+
+    /**
+     * \brief Normalises every entry to one joinable, homogeneous band layout.
+     *
+     * Called once at the top of \c sliceAll(), before any slice is built or any buffer is
+     * released, so every entry still holds its pixels.  \c vips_join (used by \c buildSlice()
+     * to stack the parts of a multi-source slice) requires all inputs to share a band count;
+     * a strip that mixes RGB (3-band) and RGBA (4-band) sources would otherwise abort the
+     * whole render at the first slice straddling that boundary.
+     *
+     * Normalisation is **promote-only** — bands are added, never removed, so the user's
+     * pixels are never composited onto a background here:
+     *   1. Any non-RGB colourspace (grayscale, CMYK, …) is converted to sRGB.  Lossless for
+     *      grayscale; already-RGB/RGBA pixels are left untouched.
+     *   2. Entries with fewer bands than the strip's maximum gain a fully-opaque alpha
+     *      channel (\c vips_addalpha).  If no source has alpha the strip stays RGB.
+     *
+     * The operations are lazy and preserve random access, and they change neither width nor
+     * height, so the strip geometry and the slice-height invariant are unaffected.  Alpha is
+     * dropped only later, at save time, and only for formats (JPEG) that cannot carry it.
+     *
+     * \throws std::runtime_error if a libvips band operation fails.
+     */
+    void normalizeBandCounts();
 }; // class ScaledStrip
 
 } // namespace Platemaker::Core

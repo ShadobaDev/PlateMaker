@@ -575,6 +575,18 @@ embedded thumbnail — a viewer shows it exactly as built. A genuinely portrait 
 handling: once autorotated it simply scales to `targetWidth` and contributes its taller height to the
 vertical strip.
 
+### Band-count normalisation
+
+`vips_join`, which `ScaledStrip::buildSlice()` uses to stack the parts of a multi-source slice, requires all
+inputs to share a band count. A strip mixing RGB (3-band) and RGBA (4-band) sources — e.g. photos next to a
+screenshot — would otherwise abort the whole render at the first slice straddling that boundary. Before any
+slice is built, `ScaledStrip::sliceAll()` normalises the strip **by promotion, never by flattening**: any
+non-RGB colourspace (grayscale, CMYK) is converted to sRGB (lossless for grayscale; already-RGB/RGBA pixels
+untouched), then any entry short of the strip's widest band count gains a fully-opaque alpha channel. The
+user's pixels are therefore never composited onto a background during assembly, and a uniform strip is left
+exactly as-is. Alpha is dropped only at **save**, and only for **JPEG**, which cannot represent it
+(`ImageIO::save()` flattens over white); PNG and WebP preserve the alpha end-to-end.
+
 ### Template generation pipeline
 ```
 createBlank(canvasProfile.canvasSize, white)

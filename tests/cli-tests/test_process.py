@@ -18,7 +18,13 @@ import subprocess
 
 import pytest
 
-from helpers import create_workspace, add_profile, make_solid_png
+from helpers import (
+    create_workspace,
+    add_profile,
+    make_solid_png,
+    make_solid_rgba_png,
+    png_color_type,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +111,72 @@ def test_process_standard_pipeline_produces_slices(
     )
     assert slices[0].name  == "output_001.png"
     assert slices[-1].name == "output_006.png"
+
+
+def _make_mixed_band_pages(input_dir: pathlib.Path) -> None:
+    """Interleave RGB (3-band) and RGBA (4-band) pages, each shorter than the slice height,
+    so a single slice straddles an RGB→RGBA boundary and forces the mixed-band join."""
+    make_solid_png(input_dir / "page_000.png", 800, 800, 10, 20, 30)               # RGB
+    make_solid_rgba_png(input_dir / "page_001.png", 800, 800, 40, 50, 60, 128)     # RGBA
+    make_solid_png(input_dir / "page_002.png", 800, 800, 70, 80, 90)               # RGB
+    make_solid_rgba_png(input_dir / "page_003.png", 800, 800, 100, 110, 120, 200)  # RGBA
+
+
+def test_process_mixed_bands_no_abort(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    A folder mixing RGB (3-band) and RGBA (4-band) pages must not abort the render.
+
+    Regression: the strip used to join mismatched band counts and vips_join failed, killing
+    the whole job. sliceAll() now promotes to the widest layout first (opaque alpha added,
+    never flattened), so the render succeeds and — for PNG, which can carry alpha — the
+    output keeps its 4th band (colour type 6).
+    """
+    input_dir  = tmp_workspace / "input"
+    output_dir = tmp_workspace / "output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    _make_mixed_band_pages(input_dir)
+
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
+
+    result = _run_process(platemaker_bin, ws, output_dir, ["--input", str(input_dir)])
+    assert result.returncode == 0, f"mixed-band render aborted:\n{result.stderr}"
+
+    slices = sorted(output_dir.glob("output_*.png"))
+    assert len(slices) >= 2, f"expected slices, got {[p.name for p in slices]}"
+    assert png_color_type(slices[0]) == 6, (
+        "PNG output must preserve the promoted alpha channel (colour type 6/RGBA)"
+    )
+
+
+def test_process_mixed_bands_jpeg_succeeds(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """
+    The same mixed folder rendered to JPEG must also succeed. JPEG cannot carry alpha, so the
+    strip is flattened at save (the 3-band result is asserted at band level in the lib unit
+    tests); here we only pin that the format-forced flatten does not abort the render.
+    """
+    input_dir  = tmp_workspace / "input"
+    output_dir = tmp_workspace / "output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    _make_mixed_band_pages(input_dir)
+
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
+
+    result = _run_process(platemaker_bin, ws, output_dir,
+                          ["--input", str(input_dir), "--format", "jpg"])
+    assert result.returncode == 0, f"mixed-band JPEG render aborted:\n{result.stderr}"
+    assert sorted(output_dir.glob("output_*.jpg")), "no JPEG slices produced"
 
 
 def test_process_start_index(

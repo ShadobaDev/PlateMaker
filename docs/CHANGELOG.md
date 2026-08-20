@@ -41,6 +41,14 @@ the mangled symbol changes, so the GUI pins the version in lockstep.
   tallest part and black-filled the rest — so any slice combining sources of unequal contributed height
   (short camera photos, a page boundary falling mid-slice) came out padded to `N × maxHeight`. Asserts
   `built.height == the requested slice height` as a post-condition, so it can never silently regress.
+- **Mixed RGB/RGBA (and grayscale/CMYK) inputs no longer abort a render.** A folder combining 3-band
+  (RGB) and 4-band (RGBA) sources — e.g. camera photos next to a stray screenshot — killed the whole job
+  the first time a slice straddled the boundary, because `vips_join` requires equal band counts.
+  `ScaledStrip::sliceAll()` now normalises the strip up front by **promoting to the widest band layout**
+  (any non-RGB colourspace → sRGB, then a fully-opaque alpha added where missing) — promote-only, so the
+  user's pixels are never composited onto a background. A uniform strip is untouched. Alpha is dropped
+  only later, at save, and only for **JPEG**, which cannot carry it (flattened over white); PNG/WebP keep
+  the alpha end-to-end.
 - **EXIF `Orientation` is now honoured on load (both pipelines).** Camera JPEGs store landscape pixels
   plus an Orientation tag; the pipeline ignored it, so a portrait photo rendered on its side, `180°`
   shots rendered upside‑down, and outputs inherited the source tag so viewers re‑rotated them.
@@ -58,6 +66,10 @@ the mangled symbol changes, so the GUI pins the version in lockstep.
   of the output read/write race; `Scaler` autorotating an Orientation‑6 image to portrait and leaving an
   untagged image unchanged. CLI tests assert `--trace` toggles the per-component log tags, and render the
   three real EXIF photos (`fixtures/real_photos/`) to pin no‑black‑band geometry and portrait autorotation.
+- Band-count normalisation: a strip mixing RGB and RGBA sources slices without aborting and every slice is
+  promoted to RGBA, while a uniform RGB strip stays 3-band; `ImageIO::save` flattens alpha to RGB for JPEG
+  and preserves it for PNG. CLI tests render an interleaved RGB/RGBA folder to both PNG (alpha kept) and
+  JPEG (no abort).
 
 ## [0.4.1] — 2026-08-16
 

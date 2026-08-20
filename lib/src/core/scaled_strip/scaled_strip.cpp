@@ -219,6 +219,75 @@ void ScaledStrip::releaseConsumedEntries(int sliceStartY) noexcept
 }
 
 // ---------------------------------------------------------------------------
+// normalizeBandCounts (private)
+// ---------------------------------------------------------------------------
+
+void ScaledStrip::normalizeBandCounts()
+{
+    // vips_join (buildSlice's multi-source stacker) requires all inputs to share a band count.
+    // Bring every entry to one joinable, homogeneous layout — promote-only, so the user's pixels
+    // are never flattened onto a background here (that happens only at save, only for JPEG).
+
+    // Early out: if every entry already shares a band count, joins already work and there is nothing
+    // to reconcile — leave the strip exactly as it is. A uniform grayscale / RGB / RGBA strip is thus
+    // untouched (no colour conversion, no added alpha); only a genuine mix is normalised below.
+    {
+        int firstBands = -1;
+        bool uniform   = true;
+        for (const auto& entry : m_entries) {
+            if (VipsImage* cur = entry.image.buffer.get()) {
+                const int b = vips_image_get_bands(cur);
+                if (firstBands < 0)        firstBands = b;
+                else if (b != firstBands)  { uniform = false; break; }
+            }
+        }
+        if (uniform) return;
+    }
+
+    // Pass 1: fold any non-RGB colourspace (grayscale, CMYK, …) into sRGB. Lossless for grayscale
+    // (luma is replicated across the three bands); already-RGB/RGBA pixels are left untouched. After
+    // this every entry is 3-band (RGB) or 4-band (RGBA).
+    for (auto& entry : m_entries) {
+        VipsImage* cur = entry.image.buffer.get();
+        if (!cur) continue;
+        const VipsInterpretation interp = cur->Type;
+        if (interp == VIPS_INTERPRETATION_sRGB || interp == VIPS_INTERPRETATION_RGB) continue;
+
+        VipsImage* rgb = nullptr;
+        if (vips_colourspace(cur, &rgb, VIPS_INTERPRETATION_sRGB, nullptr) != 0) {
+            throw std::runtime_error(
+                "ScaledStrip::normalizeBandCounts() — vips_colourspace failed for '" +
+                entry.image.sourceFilePath + "': " + vips_error_buffer());
+        }
+        entry.image.buffer = PixelBuffer{rgb}; // takes ownership; unrefs the previous image
+    }
+
+    // Pass 2: promote every entry to the widest band count present by adding a fully-opaque alpha
+    // channel. If no source carries alpha, maxBands stays 3 and nothing is touched.
+    int maxBands = 0;
+    for (const auto& entry : m_entries) {
+        if (VipsImage* cur = entry.image.buffer.get())
+            maxBands = std::max(maxBands, vips_image_get_bands(cur));
+    }
+    for (auto& entry : m_entries) {
+        VipsImage* cur = entry.image.buffer.get();
+        if (!cur || vips_image_get_bands(cur) >= maxBands) continue;
+
+        VipsImage* withAlpha = nullptr;
+        if (vips_addalpha(cur, &withAlpha, nullptr) != 0) {
+            throw std::runtime_error(
+                "ScaledStrip::normalizeBandCounts() — vips_addalpha failed for '" +
+                entry.image.sourceFilePath + "': " + vips_error_buffer());
+        }
+        entry.image.buffer = PixelBuffer{withAlpha}; // takes ownership; unrefs the previous image
+
+        PLATEMAKER_LOG(Log::ScaledStrip,
+                "promoted " + entry.image.sourceFilePath + " to "
+                + std::to_string(maxBands) + " bands (opaque alpha added)");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // sliceAll
 // ---------------------------------------------------------------------------
 
@@ -239,6 +308,10 @@ void ScaledStrip::sliceAll(
     if (!onSlice) {
         throw std::runtime_error("ScaledStrip::sliceAll() — onSlice callback is empty");
     }
+
+    // Homogenise band counts before any slice is built (all buffers are still live here) so a strip
+    // mixing RGB and RGBA sources joins cleanly instead of aborting mid-render.
+    normalizeBandCounts();
 
     const int numFull = m_totalHeight / sliceHeight;
     const int tail    = m_totalHeight % sliceHeight;

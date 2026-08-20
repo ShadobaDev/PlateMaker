@@ -57,6 +57,48 @@ def make_solid_png(
     pathlib.Path(path).write_bytes(sig + ihdr + idat + iend)
 
 
+def make_solid_rgba_png(
+    path: str | pathlib.Path,
+    width: int,
+    height: int,
+    r: int = 255,
+    g: int = 255,
+    b: int = 255,
+    a: int = 255,
+) -> None:
+    """
+    Write a minimal solid-colour **RGBA** PNG (colour type 6) — a 4-band source.
+
+    Same stdlib-only approach as :func:`make_solid_png`, but with an alpha
+    channel, so libvips decodes it as a 4-band image.  Used to build folders
+    that mix 3-band (RGB) and 4-band (RGBA) pages.
+
+    :param a: Alpha channel value (0–255), default 255 (opaque).
+    """
+    sig  = b"\x89PNG\r\n\x1a\n"
+    ihdr = _png_chunk(
+        b"IHDR",
+        struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0),  # colour type 6 = RGBA
+    )
+    row  = bytes([0]) + bytes([r, g, b, a] * width)
+    raw  = row * height
+    idat = _png_chunk(b"IDAT", zlib.compress(raw, 1))
+    iend = _png_chunk(b"IEND", b"")
+
+    pathlib.Path(path).write_bytes(sig + ihdr + idat + iend)
+
+
+def png_color_type(path: str | pathlib.Path) -> int:
+    """
+    Return the PNG colour-type byte from a file's IHDR (stdlib only).
+
+    2 = RGB (3-band), 6 = RGBA (4-band).  The byte lives at a fixed offset:
+    8-byte signature + 8-byte chunk header + width(4) + height(4) + bit-depth(1).
+    """
+    data = pathlib.Path(path).read_bytes()
+    return data[25]
+
+
 # ---------------------------------------------------------------------------
 # Workspace helpers
 # ---------------------------------------------------------------------------
