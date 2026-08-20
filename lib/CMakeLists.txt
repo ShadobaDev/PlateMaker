@@ -104,6 +104,8 @@ target_compile_features(platemaker-lib PUBLIC cxx_std_20)
 # This warning fires for every std::string / std::vector member in an exported
 # type, which is expected for a header-only public API compiled by the same
 # toolchain.  PUBLIC so consumers building against our headers are also quiet.
+# (C4275 is deliberately NOT suppressed — no exported type derives from a std base; exception types use
+#  PLATEMAKER_EXCEPTION_EXPORT instead, so /WX still guards against a future dllexport'd std-derived class.)
 if(MSVC)
     target_compile_options(platemaker-lib PUBLIC /wd4251)
 endif()
