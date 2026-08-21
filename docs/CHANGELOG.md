@@ -57,6 +57,19 @@ the mangled symbol changes, so the GUI pins the version in lockstep.
   (transposed for Orientation 5–8) so canvas‑profile matching agrees with the rendered pixels, and
   `ImageIO::save()` drops source EXIF/XMP/IPTC (keeping the ICC colour profile) so a rendered slice
   carries no stray camera metadata or orientation. (`headerDim()` was renamed `headerGeometry()`.)
+- **Adding a canvas profile no longer marks a whole project out of date when the profile matches no
+  page.** Canvas profiles match purely by canvas W×H, but a page's dimensions were never recorded, so
+  `detectCanvasConfigChange()` could only fall back to a blanket "the effective profile list changed →
+  every page is suspect" — creating one profile turned an entire chapter's tiles amber and raised a scary
+  "state cannot be confirmed" prompt even when nothing it matched existed in the project. Each
+  `InputFile` now records the display **W×H** the render resolved against (added additively to the
+  workspace JSON, `0` = unknown), and `detectCanvasConfigChange()` re-matches every page against the
+  profiles now in effect — flagging only pages whose applied profile actually changed (a new profile that
+  now matches a previously-unmatched page, a removed/reordered one, or an in-place margin edit). The match
+  is scoped to the project's **assigned** profiles only (mirroring `CanvasProfileMatcher`'s subA), so an
+  unlinked workspace profile of the same size never desyncs a project. A legacy page with no recorded
+  size keeps the honest coarse fallback until its first re-render records the size. The single W×H match
+  rule is now `Models::canvasSizeMatches()`, shared by the matcher and the staleness re-match.
 - Internal: `log.hpp` include guard renamed (`…LOGGING…` → `…LOG…`) to match the header path.
 
 ### Tests
@@ -70,6 +83,12 @@ the mangled symbol changes, so the GUI pins the version in lockstep.
   promoted to RGBA, while a uniform RGB strip stays 3-band; `ImageIO::save` flattens alpha to RGB for JPEG
   and preserves it for PNG. CLI tests render an interleaved RGB/RGBA folder to both PNG (alpha kept) and
   JPEG (no abort).
+- Precise canvas-profile staleness: adding a profile that matches no page keeps the project up to date;
+  one that matches a previously-unmatched page flags only that page; an unlinked same-size workspace
+  profile never desyncs; duplicate-W×H profiles resolve by effective order; and the coarse fallback still
+  fires for legacy pages with no recorded size. `sanitize()` marks only the affected tiles, and the
+  per-input W×H round-trips through the workspace serializer. A CLI test renders a folder, confirms the
+  dimensions are recorded, then adds a non-matching canvas profile and asserts the re-run is a no-op.
 
 ## [0.4.1] — 2026-08-16
 

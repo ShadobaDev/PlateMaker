@@ -149,6 +149,25 @@ public:
  */
 [[nodiscard]] PLATEMAKER_EXPORT std::string canvasRenderFingerprint(const CanvasProfile& cp);
 
+// ---------------------------------------------------------------------------
+// Dimension match
+// ---------------------------------------------------------------------------
+
+/**
+ * \brief Returns \c true when \p cp is the canvas for an image of size \p w × \p h.
+ *
+ * Canvas matching is exact equality on the full \c canvasSize — an image belongs to a
+ * profile only when its pixel dimensions are the profile's canvas dimensions.  This is
+ * the single definition of that rule, shared by \c CanvasProfileMatcher::resolve() (the
+ * render-time resolver) and \c ProjectItem::detectCanvasConfigChange() (the offline
+ * staleness re-match), so the two can never drift apart.
+ *
+ * \param cp Profile to test.
+ * \param w  Image width in pixels.
+ * \param h  Image height in pixels.
+ */
+[[nodiscard]] PLATEMAKER_EXPORT bool canvasSizeMatches(const CanvasProfile& cp, int w, int h) noexcept;
+
 } // namespace Platemaker::Models
 
 #endif // PLATEMAKER_MODELS_CANVAS_PROFILE_HPP

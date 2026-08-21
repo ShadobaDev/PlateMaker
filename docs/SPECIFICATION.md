@@ -718,6 +718,37 @@ checks for a collision and returns a structured error identifying the conflictin
 profile — so the CLI can suggest a removal command and the GUI can highlight the
 offending entry.
 
+#### 7.5.3 Staleness detection — per-input dimensions and precise re-match
+
+Editing a canvas profile — or adding, removing, or reordering one — changes neither the input files
+nor the output files, so no SHA-256 pass can notice that a page's output went stale.
+`ProjectItem::detectCanvasConfigChange()` is what notices, and it must be **precise**: marking a whole
+project stale whenever the profile list merely grows turns every tile amber and raises an alarming prompt
+even when the new profile matches no page in the project.
+
+Because matching is purely by canvas **W×H** (§7.5.1), the question "which profile would this page match
+now?" is answerable offline *only if the page's dimensions are known*. Each `InputFile` therefore records
+the display **`width`/`height`** the render resolved against — the same post-autorot dimensions the pipeline
+fed to `CanvasProfileMatcher::resolve()`, captured via `AppliedCanvasProfile` and stored by
+`applyProcessingResults()` (serialised additively; `0` = unknown).
+
+`detectCanvasConfigChange()` then, for each input with known dimensions, resolves the profile it would
+match now — the **first profile of that W×H in the project's effective list** (`effectiveCanvasProfileIds()`,
+identical to the matcher's subA order) — and flags the page only if that profile's **id or
+`canvasRenderFingerprint()`** differs from what was recorded. This catches every case precisely: a new
+profile that now matches a previously-unmatched page (`"" → id`), a removed or reordered one, and an
+in-place margin edit (same id, different fingerprint). Crucially the re-match considers **only the
+project's assigned (effective) profiles**, never workspace-only ones — an unlinked same-size profile
+returns `FoundInWorkspaceOnly` at render (the page is rendered without margins), so adding it must not, and
+does not, desync the project. `sanitize()` marks exactly the affected inputs and the slices they fed
+(`Desynchronized`).
+
+The single W×H rule is `Models::canvasSizeMatches()`, shared by the matcher and this re-match so the two
+can never drift. A page with **no recorded dimensions** (a legacy record rendered before dimensions were
+tracked) cannot be re-matched, so it falls back to the coarse `listChanged` comparison
+(`effectiveCanvasProfileIds() != canvasProfileIdsAtRender`) — the honest outcome, degrading to one full
+re-render that records the dimensions and makes the project precise thereafter.
+
 ##### Profile identity
 
 `CanvasProfile::id` and `OutputProfile::id` are **random and unique within a workspace**.

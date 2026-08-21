@@ -156,9 +156,11 @@ ProcessingOutcome ProcessingPipeline::run(
         std::vector<std::string> candidateIds;
 
         try {
-            HeaderGeometry geo;
-            if (hasProfiles || Log::isEnabled(Log::ProcessingPipeline))
-                geo = headerGeometry(file.filePath);
+            // Read the header unconditionally: the display W×H is recorded per input (below) so a later
+            // run can tell offline which canvas profile each page would match now — matching is purely by
+            // W×H, and without the stored dimensions any profile-list change degrades to a whole-project
+            // re-render. A header read is negligible beside the decode + scale that follow.
+            const HeaderGeometry geo = headerGeometry(file.filePath);
             PLATEMAKER_LOG(Log::ProcessingPipeline,
                     "read " + file.filePath + ": header "
                     + std::to_string(geo.width) + "x" + std::to_string(geo.height)
@@ -214,7 +216,9 @@ ProcessingOutcome ProcessingPipeline::run(
                 file.filePath,
                 matchedProfile ? matchedProfile->id : std::string{},
                 matchedProfile ? Models::canvasRenderFingerprint(*matchedProfile)
-                               : std::string{}});
+                               : std::string{},
+                geo.width,
+                geo.height});
 
             const bool doMarginCrop =
                 matchedProfile != nullptr &&

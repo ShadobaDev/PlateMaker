@@ -39,4 +39,9 @@ std::string canvasRenderFingerprint(const CanvasProfile& cp)
     return s;
 }
 
+bool canvasSizeMatches(const CanvasProfile& cp, int w, int h) noexcept
+{
+    return cp.canvasSize.width == w && cp.canvasSize.height == h;
+}
+
 } // namespace Platemaker::Models

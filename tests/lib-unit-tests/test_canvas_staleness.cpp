@@ -72,6 +72,18 @@ ProjectItem makeRenderedProject(const std::vector<CanvasProfile>& profiles,
     return p;
 }
 
+/// Same as makeRenderedProject but records the page's display W×H, so
+/// detectCanvasConfigChange() takes the *precise* per-page re-match path rather than the
+/// coarse legacy fallback used when dimensions are unknown.
+ProjectItem makeSizedProject(const std::vector<CanvasProfile>& profiles,
+                             const std::string& usedProfileId, int w, int h)
+{
+    ProjectItem p = makeRenderedProject(profiles, usedProfileId);
+    p.getInputImages()[0].width  = w;
+    p.getInputImages()[0].height = h;
+    return p;
+}
+
 // ---------------------------------------------------------------------------
 // On-disk fixture — sanitize() checks the filesystem, so the "clean" statuses it
 // must produce before any config marking can apply require real files.
@@ -389,6 +401,106 @@ TEST(CanvasConfigChangeTest, BaselineSurvivesAMove)
 }
 
 // ---------------------------------------------------------------------------
+// detectCanvasConfigChange — precise per-page re-match (dimensions recorded)
+//
+// Once each page's display W×H is recorded, adding / removing / reordering a profile no
+// longer blanket-invalidates the whole project: only pages whose matched profile actually
+// changes are flagged. This is the fix for "create a profile → the whole project goes amber
+// and a scary dialog appears, even when the profile matches nothing".
+// ---------------------------------------------------------------------------
+
+TEST(CanvasConfigChangePreciseTest, AddingAProfileThatMatchesNoPageStaysQuiet)
+{
+    // The reported bug: the only page is 1600×10240; add an 800×1280 profile that matches
+    // nothing. With dimensions recorded, the project must NOT report itself out of date.
+    std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
+    const auto project = makeSizedProject(ws, "p1", 1600, 10240);
+
+    ASSERT_FALSE(project.detectCanvasConfigChange(ws).any());
+
+    ws.push_back(makeProfile("p2", 800, 1280, 0));   // matches no page in this project
+
+    const auto change = project.detectCanvasConfigChange(ws);
+    EXPECT_FALSE(change.any()) << "a profile that matches nothing must not invalidate the project";
+    EXPECT_FALSE(change.listChanged);
+    EXPECT_TRUE(change.changedInputs.empty());
+}
+
+TEST(CanvasConfigChangePreciseTest, AddingAProfileThatMatchesAPreviouslyUnmatchedPageFlagsOnlyIt)
+{
+    // The page was rendered without any profile (it matched nothing); a new profile of its
+    // exact size now applies → that page (only) is stale, and precisely so.
+    std::vector<CanvasProfile> ws;                       // rendered with no profiles at all
+    const auto project = makeSizedProject(ws, "", 1080, 1920);
+
+    ws.push_back(makeProfile("p1", 1080, 1920, 40));
+
+    const auto change = project.detectCanvasConfigChange(ws);
+    EXPECT_TRUE(change.any());
+    EXPECT_FALSE(change.listChanged) << "precision, not the coarse list fallback";
+    EXPECT_EQ(change.changedInputs, (std::vector<std::string>{"page_000.png"}));
+}
+
+TEST(CanvasConfigChangePreciseTest, MarginEditFlagsTheAffectedPage)
+{
+    // The precise-path equivalent of MarginEditInvalidatesTheAffectedPage: an in-place edit
+    // to the matched profile is caught by the fingerprint half of the re-match.
+    std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
+    const auto project = makeSizedProject(ws, "p1", 1600, 10240);
+    ASSERT_FALSE(project.detectCanvasConfigChange(ws).any());
+
+    ws[0].margins.top = 150;
+
+    const auto change = project.detectCanvasConfigChange(ws);
+    EXPECT_TRUE(change.any());
+    EXPECT_FALSE(change.listChanged);
+    EXPECT_EQ(change.changedInputs, (std::vector<std::string>{"page_000.png"}));
+}
+
+TEST(CanvasConfigChangePreciseTest, UnlinkedWorkspaceProfileOfMatchingSizeIsIgnored)
+{
+    // Assignment scoping. The project has an explicit linked list {p1}. A workspace profile of
+    // the *same* W×H that is NOT linked (subB) never applies — the matcher renders the page
+    // without it — so adding it to the workspace must not desync the project.
+    std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
+    auto project = makeSizedProject(ws, "p1", 1600, 10240);
+    project.addCanvasProfile(ws, "p1");                                  // explicit list = {p1}
+    project.canvasProfileIdsAtRender = project.effectiveCanvasProfileIds(ws);
+    ASSERT_FALSE(project.detectCanvasConfigChange(ws).any());
+
+    ws.push_back(makeProfile("p2", 1600, 10240, 50));                    // same size, NOT linked
+
+    EXPECT_FALSE(project.detectCanvasConfigChange(ws).any())
+        << "an unlinked workspace-only profile never applies, so it cannot desync the project";
+}
+
+TEST(CanvasConfigChangePreciseTest, DuplicateSizeResolvesByEffectiveOrder)
+{
+    // Accept-all project (no per-project list). Two profiles share 1600×10240; the page matched
+    // the first in workspace order (p1). Adding a third same-size profile AHEAD of p1 changes the
+    // winner → stale; adding one BEHIND does not — exactly as CanvasProfileMatcher resolves.
+    std::vector<CanvasProfile> ws{
+        makeProfile("p1", 1600, 10240, 100),
+        makeProfile("p2", 1600, 10240, 50),
+    };
+    const auto project = makeSizedProject(ws, "p1", 1600, 10240);
+    ASSERT_FALSE(project.detectCanvasConfigChange(ws).any());
+
+    // p0 (same size) inserted at the FRONT → it now wins → the page is stale.
+    std::vector<CanvasProfile> ahead{makeProfile("p0", 1600, 10240, 10)};
+    ahead.insert(ahead.end(), ws.begin(), ws.end());
+    const auto changedAhead = project.detectCanvasConfigChange(ahead);
+    EXPECT_TRUE(changedAhead.any());
+    EXPECT_FALSE(changedAhead.listChanged);
+    EXPECT_EQ(changedAhead.changedInputs, (std::vector<std::string>{"page_000.png"}));
+
+    // p3 (same size) appended at the BACK → p1 still wins → quiet.
+    std::vector<CanvasProfile> behind = ws;
+    behind.push_back(makeProfile("p3", 1600, 10240, 10));
+    EXPECT_FALSE(project.detectCanvasConfigChange(behind).any());
+}
+
+// ---------------------------------------------------------------------------
 // sanitize() — config staleness surfaces as FileStatus::Desynchronized
 //
 // This is what paints the tiles amber in the UI, so it is asserted on the statuses
@@ -479,6 +591,47 @@ TEST(SanitizeCanvasTest, MarginEditDesynchronizesOnlyTheAffectedPages)
 
     EXPECT_EQ(d.inputStatus(2),  FileStatus::Processed);
     EXPECT_EQ(d.outputStatus(2), FileStatus::Done);
+}
+
+TEST(SanitizeCanvasTest, AddingAMatchingProfileDesynchronizesOnlyThePagesItMatches)
+{
+    // The end-to-end tile story for the reported bug. Three pages rendered without a profile,
+    // dimensions recorded: pages 0 and 2 are 1600×10240, page 1 is 800×1280. Adding a profile
+    // of 800×1280 must turn only page 1 (and its slice) amber — not the whole project.
+    DiskProject d("addmatch", 3, /*profiles*/ {}, /*usedProfileId*/ "");
+    auto& pages = d.project.getInputImages();
+    pages[0].width = 1600; pages[0].height = 10240;
+    pages[1].width = 800;  pages[1].height = 1280;
+    pages[2].width = 1600; pages[2].height = 10240;
+
+    ASSERT_TRUE(d.project.sanitize(std::vector<CanvasProfile>{})) << "baseline clean with no profiles";
+
+    const std::vector<CanvasProfile> ws{makeProfile("p1", 800, 1280, 40)};   // matches page 1 only
+    EXPECT_FALSE(d.project.sanitize(ws));
+
+    EXPECT_EQ(d.inputStatus(0),  FileStatus::Processed);
+    EXPECT_EQ(d.outputStatus(0), FileStatus::Done);
+    EXPECT_EQ(d.inputStatus(1),  FileStatus::Desynchronized) << "the page the new profile matches";
+    EXPECT_EQ(d.outputStatus(1), FileStatus::Desynchronized) << "the slice it fed";
+    EXPECT_EQ(d.inputStatus(2),  FileStatus::Processed);
+    EXPECT_EQ(d.outputStatus(2), FileStatus::Done);
+}
+
+TEST(SanitizeCanvasTest, AddingANonMatchingProfileLeavesEverythingClean)
+{
+    // The exact "why is it all amber?" regression: with dimensions recorded, a new profile that
+    // matches no page must leave the project fully up to date and quiet.
+    DiskProject d("addnomatch", 3, /*profiles*/ {}, /*usedProfileId*/ "");
+    for (auto& inf : d.project.getInputImages()) { inf.width = 1600; inf.height = 10240; }
+
+    ASSERT_TRUE(d.project.sanitize(std::vector<CanvasProfile>{}));
+
+    const std::vector<CanvasProfile> ws{makeProfile("p1", 800, 1280, 40)};   // matches nothing here
+    EXPECT_TRUE(d.project.sanitize(ws)) << "a profile that matches nothing must not desynchronize";
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed) << "input " << i;
+        EXPECT_EQ(d.outputStatus(i), FileStatus::Done)      << "output " << i;
+    }
 }
 
 TEST(SanitizeCanvasTest, LegacyWorkspaceDesynchronizesEverything)

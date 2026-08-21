@@ -177,7 +177,9 @@ void to_json(nlohmann::json& j, const InputFile& v) {
         {"lastProcessed", v.lastProcessed},
         {"contributesTo", v.contributesTo},
         {"canvasProfileId", v.canvasProfileId},
-        {"canvasFingerprint", v.canvasFingerprint}
+        {"canvasFingerprint", v.canvasFingerprint},
+        {"width", v.width},
+        {"height", v.height}
     };
 }
 void from_json(const nlohmann::json& j, InputFile& v) {
@@ -195,6 +197,11 @@ void from_json(const nlohmann::json& j, InputFile& v) {
     // tracked; an empty fingerprint simply means "no baseline for this page".
     if (j.contains("canvasProfileId"))   j.at("canvasProfileId").get_to(v.canvasProfileId);
     if (j.contains("canvasFingerprint")) j.at("canvasFingerprint").get_to(v.canvasFingerprint);
+    // additive — the recorded display W×H (0 = unknown). Absent in workspaces written before
+    // per-input dimensions were tracked; detectCanvasConfigChange() then falls back to the coarse
+    // list comparison for that page until the next render records its size.
+    if (j.contains("width"))  j.at("width").get_to(v.width);
+    if (j.contains("height")) j.at("height").get_to(v.height);
 }
 
 // --- SourceSegment ---

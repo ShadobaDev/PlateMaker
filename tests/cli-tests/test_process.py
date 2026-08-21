@@ -483,6 +483,58 @@ def test_process_incremental_skips_unchanged_files(
     assert len(slices_after_run2) == 6
 
 
+def test_process_records_dimensions_and_ignores_nonmatching_profile(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """Per-input dimensions are recorded at render time, and a canvas profile that
+    matches no page must not force a re-render.
+
+    Regression for the "create a canvas profile → the whole project reports itself out
+    of date (scary dialog / amber tiles) even though the profile matches nothing" bug.
+    The fix records each page's display W×H so the library can tell, offline, that the
+    new profile applies to no page.
+
+    1. Process 3 pages (800×2560) with no canvas profiles → each inputFile records
+       ``width``/``height`` in the workspace JSON (pipeline → serializer, end to end).
+    2. Add a canvas profile of a *different* size (1000×2000) that matches no page.
+    3. Re-process → "nothing to do": the recorded dimensions prove the new profile
+       applies to nothing, so nothing is re-rendered.
+    """
+    input_dir  = tmp_workspace / "input"
+    output_dir = tmp_workspace / "output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    _make_pages(input_dir, 3, width=800, height=2560)
+
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
+
+    # --- First run: no canvas profiles ---
+    r1 = _run_process(platemaker_bin, ws, output_dir, ["--input", str(input_dir)])
+    assert r1.returncode == 0, f"First run failed:\n{r1.stderr}"
+
+    # Dimensions recorded end-to-end (pipeline → applyProcessingResults → serializer).
+    data   = json.loads(ws.read_text())
+    inputs = data["projectItems"][0]["inputFiles"]
+    assert len(inputs) == 3
+    for inf in inputs:
+        assert inf["width"]  == 800,  f"width not recorded: {inf}"
+        assert inf["height"] == 2560, f"height not recorded: {inf}"
+
+    # --- Add a canvas profile that matches no page (1000×2000) ---
+    add_profile(platemaker_bin, ws, name="NoMatch", canvas="1000x2000",
+                margins="0,0,0,0")
+
+    # --- Second run: the new profile matches nothing → nothing to re-render ---
+    r2 = _run_process(platemaker_bin, ws, output_dir, ["--input", str(input_dir)])
+    assert r2.returncode == 0, f"Second run failed:\n{r2.stderr}"
+    assert "nothing to do" in r2.stderr.lower() or "unchanged" in r2.stderr.lower(), (
+        f"A canvas profile that matches nothing forced a re-render:\n{r2.stderr}"
+    )
+
+
 def test_process_incremental_reprocesses_changed_file(
     platemaker_bin: pathlib.Path,
     tmp_workspace:  pathlib.Path,

@@ -369,29 +369,70 @@ CanvasConfigChange ProjectItem::detectCanvasConfigChange(
     if (m_output_images.empty())
         return change;
 
-    // Workspaces written before per-input fingerprints existed have no baseline
-    // either, so a project that uses profiles reports listChanged here and takes one
-    // full re-render to establish it. That is the honest outcome — those outputs may
-    // genuinely be stale, since not noticing this is exactly the bug being fixed.
-    change.listChanged =
-        (effectiveCanvasProfileIds(workspaceProfiles) != canvasProfileIdsAtRender);
+    // The project's effective/assigned profile list, in the order the matcher applies it. This
+    // mirrors CanvasProfileMatcher's subA exactly (see effectiveCanvasProfileIds() /
+    // canvas_profile_matcher.cpp): an empty per-project list means "accept all workspace profiles"
+    // in workspace order; an explicit list is used in project-priority order. Workspace-only
+    // profiles are deliberately NOT here — the matcher never *applies* them (a same-size unlinked
+    // profile returns FoundInWorkspaceOnly, i.e. the page renders without a profile), so a page that
+    // only matches an unlinked profile is treated as "no profile" and adding that profile never
+    // desyncs this project. Resolving ids to profiles here cannot drop any: effectiveCanvasProfileIds
+    // already omits ids absent from the workspace.
+    const std::vector<std::string> effectiveIds = effectiveCanvasProfileIds(workspaceProfiles);
+    std::vector<const CanvasProfile*> effective;
+    effective.reserve(effectiveIds.size());
+    for (const auto& id : effectiveIds) {
+        const auto it = std::find_if(workspaceProfiles.begin(), workspaceProfiles.end(),
+            [&id](const CanvasProfile& cp) { return cp.id == id; });
+        if (it != workspaceProfiles.end())
+            effective.push_back(&*it);
+    }
 
-    // Per-input: did the profile this page was rendered with change content?
+    // Per-page re-match. For each input, decide whether the profile it would render with *now*
+    // differs from the one recorded at the last render.
+    bool anyUnknownDims = false;
     for (const auto& inf : m_input_images) {
-        if (inf.canvasProfileId.empty())
-            continue;   // no profile applied — the list check above covers this page
+        if (inf.width > 0 && inf.height > 0) {
+            // Dimensions known → resolve precisely: the first effective profile of this W×H, identical
+            // to what CanvasProfileMatcher::resolve() returns as Matched (the conflict guard makes it
+            // final for a linked list; for accept-all the first in effective order wins, as the matcher
+            // does). A page is stale only if its applied profile changed — a different id (including
+            // "" ⇄ id: a newly-added profile now matches a page that had none, or a removed/reordered
+            // one), or the same id whose render-relevant fields were edited (fingerprint differs). This
+            // is what makes a profile that matches *no* page stay silent instead of desyncing the lot.
+            const CanvasProfile* now = nullptr;
+            for (const auto* cp : effective) {
+                if (canvasSizeMatches(*cp, inf.width, inf.height)) { now = cp; break; }
+            }
 
-        const auto it = std::find_if(
-            workspaceProfiles.begin(), workspaceProfiles.end(),
-            [&inf](const CanvasProfile& cp) { return cp.id == inf.canvasProfileId; });
+            const std::string nowId = now ? now->id : std::string{};
+            const std::string nowFp = now ? canvasRenderFingerprint(*now) : std::string{};
 
-        // Profile deleted outright, or its render-relevant fields differ.
-        if (it == workspaceProfiles.end() ||
-            canvasRenderFingerprint(*it) != inf.canvasFingerprint)
-        {
-            change.changedInputs.push_back(inf.filePath);
+            if (nowId != inf.canvasProfileId || nowFp != inf.canvasFingerprint)
+                change.changedInputs.push_back(inf.filePath);
+        } else {
+            // Dimensions unknown (legacy page rendered before they were tracked) → cannot re-match.
+            // Fall back to the per-input fingerprint check, which still catches an in-place edit or a
+            // deletion of the profile this page recorded, and flag for the coarse list comparison below,
+            // which is the only thing that can catch a newly-added profile now matching a page that
+            // recorded none (there is no baseline to compare that page against).
+            anyUnknownDims = true;
+            if (!inf.canvasProfileId.empty()) {
+                const auto it = std::find_if(workspaceProfiles.begin(), workspaceProfiles.end(),
+                    [&inf](const CanvasProfile& cp) { return cp.id == inf.canvasProfileId; });
+                if (it == workspaceProfiles.end() ||
+                    canvasRenderFingerprint(*it) != inf.canvasFingerprint)
+                    change.changedInputs.push_back(inf.filePath);
+            }
         }
     }
+
+    // Coarse fallback — engaged only when some page has no stored dimensions (a legacy record the
+    // precise pass could not re-match). When every page's dimensions are known the precise pass is
+    // complete and authoritative, so listChanged stays false and adding a profile that matches nothing
+    // produces no warning. A legacy workspace thus takes one full re-render to record dimensions and
+    // become precise — the honest outcome, since those outputs may genuinely be stale.
+    change.listChanged = anyUnknownDims && (effectiveIds != canvasProfileIdsAtRender);
 
     return change;
 }
@@ -504,9 +545,17 @@ std::vector<ProcessingError> ProjectItem::applyProcessingResults(
         if (ap != applied.end()) {
             inf.canvasProfileId   = ap->second->profileId;
             inf.canvasFingerprint = ap->second->fingerprint;
+            // Record the display W×H the run resolved against, so detectCanvasConfigChange() can
+            // re-match this page offline instead of blanket-invalidating on any profile-list change.
+            // Only overwrite from a real reading (>0): a page the run could not measure keeps whatever
+            // dimensions a previous successful render established rather than dropping to "unknown".
+            if (ap->second->width  > 0) inf.width  = ap->second->width;
+            if (ap->second->height > 0) inf.height = ap->second->height;
         } else {
             inf.canvasProfileId.clear();
             inf.canvasFingerprint.clear();
+            // Leave width/height as-is: dimensions are a property of the file, not the render config,
+            // and a page the run never reached (Missing) is better served by its last-known size.
         }
     }
 

@@ -19,6 +19,9 @@
 #include <platemaker/models/workspace.hpp>
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/output_profile.hpp>
+#include <platemaker/models/project_item.hpp>
+
+#include <utility>
 
 #include <filesystem>
 #include <fstream>
@@ -123,6 +126,37 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesOutputProfile)
     EXPECT_EQ(loaded.outputProfiles()[0].sliceHeight,  original.outputProfiles()[0].sliceHeight);
     EXPECT_EQ(loaded.outputProfiles()[0].outputFormat, original.outputProfiles()[0].outputFormat);
     EXPECT_EQ(loaded.outputProfiles()[0].startIndex,   original.outputProfiles()[0].startIndex);
+
+    std::filesystem::remove(tmp);
+}
+
+TEST(WorkspaceSerializerTest, RoundTripPreservesInputDimensions)
+{
+    // The per-input display W×H recorded at render time must survive save/load — it is what lets
+    // detectCanvasConfigChange() re-match each page offline instead of blanket-invalidating a project.
+    const WorkspaceSerializer ser;
+    Models::Workspace         original = makeMinimalWorkspace();
+
+    Models::ProjectItem proj;
+    proj.name = "Chapter";
+    proj.uid  = "proj-dim-001";
+    Models::InputFile inf;
+    inf.uid      = "file-001";
+    inf.filePath = "page_000.png";
+    inf.width    = 1080;
+    inf.height   = 1920;
+    proj.getInputImages().push_back(std::move(inf));
+    original.projectItems.push_back(std::move(proj));
+
+    const std::filesystem::path tmp =
+        std::filesystem::temp_directory_path() / "pm_test_dims.platemaker.json";
+    ser.save(original, tmp.string());
+    const auto loaded = ser.load(tmp.string());
+
+    ASSERT_EQ(loaded.projectItems.size(), 1u);
+    ASSERT_EQ(loaded.projectItems[0].getInputImages().size(), 1u);
+    EXPECT_EQ(loaded.projectItems[0].getInputImages()[0].width,  1080);
+    EXPECT_EQ(loaded.projectItems[0].getInputImages()[0].height, 1920);
 
     std::filesystem::remove(tmp);
 }

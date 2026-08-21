@@ -135,6 +135,20 @@ struct InputFile {
      * Empty when no profile was applied.
      */
     std::string canvasFingerprint;
+
+    /**
+     * \brief Display dimensions of this page at the last render, in pixels (0 = unknown).
+     *
+     * Recorded in the same coordinate space canvas matching uses — post-autorot display W×H,
+     * exactly the values the pipeline fed to \c CanvasProfileMatcher::resolve().  Canvas profiles
+     * match purely by W×H, so storing them is what lets \c detectCanvasConfigChange() answer
+     * *offline* "which profile would this page match now?" instead of blanket-invalidating the whole
+     * project whenever the effective profile list changes.  Both zero means the page has not been
+     * rendered since dimensions were tracked (legacy record) — the caller may backfill from the file
+     * header, and staleness detection falls back to the coarse list comparison until it does.
+     */
+    int width  = 0;
+    int height = 0;
 };
 
 /**
@@ -188,6 +202,8 @@ struct AppliedCanvasProfile {
     std::string sourceFilePath; //!< Input this refers to.
     std::string profileId;      //!< Profile that matched ("" = none matched / project has no profiles).
     std::string fingerprint;    //!< canvasRenderFingerprint() of it ("" when profileId is empty).
+    int         width  = 0;     //!< Display width the run resolved against (0 = not recorded).
+    int         height = 0;     //!< Display height the run resolved against (0 = not recorded).
 };
 
 // ---------------------------------------------------------------------------
