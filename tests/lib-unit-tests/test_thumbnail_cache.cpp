@@ -25,6 +25,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <regex>
 #include <string>
 #include <utility>
 
@@ -72,6 +73,20 @@ std::pair<int, int> imageSize(const std::string& path)
     const std::pair<int, int> dims{img->Xsize, img->Ysize};
     g_object_unref(img);
     return dims;
+}
+
+/// Writes a JPEG carrying an EXIF Orientation tag and returns its path. libvips maps the "orientation"
+/// header field onto the EXIF Orientation tag on JPEG save, so a later vips_thumbnail auto-rotates by it.
+std::string writeJpegWithOrientation(const std::string& path, int w, int h, int orientation)
+{
+    VipsImage* img = nullptr;
+    EXPECT_EQ(vips_black(&img, w, h, nullptr), 0) << "vips_black failed: " << vips_error_buffer();
+    if (!img) return path;
+    vips_image_set_int(img, "orientation", orientation);
+    EXPECT_EQ(vips_image_write_to_file(img, path.c_str(), nullptr), 0)
+        << "jpeg write failed: " << vips_error_buffer();
+    g_object_unref(img);
+    return path;
 }
 
 // A thumbnail is capped at 200 px wide and never upscaled (VIPS_SIZE_DOWN), so a landscape source
@@ -170,6 +185,35 @@ TEST(ThumbnailCacheTest, WarmedInRamThumbnailIsServedWithoutReadingTheSource)
     const auto [w, h] = imageSize(cache.getOrGenerate(src));
     EXPECT_GT(h, w) << "getOrGenerate returned the RAM-warmed (portrait) thumbnail — it did not re-open "
                        "the landscape source";
+}
+
+// --- EXIF orientation + cache-generation version --------------------------------------------------
+
+TEST(ThumbnailCacheTest, ExifRotatedInputPreviewsUpright)
+{
+    TempDir tmp("exif");
+    ThumbnailCache cache(tmp.file("cache"));
+
+    // A landscape 400x200 JPEG tagged EXIF Orientation 6 (90° CW) *displays* as 200x400 portrait. The
+    // preview must follow the display orientation (auto-rotate), giving a taller-than-wide thumbnail.
+    // The pre-0.5.0 "no_rotate" path failed this — it left the sideways landscape thumbnail (the bug).
+    const std::string src = writeJpegWithOrientation(tmp.file("photo.jpg"), 400, 200, 6);
+
+    const auto [w, h] = imageSize(cache.getOrGenerate(src));
+    EXPECT_GT(h, w) << "an EXIF-90° input must preview upright (portrait), not sideways";
+}
+
+TEST(ThumbnailCacheTest, ThumbnailFilenameCarriesCacheVersionToken)
+{
+    TempDir tmp("ver");
+    ThumbnailCache cache(tmp.file("cache"));
+
+    // The filename must carry a ".vN" generation token so a change in generation logic re-keys the whole
+    // cache — a path+mtime cache cannot otherwise detect a logic change against an old-dated source.
+    // Match the shape, not a specific number, so bumping the version does not break this guard.
+    const std::string thumb = cache.thumbnailPath(tmp.file("photo.jpg"));
+    EXPECT_TRUE(std::regex_search(thumb, std::regex(R"(\.v[0-9]+\.png$)")))
+        << "thumbnail filename lacks a .vN cache-generation token: " << thumb;
 }
 
 } // namespace

@@ -38,7 +38,9 @@ namespace Platemaker::Infrastructure {
  *
  * Each thumbnail is named by a digest of the source file path so that renames
  * do not produce stale entries (the old entry is simply orphaned and ignored until
- * the cache is cleaned).
+ * the cache is cleaned).  The filename also carries a cache-generation version token,
+ * so a change in the thumbnail generation logic (e.g. EXIF auto-rotation) orphans the
+ * previous thumbnails and forces regeneration rather than serving a stale preview.
  *
  * \note \b Usage \b policy: The CLI binary never calls this class — thumbnails are a
  *       pure GUI concern (file list widget, hover previews).  The Qt GUI calls

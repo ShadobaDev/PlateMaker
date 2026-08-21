@@ -57,6 +57,14 @@ the mangled symbol changes, so the GUI pins the version in lockstep.
   (transposed for Orientation 5–8) so canvas‑profile matching agrees with the rendered pixels, and
   `ImageIO::save()` drops source EXIF/XMP/IPTC (keeping the ICC colour profile) so a rendered slice
   carries no stray camera metadata or orientation. (`headerDim()` was renamed `headerGeometry()`.)
+- **Input thumbnail previews now follow EXIF orientation too — even for photos already in the cache.**
+  `ThumbnailCache::generate` was switched to auto-rotate (dropped `no_rotate`) alongside the load fix
+  above, but the on-disk cache is keyed on the source *path* and invalidated by *mtime* only: an
+  old-dated camera JPEG always has an older mtime than its cached thumbnail, so a preview written by the
+  earlier (sideways) code was judged fresh forever and re-served after the fix. The thumbnail filename now
+  carries a **cache-generation version token** (`<digest>.vN.png`, `kThumbnailCacheVersion`); bumping it on
+  any generation-logic change orphans the stale thumbnails so they regenerate. The mtime check is kept and
+  still catches in-place *content* changes (re-rendered `output_00N` slices) — the token is additive.
 - **Adding a canvas profile no longer marks a whole project out of date when the profile matches no
   page.** Canvas profiles match purely by canvas W×H, but a page's dimensions were never recorded, so
   `detectCanvasConfigChange()` could only fall back to a blanket "the effective profile list changed →
@@ -79,6 +87,8 @@ the mangled symbol changes, so the GUI pins the version in lockstep.
   of the output read/write race; `Scaler` autorotating an Orientation‑6 image to portrait and leaving an
   untagged image unchanged. CLI tests assert `--trace` toggles the per-component log tags, and render the
   three real EXIF photos (`fixtures/real_photos/`) to pin no‑black‑band geometry and portrait autorotation.
+  `ThumbnailCache` gains two cases: an EXIF‑Orientation‑6 input previews upright (portrait), and the
+  thumbnail filename carries a `.vN` cache‑generation token.
 - Band-count normalisation: a strip mixing RGB and RGBA sources slices without aborting and every slice is
   promoted to RGBA, while a uniform RGB strip stays 3-band; `ImageIO::save` flattens alpha to RGB for JPEG
   and preserves it for PNG. CLI tests render an interleaved RGB/RGBA folder to both PNG (alpha kept) and

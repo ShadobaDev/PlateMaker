@@ -8,7 +8,9 @@
  * overwritten in place (each re-render rewrites the same \c output_00N slice) keeps
  * its digest; \c getOrGenerate() therefore also checks the cached thumbnail's mtime
  * against the source and regenerates when the source is newer, so a stale preview
- * (the old black-band slice) is never served.
+ * (the old black-band slice) is never served.  The mtime check catches source *content*
+ * changes but not a change in this code's generation *logic* — a \c ".vN" token in the
+ * filename (see \c kThumbnailCacheVersion) covers that, orphaning old thumbnails on a bump.
  *
  * This implementation has zero Qt dependency.  The GUI layer is responsible for
  * running \c getOrGenerate() on a background thread (e.g. via \c QtConcurrent::run())
@@ -41,6 +43,21 @@
 namespace Platemaker::Infrastructure {
 
 namespace {
+
+// ---------------------------------------------------------------------------
+// Cache-generation version — folded into every thumbnail filename (thumbnailPath).
+//
+// The cache is keyed on the source *path* and invalidated by mtime only, so it can detect a change in the
+// source file's *content* but NOT a change in this code's generation *logic*: a source dated in the past
+// (e.g. a 2016 camera JPEG) always has an older mtime than its cached thumbnail, so the thumbnail is judged
+// fresh forever. Bumping this constant changes the filename, orphaning every prior thumbnail so it is
+// regenerated with current logic.
+//
+// Bump whenever the pixels generate() produces for the same source could differ — rotation, target size,
+// output format, colour handling. History:
+//   v1  pre-0.5.0: vips_thumbnail with "no_rotate" (EXIF orientation ignored — sideways previews).
+//   v2  0.5.0:     auto-rotate (dropped "no_rotate"); a rotated photo now previews in display orientation.
+constexpr int kThumbnailCacheVersion = 2;
 
 // ---------------------------------------------------------------------------
 // Internal helper: derive the thumbnail filename from a source file path.
@@ -105,7 +122,10 @@ std::string ThumbnailCache::thumbnailPath(const std::string& sourceFilePath) con
     // Both directions go through the UTF-8 helpers: building the path from a narrow string
     // and reading it back with .string() are the two halves of the same encoding hazard, and
     // .string() additionally throws on MSVC for a character the ANSI page cannot represent.
-    const fs::path name = utf8ToPath(pathDigest(sourceFilePath) + ".png");
+    // The ".vN" token re-keys the whole cache when generation logic changes (see kThumbnailCacheVersion);
+    // it is a filename suffix, not part of the digest, so digest↔path rename semantics stay intact.
+    const fs::path name = utf8ToPath(
+        pathDigest(sourceFilePath) + ".v" + std::to_string(kThumbnailCacheVersion) + ".png");
     return pathToUtf8(utf8ToPath(m_cacheDirectory) / name);
 }
 
@@ -147,6 +167,8 @@ std::string ThumbnailCache::getOrGenerate(const std::string& sourceFilePath)
 // differs: a file (vips_thumbnail) or an in-RAM image (vips_thumbnail_image).
 // Both auto-rotate by default (no "no_rotate"), so a preview matches the render's
 // display orientation; a no-op for untagged images (rendered slices, PNG exports).
+// This auto-rotate switch is what kThumbnailCacheVersion==2 records: the bump invalidates the
+// pre-0.5.0 sideways thumbnails so they regenerate upright here.
 // ---------------------------------------------------------------------------
 
 namespace {
