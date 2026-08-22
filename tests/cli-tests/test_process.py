@@ -36,6 +36,10 @@ from helpers import (
 FIXTURES_DIR    = pathlib.Path(__file__).parent / "fixtures" / "real_photos"
 ORIENTATION_6_PHOTO = "20161127_144117.jpg"  # the portrait shot, stored landscape
 
+# Real webtoon pages (2200×5720 RGBA = 1600×5120 content + 300 px pink margin) used by the margin-aware
+# regression below — see fixtures/demo_pages/README.md for provenance and structure.
+DEMO_PAGES_DIR  = pathlib.Path(__file__).parent / "fixtures" / "demo_pages"
+
 def _run_process(
     platemaker_bin: pathlib.Path,
     workspace:      pathlib.Path,
@@ -301,33 +305,33 @@ def test_process_margin_aware_pipeline(
     tmp_workspace:  pathlib.Path,
 ) -> None:
     """
-    Margin-aware pipeline via canvas profile matching by width.
+    Margin-aware pipeline on real webtoon pages (fixtures/demo_pages/), matched by canvas W×H.
 
-      * Canvas profile: canvas=1000x2000, margins=100,100,100,100
-        → safe area = 800×1800 per image.
-      * Input images are 1000×2000 (full canvas including margins).
-      * 3 images × 1800 px = 5400 px total after cropping.
-      * 5400 / 1280 = 4 full slices + 1 tail (280 px) → 5 output files.
+      * Canvas profile: safe-area 1600×5120, margins 300 all sides → absolute canvas 2200×5720.
+      * The three demo pages are 2200×5720 (1600×5120 art + a 300 px pink margin marker) → they match.
+      * Crop to the 1600×5120 safe area, then scale to target-width 800 (×0.5) → 800×2560 per page.
+      * 3 × 2560 = 7680 px total / 1280 = exactly 6 output files.
 
-    Without margin cropping (standard pipeline), the same images would be
-    1000×2000 scaled to 800×1600 each (3×1600=4800 px → 3+1=4 files).
-    The different file count proves the crop step executed.
+    Without margin cropping the full 2200×5720 pages would scale 800/2200 → 800×2080 each
+    (3×2080 = 6240 px → 4 full + 1 tail = 5 files). The 6-vs-5 slice count proves the 300 px crop executed —
+    on real RGBA content, not a synthetic solid.
     """
     input_dir  = tmp_workspace / "input"
     output_dir = tmp_workspace / "output"
     input_dir.mkdir()
     output_dir.mkdir()
 
-    # Canvas images: 1000 px wide (800 safe + 100 left + 100 right)
-    _make_pages(input_dir, 3, width=1000, height=2000, color=(200, 200, 200))
+    for page in sorted(DEMO_PAGES_DIR.glob("*.png")):
+        shutil.copy(page, input_dir / page.name)
 
     ws = tmp_workspace / "project.platemaker.json"
     create_workspace(platemaker_bin, ws, target_width=800, slice_height=1280)
-    # Profile width 1000 px — process will auto-detect this profile for 1000px files.
+    # Safe-area form: the tool adds the margins to store canvas = 1600+600 × 5120+600 = 2200×5720,
+    # which the pages match by width; also exercises the CLI's --canvas-safe-area path.
     add_profile(platemaker_bin, ws,
-                name="Canvas-1000",
-                canvas="1000x2000",
-                margins="100,100,100,100")
+                name="Canvas-2200",
+                canvas_safe_area="1600x5120",
+                margins="300,300,300,300")
 
     result = _run_process(platemaker_bin, ws, output_dir,
                           ["--input", str(input_dir)])
@@ -336,10 +340,14 @@ def test_process_margin_aware_pipeline(
     )
 
     slices = sorted(output_dir.glob("output_*.png"))
-    # 3 × 1800 = 5400 px → 4 full slices + 1 tail = 5 files
-    assert len(slices) == 5, (
-        f"Expected 5 slices from margin-aware pipeline, got {len(slices)}: "
+    # 3 × 2560 = 7680 px → exactly 6 full slices (see docstring; without the crop it would be 5).
+    assert len(slices) == 6, (
+        f"Expected 6 slices from margin-aware pipeline, got {len(slices)}: "
         f"{[p.name for p in slices]}"
+    )
+    # The pages are 4-band RGBA; the margin→scale→slice→PNG path must preserve the alpha (colour type 6).
+    assert png_color_type(slices[0]) == 6, (
+        "PNG output must preserve the RGBA channel from the 4-band demo pages (colour type 6)"
     )
 
 

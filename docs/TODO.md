@@ -271,23 +271,16 @@ libplatemaker's small `-g` symbols already covers the frames that matter. **Chea
 `std::set_terminate` in `main.cpp`. Defer the OS-level handler until field crashes justify it; the primary
 TODO item and full analysis live in the GUI repo / the linked note.
 
-### Stage 1 integration tests (unit tests with real pixel data)
+### Stage 1 integration tests (unit tests with real pixel data) — DONE
 
-Seven tests are currently stubbed with `GTEST_SKIP()` pending real image fixtures:
-
-| Test | File |
-|---|---|
-| `PixelBufferTest.MoveConstructorTransfersOwnership` | `test_pixel_buffer.cpp` |
-| `PixelBufferTest.MoveAssignmentTransfersOwnership` | `test_pixel_buffer.cpp` |
-| `ScalerTest.ScaleNonExistentFileThrows` | `test_pixel_buffer.cpp` |
-| `ScaledStripTest.SliceAllWithZeroSliceHeightThrows` | `test_scaled_strip.cpp` |
-| `ScaledStripTest.SliceAllCropPolicyDiscardsRemainder` | `test_scaled_strip.cpp` |
-| `ScaledStripTest.SliceAllPadWhiteProducesFullHeightTailSlice` | `test_scaled_strip.cpp` |
-| `ScaledStripTest.SliceAllKeepAsIsPreservesShortTailSlice` | `test_scaled_strip.cpp` |
-
-Need: small test PNG fixtures in `tests/lib-unit-tests/fixtures/` and a test
-helper that calls `vips_init()`/`vips_shutdown()` in a `SetUpTestSuite` /
-`TearDownTestSuite` pair.
+All seven originally-stubbed cases are now implemented; the suite has **no `GTEST_SKIP` left** (167/167
+green). The premise that these needed on-disk PNG fixtures + a per-suite `vips_init`/`vips_shutdown` helper
+turned out unnecessary: `test_scaled_strip.cpp` registers a **global** test environment that initialises
+libvips once for the whole binary, so every case synthesises what it needs in RAM (`vips_black`, with
+`vips_image_set_int(…, VIPS_META_ORIENTATION, …)` for the EXIF cases) instead of shipping fixture files.
+The `ScaledStrip` slice-policy cases were filled in during the black-band / orientation work; the two
+`PixelBuffer` move-semantics cases and `ScalerTest.ScaleNonExistentFileThrows` were the last three, now
+done (`test_pixel_buffer.cpp`).
 
 ### Custom libvips build — drop the GPL dep (licensing) + unused codecs (~9 MB)
 

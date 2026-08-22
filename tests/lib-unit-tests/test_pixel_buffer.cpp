@@ -4,9 +4,9 @@
  *
  * These tests cover the low-level pixel-buffer abstraction (RAII, move
  * semantics, accessor correctness) and the pure-crop MarginCropper.
- * Scaler tests require libvips to be initialised with a real file on disk;
- * those cases are currently marked GTEST_SKIP until Stage 1 integration
- * tests are added.
+ * libvips is initialised once for the whole test binary by test_scaled_strip.cpp's
+ * global environment, so the move-semantics and Scaler cases synthesise images in
+ * RAM (vips_black) rather than needing on-disk fixtures.
  *
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-02
@@ -24,7 +24,9 @@
 #include <vips/vips.h>
 
 #include <filesystem>
+#include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace Platemaker::Core {
 
@@ -47,14 +49,40 @@ TEST(PixelBufferTest, DefaultConstructorCreatesInvalidBuffer)
 
 TEST(PixelBufferTest, MoveConstructorTransfersOwnership)
 {
-    // TODO Stage 1 tests: wrap a real VipsImage* (created via vips_image_new_matrix)
-    // and verify that move-construction leaves the source invalid.
-    GTEST_SKIP() << "Requires libvips init — implement in Stage 1 integration tests";
+    // Wrap a real VipsImage (synthesised in RAM) and move-construct from it: the destination must own the
+    // very same image (transfer, not copy) and the moved-from buffer must be left empty, not double-freeing.
+    VipsImage* img = nullptr;
+    ASSERT_EQ(vips_black(&img, 4, 2, nullptr), 0) << vips_error_buffer();
+    PixelBuffer src{img};                       // takes ownership
+    ASSERT_TRUE(src.isValid());
+    VipsImage* const raw = src.get();
+
+    PixelBuffer moved{std::move(src)};
+    EXPECT_TRUE(moved.isValid());
+    EXPECT_EQ(moved.get(), raw) << "move must transfer the same VipsImage, not copy it";
+    EXPECT_EQ(moved.width(),  4);
+    EXPECT_EQ(moved.height(), 2);
+    EXPECT_FALSE(src.isValid()) << "moved-from buffer must be left empty";  // NOLINT(bugprone-use-after-move)
+    EXPECT_EQ(src.get(), nullptr);
 }
 
 TEST(PixelBufferTest, MoveAssignmentTransfersOwnership)
 {
-    GTEST_SKIP() << "Requires libvips init — implement in Stage 1 integration tests";
+    VipsImage* img = nullptr;
+    ASSERT_EQ(vips_black(&img, 6, 3, nullptr), 0) << vips_error_buffer();
+    PixelBuffer src{img};
+    VipsImage* const raw = src.get();
+
+    PixelBuffer dst;                            // starts empty
+    ASSERT_FALSE(dst.isValid());
+    dst = std::move(src);
+
+    EXPECT_TRUE(dst.isValid());
+    EXPECT_EQ(dst.get(), raw) << "move-assignment must transfer the same VipsImage";
+    EXPECT_EQ(dst.width(),  6);
+    EXPECT_EQ(dst.height(), 3);
+    EXPECT_FALSE(src.isValid()) << "moved-from buffer must be left empty";  // NOLINT(bugprone-use-after-move)
+    EXPECT_EQ(src.get(), nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +110,13 @@ TEST(ScalerTest, ConstructorDefaultWidth)
 
 TEST(ScalerTest, ScaleNonExistentFileThrows)
 {
-    GTEST_SKIP() << "Requires libvips init — implement in Stage 1 integration tests";
+    // A path that does not exist: vips_image_new_from_file fails, so scale() must throw (scaler.cpp:69),
+    // never crash or hand back an invalid buffer. Uses a unique temp path that is never created.
+    namespace fs = std::filesystem;
+    const std::string missing =
+        (fs::temp_directory_path() / "pm-does-not-exist-1a2b3c4d.png").string();
+    ASSERT_FALSE(fs::exists(missing));
+    EXPECT_THROW((void)Scaler{}.scale(missing, /*targetWidth=*/100), std::runtime_error);
 }
 
 // --- EXIF autorotation (Step 2b) — VIPS is initialised by test_scaled_strip's global env -------------
