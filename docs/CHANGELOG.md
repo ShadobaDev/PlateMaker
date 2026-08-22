@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.1] — unreleased
+## [0.5.1] — 23.08.2026
 
 Packaging only — no source, API, or behaviour change; code built against 0.5.0 is unaffected. Windows now
 also ships an **MSVC** build of the dev and CLI packages alongside the existing MinGW ones. Prompted by a
