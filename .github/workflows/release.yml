@@ -29,7 +29,7 @@ jobs:
             toolchain: mingw
             preset: dist-mingw-release
             artifacts: dist/*.zip
-          - os: windows-latest
+          - os: windows-2022
             toolchain: msvc
             preset: dist-msvc-release
             artifacts: dist/*.zip
@@ -55,9 +55,11 @@ jobs:
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-ninja
 
-      # Windows / MSVC: nothing to install — windows-latest ships Visual Studio 2022 and CMake, and the
-      # msvc preset uses the "Visual Studio 17 2022" generator, which locates the toolset itself. libvips
-      # is fetched by CMake (the MSVC branch links the web-zip's MS import libs).
+      # Windows / MSVC: pinned to windows-2022 (not windows-latest) because the msvc preset's generator is
+      # "Visual Studio 17 2022", and windows-latest has moved to the VS 2026 image — the "17 2022" generator
+      # then finds no VS instance. No toolchain install needed: windows-2022 ships VS 2022 + CMake, and the
+      # VS generator locates the toolset itself. libvips is fetched by CMake (MSVC branch = web-zip import libs).
+      # (If windows-2022 is ever retired, bump the msvc preset generator to the runner's VS version.)
 
       # Linux: gcc is preinstalled; libvips comes from the system via pkg-config (the lib's non-Windows
       # path), so libvips-dev + pkg-config are required. nlohmann/json is fetched (pinned), not apt-installed.

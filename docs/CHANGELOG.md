@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.0] — unreleased
+## [0.5.0] — 22.08.2026
 
 Defines a **render output contract** (SPECIFICATION §7.0) that keeps a consumer from racing the
 pipeline's writes — the root cause of the GUI's intermittent `unable to open for write` render failures —
