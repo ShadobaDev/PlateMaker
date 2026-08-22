@@ -43,14 +43,17 @@ namespace {
 
 namespace fs = std::filesystem;
 
-Core::PixelBuffer blackImage(int w, int h)
+// Both helpers feed only the Windows-only SaveReportsOutputLockedWhenDestinationHeld branch below; on
+// POSIX that test is GTEST_SKIP'd, leaving them unused — [[maybe_unused]] keeps -Werror=unused-function
+// (GCC/Linux release) from failing the build.
+[[maybe_unused]] Core::PixelBuffer blackImage(int w, int h)
 {
     VipsImage* img = nullptr;
     EXPECT_EQ(vips_black(&img, w, h, nullptr), 0) << vips_error_buffer();
     return Core::PixelBuffer{img};
 }
 
-Models::OutputProfile jpegProfile()
+[[maybe_unused]] Models::OutputProfile jpegProfile()
 {
     Models::OutputProfile p;
     p.outputFormat = Models::OutputFormat::JPEG;
