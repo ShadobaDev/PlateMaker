@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.1] — unreleased
+
+Packaging only — no source, API, or behaviour change; code built against 0.5.0 is unaffected. Windows now
+also ships an **MSVC** build of the dev and CLI packages alongside the existing MinGW ones. Prompted by a
+Microsoft Defender ML false positive (`Trojan:Win32/Wacatac.B!ml`) that flags MinGW-compiled, unsigned
+binaries (including `libplatemaker.dll` itself); an MSVC build of the same sources is not flagged.
+
+### Changed
+
+- **Windows releases now publish both MinGW and MSVC packages.** The release CI builds Windows twice
+  (`dist-mingw-release` + `dist-msvc-release`), so a consumer built with either toolchain can pull a
+  matching, ABI-compatible dev package (`…-windows-msvc-…` vs `…-windows-mingw-…` — the package config's
+  guard rejects a cross-toolchain link, and only checks MSVC-vs-MinGW, so the toolchains must stay in step).
+  The MSVC job is pinned to the **VS 2022** runner because that is the compiler Qt 6.11 supports, so the
+  shipped MSVC lib links into the Qt GUI. A `dist-msvc-debug` preset was added so MSVC has the same
+  debug/release dist coverage as MinGW.
+
 ## [0.5.0] — 22.08.2026
 
 Defines a **render output contract** (SPECIFICATION §7.0) that keeps a consumer from racing the

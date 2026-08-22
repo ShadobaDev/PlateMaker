@@ -16,8 +16,9 @@ work happens in.
 - **Cascade.** Whichever section releases first takes its slot; the rest re-derive from the new
   baseline — ship a MINOR before a pending PATCH and the patch re-derives onto the new baseline.
 
-Baseline: **0.4.0 released (2026-08-05); 0.4.1 in progress** (`CMakeLists.txt`). 0.4.1 is binary-identity
-metadata only — additive/fixes — so it is a **PATCH**: code built against 0.4.0 keeps compiling.
+Baseline: **0.5.0 released (2026-08-22); 0.5.1 in progress** (`CMakeLists.txt`). 0.5.1 is packaging only —
+it adds MSVC dev/cli packages for Windows alongside the MinGW ones (no source or API change), so it is a
+**PATCH**: code built against 0.5.0 keeps compiling. (Released tags: 0.4.0 → 0.4.1 → 0.5.0.)
 
 ---
 
