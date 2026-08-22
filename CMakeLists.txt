@@ -100,10 +100,13 @@ if(WIN32)
     message(STATUS "[Windows] libvips ready at: ${VIPS_ROOT_DIR}")
 
 else()
-    # Linux (and WSL): native libvips via pkg-config.
-    message(STATUS "[GCC] Using system pkg-config to discover libvips...")
+    # Linux (and WSL): native libvips via pkg-config. Require >=8.15: ImageIO::save uses
+    # VIPS_FOREIGN_KEEP_ICC (added in libvips 8.15) to drop EXIF/XMP/IPTC while keeping the ICC profile,
+    # so a too-old libvips fails here with a clear pkg-config version error instead of a cryptic compile
+    # error later. (Windows fetches the pinned 8.18 web-zip above, comfortably >=8.15.)
+    message(STATUS "[GCC] Using system pkg-config to discover libvips (>=8.15)...")
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(VIPS REQUIRED IMPORTED_TARGET vips-cpp)
+    pkg_check_modules(VIPS REQUIRED IMPORTED_TARGET vips-cpp>=8.15)
 
     # Make alias for linker, so the other sub-projects (lib/cli/gui) do not require specific cmake sections
     add_library(VIPS::vips-cpp INTERFACE IMPORTED GLOBAL)

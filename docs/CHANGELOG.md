@@ -10,6 +10,12 @@ the mangled symbol changes, so the GUI pins the version in lockstep.
 
 ### Changed
 
+- **Build requirement: libvips ≥ 8.15 on Linux.** `ImageIO::save()` now uses `VIPS_FOREIGN_KEEP_ICC`
+  (added in libvips 8.15) to drop source EXIF/XMP/IPTC while keeping the ICC profile. Windows is unaffected
+  (the bundled web-zip is pinned to 8.18); on Linux the build consumes the system libvips, so the CMake
+  `pkg_check_modules` now requires `vips-cpp>=8.15` and fails at configure with a clear version error on
+  anything older. Distros that ship <8.15 (e.g. Ubuntu 22.04 → 8.12) need a newer libvips or distro
+  (Ubuntu 24.04+ ships 8.15, matching CI).
 - **`ProcessingPipeline::run()` gains an optional trailing `thumbnailCacheDir`.** When non-empty, the
   pipeline warms a `ThumbnailCache` rooted there from each slice's **in-RAM** pixels — *before*
   `onSliceSaved` fires — so a consumer's `getOrGenerate(outputPath)` is a cache hit and never re-reads a

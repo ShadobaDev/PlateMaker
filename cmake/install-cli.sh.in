@@ -13,19 +13,36 @@ set -euo pipefail
 PREFIX="${1:-/usr/local}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ── Check for libvips ──────────────────────────────────────────────────────────
-if ! pkg-config --exists vips 2>/dev/null; then
-    echo "ERROR: libvips is required but was not found."
+# ── Check the runtime libvips is present and >= 8.15 ────────────────────────────
+# platemaker-cli @PROJECT_VERSION@ is built against libvips 8.15 (it saves with the 8.15 "keep" metadata
+# option; an older runtime libvips rejects that at save time). End users usually have only the libvips
+# *runtime* — not the -dev package that ships pkg-config's .pc — so instead of pkg-config we ask the
+# bundled binary itself: it links libvips and prints the runtime version via vips_version(), and running
+# it also proves the runtime actually loads. Point LD_LIBRARY_PATH at the bundled (not-yet-installed)
+# libplatemaker.so so the binary can start before it is copied into place.
+CLI_BIN="$SCRIPT_DIR/bin/platemaker-cli"
+if ! _vips_report="$(LD_LIBRARY_PATH="$SCRIPT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$CLI_BIN" --version 2>/dev/null)"; then
+    echo "ERROR: platemaker-cli could not start — the libvips runtime is missing or incompatible."
     echo ""
-    echo "Install it with your package manager:"
-    if   command -v apt-get &>/dev/null; then echo "  sudo apt install libvips"
+    echo "Install libvips (>= 8.15) with your package manager:"
+    if   command -v apt-get &>/dev/null; then echo "  sudo apt install libvips   (Ubuntu 24.04+ ships 8.15)"
     elif command -v dnf     &>/dev/null; then echo "  sudo dnf install vips"
     elif command -v pacman  &>/dev/null; then echo "  sudo pacman -S libvips"
     elif command -v zypper  &>/dev/null; then echo "  sudo zypper install libvips"
-    else echo "  install libvips via your distribution's package manager"
+    else echo "  install libvips (>= 8.15) via your distribution's package manager"
     fi
     echo ""
     echo "Then re-run this script."
+    exit 1
+fi
+
+# Parse the "libvips X.Y.Z (…)" line (the runtime version from vips_version()).
+_vips_ver="$(printf '%s\n' "$_vips_report" | sed -n 's/^libvips \([0-9][0-9.]*\).*/\1/p' | head -n1)"
+if [[ -z "$_vips_ver" ]]; then
+    echo "WARNING: platemaker-cli ran but its libvips version could not be read; continuing."
+elif ! printf '8.15\n%s\n' "$_vips_ver" | sort -V -C 2>/dev/null; then
+    echo "ERROR: libvips $_vips_ver found, but platemaker-cli @PROJECT_VERSION@ requires libvips >= 8.15."
+    echo "Upgrade libvips (e.g. Ubuntu 24.04+ ships 8.15), then re-run this script."
     exit 1
 fi
 

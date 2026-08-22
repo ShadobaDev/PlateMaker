@@ -16,14 +16,21 @@ set -euo pipefail
 PREFIX="${1:-/usr/local}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ── Check for libvips ──────────────────────────────────────────────────────────
+# ── Check for libvips >= 8.15 ───────────────────────────────────────────────────
+# libplatemaker @PROJECT_VERSION@ is built against libvips 8.15 (ImageIO::save uses the 8.15 "keep"
+# metadata option); an older runtime libvips rejects it at save time, so gate on the version here.
 if ! pkg-config --exists vips-cpp 2>/dev/null; then
-    echo "ERROR: libvips not found. Install it first:"
-    if   command -v apt-get &>/dev/null; then echo "  sudo apt install libvips-dev"
+    echo "ERROR: libvips not found. Install libvips >= 8.15 first:"
+    if   command -v apt-get &>/dev/null; then echo "  sudo apt install libvips-dev   (Ubuntu 24.04+ ships 8.15)"
     elif command -v dnf     &>/dev/null; then echo "  sudo dnf install vips-devel"
     elif command -v pacman  &>/dev/null; then echo "  sudo pacman -S libvips"
-    else echo "  install libvips via your distribution's package manager"
+    else echo "  install libvips (>= 8.15) via your distribution's package manager"
     fi
+    exit 1
+elif ! pkg-config --atleast-version=8.15 vips-cpp 2>/dev/null; then
+    echo "ERROR: libvips $(pkg-config --modversion vips-cpp 2>/dev/null || echo '?') found, but"
+    echo "libplatemaker @PROJECT_VERSION@ requires libvips >= 8.15."
+    echo "Upgrade libvips (e.g. Ubuntu 24.04+ ships 8.15), then re-run this script."
     exit 1
 fi
 
@@ -74,7 +81,7 @@ Description: @PROJECT_DESCRIPTION@
 Version: @PROJECT_VERSION@
 Libs: -L\${libdir} -lplatemaker
 Cflags: -I\${includedir}
-Requires: vips-cpp
+Requires: vips-cpp >= 8.15
 PKGEOF
 
 # ── Update linker cache ────────────────────────────────────────────────────────

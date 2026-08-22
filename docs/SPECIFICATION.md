@@ -1080,7 +1080,7 @@ Cache: `.platemaker-cache/` sibling to `.platemaker.json` (auto-created, safe to
 
 | Library | Version | Licence | Purpose |
 |---|---|---|---|
-| libvips | 8.x | LGPL v2.1 | Image loading, scaling (Lanczos3), saving |
+| libvips | ≥ 8.15 | LGPL v2.1 | Image loading, scaling (Lanczos3), saving. 8.15 floor: `ImageIO::save` uses `VIPS_FOREIGN_KEEP_ICC`. Windows bundles 8.18; Linux uses system libvips (Ubuntu 24.04+). |
 | nlohmann/json | 3.x | MIT | Workspace JSON serialisation |
 | CMake | 3.21+ | BSD | Build system |
 | vcpkg | latest | MIT | Package management |
