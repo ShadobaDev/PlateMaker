@@ -96,6 +96,20 @@ cmake --install build/mingw-debug
 # → install/mingw-debug/   (set PLATEMAKER_DIR to this in Qt Creator)
 ```
 
+```powershell
+cmake --preset msvc-debug
+cmake --build --preset msvc-debug
+cmake --install .\build\msvc-debug\ --config Debug
+# → install/msvc-debug/   (set PLATEMAKER_DIR to this in Qt Creator)
+```
+
+```powershell
+cmake --preset msvc-release
+cmake --build --preset mingw-release
+cmake --install .\build\msvc-release\ # optionally: --config Release
+# → install/msvc-debug/   (set PLATEMAKER_DIR to this in Qt Creator)
+```
+
 ```bash
 cmake --install build/linux-system
 cmake --install build/linux-debug

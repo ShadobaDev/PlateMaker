@@ -22,24 +22,30 @@ permissions:
 jobs:
   build:
     strategy:
-      fail-fast: false       # MinGW and Linux are independent; one failing must not cancel the other
+      fail-fast: false       # MinGW, MSVC and Linux are independent; one failing must not cancel the others
       matrix:
         include:
           - os: windows-latest
+            toolchain: mingw
             preset: dist-mingw-release
             artifacts: dist/*.zip
+          - os: windows-latest
+            toolchain: msvc
+            preset: dist-msvc-release
+            artifacts: dist/*.zip
           - os: ubuntu-latest
+            toolchain: gcc
             preset: dist-linux-release
             artifacts: dist/*.tar.gz
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
 
-      # --- Toolchain per OS -------------------------------------------------
-      # Windows: MinGW (gcc + cmake + ninja) from MSYS2. The `msys2 {0}` shell on the build step below
-      # puts these on PATH — the same environment your Qt Creator MinGW kit uses. libvips is fetched by
-      # CMake (prebuilt web zip), so no libvips package is needed here.
-      - if: matrix.os == 'windows-latest'
+      # --- Toolchain per matrix entry ---------------------------------------
+      # Windows / MinGW: gcc + cmake + ninja from MSYS2. The `msys2 {0}` shell on the build step below puts
+      # them on PATH — the same environment your Qt Creator MinGW kit uses. libvips is fetched by CMake
+      # (prebuilt web zip), so no libvips package is needed here.
+      - if: matrix.toolchain == 'mingw'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -49,21 +55,29 @@ jobs:
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-ninja
 
+      # Windows / MSVC: nothing to install — windows-latest ships Visual Studio 2022 and CMake, and the
+      # msvc preset uses the "Visual Studio 17 2022" generator, which locates the toolset itself. libvips
+      # is fetched by CMake (the MSVC branch links the web-zip's MS import libs).
+
       # Linux: gcc is preinstalled; libvips comes from the system via pkg-config (the lib's non-Windows
       # path), so libvips-dev + pkg-config are required. nlohmann/json is fetched (pinned), not apt-installed.
-      - if: matrix.os == 'ubuntu-latest'
+      - if: matrix.toolchain == 'gcc'
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build pkg-config libvips-dev
 
       # --- Configure + build + package (one CMake workflow preset) ----------
       - name: Build & package (Windows / MinGW)
-        if: matrix.os == 'windows-latest'
+        if: matrix.toolchain == 'mingw'
         shell: msys2 {0}
         run: cmake --workflow --preset ${{ matrix.preset }}
 
+      - name: Build & package (Windows / MSVC)
+        if: matrix.toolchain == 'msvc'
+        run: cmake --workflow --preset ${{ matrix.preset }}
+
       - name: Build & package (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.toolchain == 'gcc'
         run: cmake --workflow --preset ${{ matrix.preset }}
 
       # --- Provenance: cryptographically tie each archive to this repo/commit/run ---
@@ -76,7 +90,7 @@ jobs:
       # --- Hand the archives (+ their .sha256 sidecars) to the release job --
       - uses: actions/upload-artifact@v7
         with:
-          name: pkg-${{ matrix.os }}
+          name: pkg-${{ matrix.os }}-${{ matrix.toolchain }}
           path: |
             dist/*.zip
             dist/*.tar.gz
@@ -96,7 +110,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: dist
-          merge-multiple: true      # flatten pkg-windows-latest/ + pkg-ubuntu-latest/ into dist/
+          merge-multiple: true      # flatten pkg-windows-latest-{mingw,msvc}/ + pkg-ubuntu-latest-gcc/ into dist/
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3

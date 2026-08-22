@@ -184,6 +184,13 @@
       "configurePreset": "msvc-release",
       "configurations": ["Release"],
       "generators": ["ZIP"]
+    },
+    {
+      "name": "msvc-debug",
+      "displayName": "Package · MSVC Debug (dev + cli)",
+      "configurePreset": "msvc-debug",
+      "configurations": ["Debug"],
+      "generators": ["ZIP"]
     }
 
   ],
@@ -240,6 +247,16 @@
         { "type": "configure", "name": "msvc-release" },
         { "type": "build",     "name": "msvc-release" },
         { "type": "package",   "name": "msvc-release" }
+      ]
+    },
+    {
+      "name": "dist-msvc-debug",
+      "displayName": "Dist · MSVC Debug",
+      "description": "Configure → Build → Package (dev + cli ZIPs, unstripped)",
+      "steps": [
+        { "type": "configure", "name": "msvc-debug" },
+        { "type": "build",     "name": "msvc-debug" },
+        { "type": "package",   "name": "msvc-debug" }
       ]
     }
 

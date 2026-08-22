@@ -28,6 +28,7 @@ $presets = @(
     'dist-mingw-release'
     'dist-mingw-debug'
     'dist-msvc-release'
+    'dist-msvc-debug'
 )
 
 Write-Host "Platemaker release - Windows"
