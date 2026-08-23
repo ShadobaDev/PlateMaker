@@ -49,8 +49,20 @@ include your Contribution in the project.
 By opening a pull request against this repository you indicate that you have
 read this CLA and agree to its terms.
 
+## 7. Current licensing status
+
+For the avoidance of doubt: **this project is currently distributed exclusively under
+open-source licences** — `libplatemaker` under the LGPL-3.0 (see `LICENSE.LGPL`) and
+`platemaker-cli` under the GPL-3.0 (see `LICENSE.GPL`).
+
+**There is no commercial, proprietary or dual-licensed edition, and none is planned or
+scheduled.** Section 2 reserves the *option* to relicense in future — it does not create such
+an edition, and the Project Owner has exercised no such option. Should that ever change, it
+would be announced publicly; contributors would keep the attribution described below
+regardless.
+
 ---
 
-*This CLA allows the project to be offered under multiple license models in the
-future (e.g. dual open-source / commercial licensing) while keeping your
-contributions permanently credited.*
+*This CLA keeps the option of alternative license models open (e.g. dual open-source /
+commercial licensing) while keeping your contributions permanently credited. See §7 for the
+current status — today the project is open source only.*
