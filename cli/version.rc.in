@@ -16,11 +16,11 @@ BEGIN
     BEGIN
         BLOCK "040904b0"   // US English (0x0409), Unicode (0x04b0 = 1200)
         BEGIN
-            VALUE "CompanyName",      "ShadobaDev"
+            VALUE "CompanyName",      "ShadobaDev (Bartlomiej Mucha)"
             VALUE "FileDescription",  "Platemaker command-line tool"
             VALUE "FileVersion",      "@PROJECT_VERSION@"
             VALUE "InternalName",     "platemaker-cli"
-            VALUE "LegalCopyright",   "Copyright (C) 2026 ShadobaDev - GPL-3.0-or-later"
+            VALUE "LegalCopyright",   "Copyright (C) 2026 ShadobaDev (Bartlomiej Mucha) - GPL-3.0-or-later"
             VALUE "OriginalFilename", "platemaker-cli.exe"
             VALUE "ProductName",      "platemaker-cli"
             VALUE "ProductVersion",   "@PROJECT_VERSION@"
