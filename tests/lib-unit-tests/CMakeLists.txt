@@ -36,6 +36,7 @@ add_executable(platemaker-lib-tests
     test_image_io.cpp
     test_image_io_concurrency.cpp
     test_workspace_serializer.cpp
+    test_profile_bundle_serializer.cpp
     test_canvas_profile_matcher.cpp
     test_canvas_staleness.cpp
     test_profile_ids.cpp

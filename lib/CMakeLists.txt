@@ -27,6 +27,7 @@ set(PLATEMAKER_SOURCES
     src/infrastructure/image_io/image_io.cpp
     src/infrastructure/model_json/model_json.cpp
     src/infrastructure/workspace_serializer/workspace_serializer.cpp
+    src/infrastructure/profile_bundle_serializer/profile_bundle_serializer.cpp
     src/infrastructure/workspace_editor/workspace_editor.cpp
     src/infrastructure/project_editor/project_editor.cpp
     src/infrastructure/thumbnail_cache/thumbnail_cache.cpp

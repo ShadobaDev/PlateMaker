@@ -195,11 +195,36 @@ on separate threads and the slice files numbered deterministically afterwards.
 
 ## MINOR — follow-ups (non-breaking) on the 0.4.0 structured-error system
 
-The structured error system shipped in **0.4.0** (breaking; typed `ProcessingError`, the
+### The structured error system 
+The structured error systemshipped in **0.4.0** (breaking; typed `ProcessingError`, the
 `applyProcessingResults()` return, the `InputResult` tag). What is left is additive and not yet wired:
 
 Not yet wired (follow-ups, non-breaking): GUI localisation/grouping UI beyond surfacing category/code;
 a `ProfileMatch` fatal path (reserved category — implicit render stays non-fatal).
+
+### Import / export input and output profiles
+
+**Lib + CLI — DONE (additive, PATCH; see the `[Unreleased]` changelog).** A portable **profile bundle**
+(`.platemaker.profiles.json`) carries canvas + output profiles independent of a workspace:
+`Infrastructure::ProfileBundleSerializer` (save/load; strips `templateInfo` + presets on write) and
+`WorkspaceEditor::importProfiles` (fresh ids, template cleared, presets skipped — additive, so the
+workspace stays self-contained). CLI: `workspace export-profiles` / `import-profiles` — `--from` accepts
+a bundle *or* another workspace, `--only NAME,…` selects by name. The lib never chooses a file location;
+that is the consumer's job.
+
+**GUI — pending (see the GUI TODO).** An import dialog (cherry-pick + inspection) whose sources are
+another workspace, a bundle file, and a **GUI-managed user library** (a bundle at a fixed `AppData`
+path, `user.platemaker.profiles.json`), plus export. Workspaces stay self-contained; the library is only
+ever an import source (the earlier per-profile "global" flag was dropped). Reuses the existing Manage
+dialogs; new `widgets/importprofilesdialog/` + a read-only mode on the profile editors for inspection.
+
+### Infinite strip and lookup system
+The problem is that during work user may want to see how does the full strip look like; might be a GUI reposibility.
+Two ideas:
+1. Built-in webtoon-like viewer. Problem are margins and general rendereing - the files will have to be either rendered on fly or stored in temporary location with option to save
+2. Render infinite long strip either via designated output profile or separate button/menu option [Process]
+
+Both options could be implemented.
 
 ---
 

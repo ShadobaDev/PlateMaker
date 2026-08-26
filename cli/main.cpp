@@ -21,6 +21,12 @@
  *   platemaker workspace list-output-profiles --workspace FILE
  *
  *   platemaker workspace list-all-profiles    --workspace FILE   (alias: list-profiles; canvas + output)
+ *
+ *   Profile portability (bundles / cross-workspace):
+ *   platemaker workspace export-profiles      --workspace FILE --out BUNDLE.platemaker.profiles.json [--only NAME,...]
+ *   platemaker workspace import-profiles      --workspace FILE --from SOURCE [--only NAME,...]
+ *                       (SOURCE is a .platemaker.profiles.json bundle or another .platemaker.json workspace)
+ *
  *   platemaker workspace list-projects  --workspace FILE
  *   platemaker project create  --workspace FILE --name NAME [--input DIR] [--output DIR]
  *   platemaker project mod     --workspace FILE --name NAME [--new-name N] [--input DIR] [--output DIR]
@@ -72,6 +78,7 @@
 #include <platemaker/infrastructure/id_generator/id_generator.hpp>
 #include <platemaker/infrastructure/image_io/image_io.hpp>
 #include <platemaker/infrastructure/log/log.hpp>
+#include <platemaker/infrastructure/profile_bundle_serializer/profile_bundle_serializer.hpp>
 #include <platemaker/infrastructure/workspace_editor/workspace_editor.hpp>
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
@@ -373,6 +380,14 @@ static int cmdHelp(const std::string& prog)
         << "\n"
         << "  workspace list-all-profiles --workspace FILE   (alias: list-profiles)\n"
         << "      List canvas profiles and output profiles together in one view.\n"
+        << "\n"
+        << "  workspace export-profiles --workspace FILE --out BUNDLE.platemaker.profiles.json\n"
+        << "      [--only NAME,NAME,...]\n"
+        << "      Export canvas + output profiles to a portable bundle (templates/presets stripped).\n"
+        << "  workspace import-profiles --workspace FILE --from SOURCE [--only NAME,NAME,...]\n"
+        << "      Import profiles into the workspace from a bundle or another workspace (SOURCE is\n"
+        << "      either a .platemaker.profiles.json or a .platemaker.json). Imports are additive\n"
+        << "      copies with fresh ids, so the workspace stays self-contained.\n"
         << "\n"
         << "  process --workspace FILE\n"
         << "          { --input DIR | --project NAME }  [--output DIR]\n"
@@ -826,6 +841,154 @@ static int cmdWorkspaceListAllProfiles(const Opts& opts)
     printCanvasProfilesSection(ws);
     std::cout << '\n';
     printOutputProfilesSection(ws);
+    return 0;
+}
+
+// ===========================================================================
+// platemaker workspace export-profiles / import-profiles (profile portability)
+// ===========================================================================
+
+//! Splits a comma-separated --only value into a set of names. Empty when the flag is absent.
+//! Splits on commas only (profile names contain spaces), trimming whitespace around each name.
+static std::set<std::string> parseOnlyNames(const Opts& opts)
+{
+    std::set<std::string> names;
+    if (!opts.has("only")) return names;
+    const std::string v = opts.get("only");
+    for (std::string::size_type start = 0; start <= v.size();) {
+        auto comma = v.find(',', start);
+        if (comma == std::string::npos) comma = v.size();
+        const auto first = v.find_first_not_of(" \t", start);
+        if (first != std::string::npos && first < comma) {
+            const auto last = v.find_last_not_of(" \t", comma - 1);
+            names.insert(v.substr(first, last - first + 1));
+        }
+        start = comma + 1;
+    }
+    return names;
+}
+
+// Keeps only profiles whose name is in `keep` (a no-op when `keep` is empty), and records which
+// requested names actually matched so the caller can warn about the rest.
+template <typename Profiles>
+static void filterByName(Profiles& profiles, const std::set<std::string>& keep,
+                         std::set<std::string>& matched)
+{
+    if (keep.empty()) return;
+    Profiles out;
+    for (auto& p : profiles) {
+        if (keep.count(p.name)) {
+            matched.insert(p.name);
+            out.push_back(std::move(p));
+        }
+    }
+    profiles = std::move(out);
+}
+
+static int cmdWorkspaceExportProfiles(const Opts& opts)
+{
+    if (!opts.has("workspace")) { std::cerr << "Error: --workspace FILE is required\n"; return 1; }
+    if (!opts.has("out"))       { std::cerr << "Error: --out FILE is required\n"; return 1; }
+
+    Workspace ws;
+    try { ws = WorkspaceSerializer{}.load(opts.get("workspace")); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n'; return 2;
+    }
+
+    // Copy the palettes out of the workspace (the accessors return const views). Presets and
+    // templateInfo are stripped by the serializer, so nothing to clean up here.
+    std::vector<CanvasProfile> canvas(ws.canvasProfiles().begin(), ws.canvasProfiles().end());
+    std::vector<OutputProfile> output(ws.outputProfiles().begin(), ws.outputProfiles().end());
+
+    const std::set<std::string> only = parseOnlyNames(opts);
+    std::set<std::string>       matched;
+    filterByName(canvas, only, matched);
+    filterByName(output, only, matched);
+    for (const auto& n : only)
+        if (!matched.count(n))
+            std::cerr << "Warning: --only name '" << n << "' matched no profile.\n";
+
+    if (canvas.empty() && output.empty()) {
+        std::cerr << "Error: nothing to export"
+                  << (only.empty() ? " (workspace has no profiles)." : " (no --only name matched).")
+                  << '\n';
+        return 1;
+    }
+
+    try { ProfileBundleSerializer{}.save(canvas, output, opts.get("out")); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot write bundle: " << e.what() << '\n'; return 2;
+    }
+
+    std::cerr << "Exported " << canvas.size() << " canvas + " << output.size()
+              << " output profile(s) to '" << opts.get("out") << "'.\n";
+    return 0;
+}
+
+static int cmdWorkspaceImportProfiles(const Opts& opts)
+{
+    if (!opts.has("workspace")) { std::cerr << "Error: --workspace FILE is required\n"; return 1; }
+    if (!opts.has("from"))      { std::cerr << "Error: --from FILE is required\n"; return 1; }
+
+    const std::string wsFile   = opts.get("workspace");
+    const std::string fromFile = opts.get("from");
+
+    Workspace ws;
+    try { ws = WorkspaceSerializer{}.load(wsFile); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n'; return 2;
+    }
+
+    // The source is either a profile bundle or a full workspace — both carry the two palettes. A
+    // workspace is distinguished by its "projectItems" key; anything else is read as a bundle.
+    std::vector<CanvasProfile> canvas;
+    std::vector<OutputProfile> output;
+    try {
+        std::ifstream in(fromFile);
+        if (!in.is_open())
+            throw std::runtime_error("cannot open '" + fromFile + "'");
+        const nlohmann::json probe = nlohmann::json::parse(in);
+
+        if (probe.contains("projectItems")) {
+            Workspace src = WorkspaceSerializer{}.load(fromFile); // repairs ids the same way as an open
+            canvas.assign(src.canvasProfiles().begin(), src.canvasProfiles().end());
+            output.assign(src.outputProfiles().begin(), src.outputProfiles().end());
+        } else {
+            ProfileBundle b = ProfileBundleSerializer{}.load(fromFile);
+            canvas = std::move(b.canvasProfiles);
+            output = std::move(b.outputProfiles);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error: cannot read source '" << fromFile << "': " << e.what() << '\n';
+        return 2;
+    }
+
+    const std::set<std::string> only = parseOnlyNames(opts);
+    std::set<std::string>       matched;
+    filterByName(canvas, only, matched);
+    filterByName(output, only, matched);
+    for (const auto& n : only)
+        if (!matched.count(n))
+            std::cerr << "Warning: --only name '" << n << "' matched no profile in the source.\n";
+
+    if (canvas.empty() && output.empty()) {
+        std::cerr << "Error: nothing to import"
+                  << (only.empty() ? " (source has no profiles)." : " (no --only name matched).")
+                  << '\n';
+        return 1;
+    }
+
+    const ImportProfilesReport report =
+        WorkspaceEditor(ws).importProfiles(std::move(canvas), std::move(output));
+
+    try { WorkspaceSerializer{}.save(ws, wsFile); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot save workspace: " << e.what() << '\n'; return 2;
+    }
+
+    std::cerr << "Imported " << report.canvasIds.size() << " canvas + "
+              << report.outputIds.size() << " output profile(s) into '" << wsFile << "'.\n";
     return 0;
 }
 
@@ -2214,6 +2377,8 @@ static int runCli(int argc, char** argv)
                 // Combined view: both families in one listing.
                 else if (cmd2 == "list-all-profiles" || cmd2 == "list-profiles")
                     exitCode = cmdWorkspaceListAllProfiles(opts);
+                else if (cmd2 == "export-profiles")      exitCode = cmdWorkspaceExportProfiles(opts);
+                else if (cmd2 == "import-profiles")      exitCode = cmdWorkspaceImportProfiles(opts);
                 else if (cmd2 == "list-projects")  exitCode = cmdWorkspaceListProjects(opts);
                 else {
                     std::cerr << "Unknown workspace subcommand '" << cmd2

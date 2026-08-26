@@ -36,6 +36,18 @@
 namespace Platemaker::Infrastructure {
 
 /**
+ * \struct ImportProfilesReport
+ * \brief The ids minted for profiles brought in by \c WorkspaceEditor::importProfiles().
+ *
+ * One entry per profile actually added, in input order, so a consumer can report "imported N" or
+ * select the fresh profiles. Preset-id output profiles are skipped and therefore absent here.
+ */
+struct ImportProfilesReport {
+    std::vector<std::string> canvasIds; //!< Fresh ids of the imported canvas profiles.
+    std::vector<std::string> outputIds; //!< Fresh ids of the imported output profiles.
+};
+
+/**
  * \class WorkspaceEditor
  * \brief Intent-level, invariant-enforcing edits to a \c Models::Workspace.
  *
@@ -123,6 +135,33 @@ public:
      * \return Identifier collisions that had to be repaired.
      */
     WorkspaceRepairReport replaceOutputProfiles(std::vector<Models::OutputProfile> incoming);
+
+    // -----------------------------------------------------------------------
+    // Cross-workspace import (profile portability)
+    // -----------------------------------------------------------------------
+
+    /**
+     * \brief Imports profiles from another workspace or a profile bundle into this workspace.
+     *
+     * The transfer invariant, shared by the GUI and CLI so both obey the same rules:
+     *  - each canvas profile is added with a **fresh id** (via \c addCanvasProfile), and its
+     *    \c templateInfo is **cleared** — a template's path is relative to the source workspace and
+     *    is meaningless here, so an imported profile always starts with no template;
+     *  - each output profile is added with a fresh user id (via \c addOutputProfile), and any
+     *    profile carrying a **preset id is skipped** (presets are code-defined, resolved from the
+     *    catalogue — never imported as a user copy).
+     *
+     * Existing profiles are never touched; imports are always additive copies, which keeps the
+     * workspace self-contained (the source is not referenced after the import). Name collisions are
+     * intentionally *not* resolved here — ids are unique, and how a duplicate name is surfaced is a
+     * presentation choice left to the consumer.
+     *
+     * \param canvas Canvas profiles to import (typically another workspace's palette or a bundle's).
+     * \param output Output profiles to import; preset-id entries are dropped.
+     * \return The ids minted for the profiles actually added.
+     */
+    ImportProfilesReport importProfiles(std::vector<Models::CanvasProfile> canvas,
+                                        std::vector<Models::OutputProfile> output);
 
     // -----------------------------------------------------------------------
     // Projects

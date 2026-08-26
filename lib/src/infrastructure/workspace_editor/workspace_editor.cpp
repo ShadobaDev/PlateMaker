@@ -248,6 +248,35 @@ WorkspaceRepairReport WorkspaceEditor::replaceOutputProfiles(
 }
 
 // ---------------------------------------------------------------------------
+// Cross-workspace import (profile portability)
+// ---------------------------------------------------------------------------
+
+ImportProfilesReport WorkspaceEditor::importProfiles(std::vector<Models::CanvasProfile> canvas,
+                                                     std::vector<Models::OutputProfile> output)
+{
+    ImportProfilesReport report;
+
+    // Canvas: templateInfo is workspace-local (a path relative to the source), so drop it — an
+    // imported profile has no template here yet. addCanvasProfile mints a fresh unique id.
+    report.canvasIds.reserve(canvas.size());
+    for (auto& cp : canvas) {
+        cp.templateInfo = {};
+        report.canvasIds.push_back(addCanvasProfile(std::move(cp)));
+    }
+
+    // Output: skip presets (code-defined, resolved from the catalogue — never a user copy on import),
+    // mirroring replaceOutputProfiles. addOutputProfile mints a fresh user id for the rest.
+    report.outputIds.reserve(output.size());
+    for (auto& op : output) {
+        if (Models::outputPresetDefById(op.id))
+            continue;
+        report.outputIds.push_back(addOutputProfile(std::move(op)));
+    }
+
+    return report;
+}
+
+// ---------------------------------------------------------------------------
 // Projects
 // ---------------------------------------------------------------------------
 

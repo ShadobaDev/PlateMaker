@@ -471,4 +471,61 @@ TEST(WorkspaceEditorSnapshotMetaTest, LeavesProjectContentsUntouched)
     EXPECT_EQ(ws.projectItems[0].getInputImages().size(), 2u);
 }
 
+// ---------------------------------------------------------------------------
+// importProfiles — cross-workspace transfer invariant (fresh ids, no template, no presets)
+// ---------------------------------------------------------------------------
+
+TEST(WorkspaceEditorImportTest, MintsFreshIdsAndClearsTemplateInfo)
+{
+    Models::Workspace ws;
+    Infrastructure::WorkspaceEditor ed(ws);
+
+    // A profile arriving from another workspace carries that workspace's id and a template path
+    // relative to *its* directory. Import must give a fresh id and drop the template.
+    const auto report = ed.importProfiles(
+        {canvas("cp-source", "Manga B4", 1600, 10240, "templates/manga.png")},
+        {});
+
+    ASSERT_EQ(report.canvasIds.size(), 1u);
+    ASSERT_EQ(ws.canvasProfiles().size(), 1u);
+    const auto& imported = ws.canvasProfiles()[0];
+    EXPECT_NE(imported.id, "cp-source");            // fresh id, not the source's
+    EXPECT_EQ(imported.id, report.canvasIds[0]);
+    EXPECT_EQ(imported.name, "Manga B4");           // content preserved
+    EXPECT_EQ(imported.canvasSize.width, 1600);
+    EXPECT_TRUE(imported.templateInfo.path.empty()); // template stripped
+}
+
+TEST(WorkspaceEditorImportTest, SkipsPresetOutputProfilesButKeepsUserOnes)
+{
+    Models::Workspace ws;
+    Infrastructure::WorkspaceEditor ed(ws);
+
+    // A preset id must never be imported as a user copy — it resolves from the catalogue instead.
+    const auto report = ed.importProfiles(
+        {},
+        {output(std::string(Models::k_webtoonStandardPresetId), "Webtoon Standard"),
+         output("op-source", "My Output")});
+
+    ASSERT_EQ(report.outputIds.size(), 1u);          // only the user profile came in
+    ASSERT_EQ(ws.outputProfiles().size(), 1u);
+    EXPECT_EQ(ws.outputProfiles()[0].name, "My Output");
+    EXPECT_NE(ws.outputProfiles()[0].id, "op-source"); // fresh user id
+    EXPECT_EQ(ws.outputProfiles()[0].id, report.outputIds[0]);
+}
+
+TEST(WorkspaceEditorImportTest, IsAdditiveAndLeavesExistingProfilesUntouched)
+{
+    Models::Workspace ws;
+    Infrastructure::WorkspaceEditor ed(ws);
+
+    const std::string existing = ed.addCanvasProfile(canvas("", "Existing", 800, 1280));
+    ed.importProfiles({canvas("", "Imported", 900, 1280)}, {});
+
+    ASSERT_EQ(ws.canvasProfiles().size(), 2u);
+    EXPECT_TRUE(hasCanvasId(ws, existing));          // the original survives
+    EXPECT_EQ(ws.canvasProfiles()[0].name, "Existing");
+    EXPECT_EQ(ws.canvasProfiles()[1].name, "Imported");
+}
+
 } // namespace Platemaker

@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased]
+
+Additive — profile portability. Code built against 0.5.1 is unaffected (a PATCH).
+
+### Added
+
+- **Portable profile bundles (`.platemaker.profiles.json`).** A new
+  `Infrastructure::ProfileBundleSerializer` reads and writes a standalone set of canvas + output
+  profiles (a `ProfileBundle`), independent of any workspace, so profiles can move between workspaces
+  or be shared. On write it strips `CanvasTemplateInfo` (a template path is relative to a specific
+  workspace) and drops any output **preset** (presets are code-defined and resolved from the
+  catalogue), so a bundle file always satisfies those invariants. Writes are atomic (temp + rename),
+  like `WorkspaceSerializer`. The library never chooses where a bundle lives — that is the consumer's
+  concern (a user-picked path, or a GUI-managed library in the OS app-data directory).
+- **`WorkspaceEditor::importProfiles(canvas, output)`** — the single cross-workspace transfer rule,
+  shared by every consumer: each imported profile is added with a **fresh id**, canvas `templateInfo`
+  is **cleared**, and preset-id output profiles are **skipped**. Imports are additive copies, so the
+  target workspace stays self-contained. Returns an `ImportProfilesReport` of the minted ids.
+- **CLI `workspace export-profiles` / `import-profiles`.** Export the workspace's profiles to a bundle
+  (`--out FILE`, optional `--only NAME,…` by name); import into a workspace from either a bundle or
+  another `.platemaker.json` workspace (`--from SOURCE`, optional `--only`).
+
 ## [0.5.1] — 23.08.2026
 
 Packaging only — no source, API, or behaviour change; code built against 0.5.0 is unaffected. Windows now
