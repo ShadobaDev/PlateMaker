@@ -16,9 +16,10 @@ work happens in.
 - **Cascade.** Whichever section releases first takes its slot; the rest re-derive from the new
   baseline — ship a MINOR before a pending PATCH and the patch re-derives onto the new baseline.
 
-Baseline: **0.5.0 released (2026-08-22); 0.5.1 in progress** (`CMakeLists.txt`). 0.5.1 is packaging only —
-it adds MSVC dev/cli packages for Windows alongside the MinGW ones (no source or API change), so it is a
-**PATCH**: code built against 0.5.0 keeps compiling. (Released tags: 0.4.0 → 0.4.1 → 0.5.0.)
+Baseline: **0.5.1 released (packaging: MSVC dev/cli packages); 0.5.2 in progress** (`CMakeLists.txt`).
+0.5.2 is additive — portable profile bundles (`.platemaker.profiles.json`),
+`WorkspaceEditor::importProfiles`, and the CLI `export/import-profiles` commands — so it is a **PATCH**:
+code built against 0.5.1 keeps compiling. (Released tags: 0.4.0 → 0.4.1 → 0.5.0 → 0.5.1.)
 
 ---
 

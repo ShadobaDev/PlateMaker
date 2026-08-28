@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.2] — Unreleased
 
 Additive — profile portability. Code built against 0.5.1 is unaffected (a PATCH).
 
