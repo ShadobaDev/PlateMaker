@@ -76,17 +76,22 @@ public:
     /**
      * \brief Loads an image from disk and returns it as a PixelBuffer.
      *
-     * Uses libvips sequential (streaming) access — the full image is not loaded
-     * into RAM upfront.  The colour profile embedded in the file is normalised to
-     * sRGB on load if present.
+     * Loads with random access (so downstream crop/extract can read any row), rotates to display
+     * orientation per EXIF, and — when \p convertToSRGB is true — normalises the colour profile to
+     * sRGB via any embedded ICC profile (a no-op / kept-as-is when none is present or the transform
+     * fails).  Pass \c false to keep the source colour space untouched; the optional colour-correction
+     * step uses that so its own \c ColourCorrection::iccToSRGB toggle is the single authority over the
+     * sRGB conversion, rather than it happening unconditionally on load.
      *
-     * \param filePath Absolute path to the image file to load.
+     * \param filePath      Absolute path to the image file to load.
+     * \param convertToSRGB Convert to sRGB via the embedded ICC profile when true (default, historical
+     *                      behaviour); leave the colour space as loaded when false.
      * \return A valid PixelBuffer containing the loaded image.
      *
      * \throws std::runtime_error if the file does not exist, cannot be read, or is
      *                            not a supported format.
      */
-    [[nodiscard]] Core::PixelBuffer load(const std::string& filePath) const;
+    [[nodiscard]] Core::PixelBuffer load(const std::string& filePath, bool convertToSRGB = true) const;
 
     /**
      * \brief Saves a PixelBuffer to disk using the profile's format and options.

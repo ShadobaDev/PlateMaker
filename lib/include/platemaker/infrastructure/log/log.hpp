@@ -58,6 +58,7 @@ enum Component : std::uint64_t {
     ProjectEditor        = 1ull << 9,   // 0x0200
     ThumbnailCache       = 1ull << 10,  // 0x0400
     FileMetaData         = 1ull << 11,  // 0x0800
+    ColourCorrector      = 1ull << 12,  // 0x1000
     All                  = ~0ull,
 };
 

@@ -25,7 +25,7 @@ namespace Platemaker::Infrastructure {
 // load
 // ---------------------------------------------------------------------------
 
-Core::PixelBuffer ImageIO::load(const std::string& filePath) const
+Core::PixelBuffer ImageIO::load(const std::string& filePath, bool convertToSRGB) const
 {
     // VIPS_ACCESS_RANDOM allows any downstream operation (e.g. crop, extract)
     // to access arbitrary rows without a second file read.  For the standard
@@ -52,6 +52,11 @@ Core::PixelBuffer ImageIO::load(const std::string& filePath) const
     }
     g_object_unref(image);
     image = upright;
+
+    // Keep the source colour space when the caller opts out (the colour-correction step drives the
+    // sRGB conversion itself via ColourCorrection::iccToSRGB, so it must be able to load raw).
+    if (!convertToSRGB)
+        return Core::PixelBuffer{image};
 
     // Attempt to normalise the colour profile to sRGB using any embedded ICC
     // profile.  If none is present or the transform fails, continue with the

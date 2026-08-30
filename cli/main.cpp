@@ -1582,7 +1582,9 @@ static int cmdProcess(const Opts& opts)
         outputDir,
         cancelToken,
         callbacks,
-        /*onlySlices*/ partial ? &dirtySlices : nullptr);
+        /*onlySlices*/ partial ? &dirtySlices : nullptr,
+        /*thumbnailCacheDir*/ {},
+        project.colourCorrection);
 
     if (outcome.failed) {
         if (!jsonMode) dump.failure(outcome.error);

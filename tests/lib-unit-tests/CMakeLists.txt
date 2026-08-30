@@ -32,6 +32,7 @@ add_executable(platemaker-lib-tests
     test_pixel_buffer.cpp
     test_log.cpp
     test_scaled_strip.cpp
+    test_colour_corrector.cpp
     test_thumbnail_cache.cpp
     test_image_io.cpp
     test_image_io_concurrency.cpp

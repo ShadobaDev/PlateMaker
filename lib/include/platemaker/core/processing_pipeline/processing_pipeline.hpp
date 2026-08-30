@@ -85,6 +85,11 @@ public:
      *                         gets a cache hit and never opens the output during the run. Warming a
      *                         thumbnail is best-effort: a failure is logged, not fatal. Empty → no
      *                         thumbnails (the CLI default; headless callers pay nothing).
+     * \param colourCorrection Optional per-page colour grade applied in the page domain (before scale)
+     *                         to every input except those in its \c excludedInputUids.  Default /
+     *                         \c enabled==false → no colour work at all, so the output is byte-identical
+     *                         to a build without this step.  Its \c iccToSRGB drives the sRGB conversion
+     *                         at load for the graded pages.
      * \return A \c ProcessingOutcome with per-slice records, skipped pages and flags.
      */
     [[nodiscard]] static ProcessingOutcome run(
@@ -96,7 +101,8 @@ public:
         const Infrastructure::CancellationToken&   cancel,
         const ProcessingCallbacks&                 callbacks         = {},
         const std::unordered_set<std::string>*     onlySlices        = nullptr,
-        const std::string&                         thumbnailCacheDir = {});
+        const std::string&                         thumbnailCacheDir = {},
+        const Models::ColourCorrection&            colourCorrection  = {});
 };
 
 } // namespace Platemaker::Core

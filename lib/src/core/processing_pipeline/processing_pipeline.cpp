@@ -13,6 +13,7 @@
 #include <platemaker/core/processing_pipeline/processing_pipeline.hpp>
 
 #include <platemaker/core/canvas_profile_matcher/canvas_profile_matcher.hpp>
+#include <platemaker/core/colour_corrector/colour_corrector.hpp>
 #include <platemaker/core/margin_cropper/margin_cropper.hpp>
 #include <platemaker/core/scaled_strip/scaled_strip.hpp>
 #include <platemaker/core/scaler/scaler.hpp>
@@ -25,6 +26,7 @@
 
 #include <vips/vips.h>
 
+#include <algorithm>
 #include <functional>
 #include <iomanip>
 #include <sstream>
@@ -105,7 +107,8 @@ ProcessingOutcome ProcessingPipeline::run(
     const Infrastructure::CancellationToken&  cancel,
     const ProcessingCallbacks&                callbacks,
     const std::unordered_set<std::string>*    onlySlices,
-    const std::string&                        thumbnailCacheDir)
+    const std::string&                        thumbnailCacheDir,
+    const Models::ColourCorrection&           colourCorrection)
 {
     using namespace Platemaker::Models;
     using Platemaker::Infrastructure::FileMetaData;
@@ -124,15 +127,22 @@ ProcessingOutcome ProcessingPipeline::run(
     // need a separate crash handler).
     try {
 
-    Scaler        scaler;
-    MarginCropper cropper;
-    ImageIO       imageIO;
-    ScaledStrip   strip;
+    Scaler          scaler;
+    MarginCropper   cropper;
+    ImageIO         imageIO;
+    ScaledStrip     strip;
+    ColourCorrector colourCorrector;
 
     namespace Log = Platemaker::Infrastructure::Log;
 
     const bool hasProfiles = !canvasProfiles.empty();
     CanvasProfileMatcher matcher(canvasProfiles, canvasProfileIds);
+
+    // Colour correction (page domain): applied per input before scale/append, unless the step is
+    // disabled or this page's uid is excluded. Disabled → the historical load/scale paths run untouched,
+    // so the output is byte-identical to a build without this step.
+    const std::unordered_set<std::string> ccExcluded(
+        colourCorrection.excludedInputUids.begin(), colourCorrection.excludedInputUids.end());
 
     // -----------------------------------------------------------------------
     // 1. Build the virtual strip (load → optional margin crop → scale → append).
@@ -227,11 +237,27 @@ ProcessingOutcome ProcessingPipeline::run(
                  matchedProfile->margins.left   > 0 ||
                  matchedProfile->margins.right  > 0);
 
+            // Grade this page when the step is enabled and the page is not excluded. When off, both the
+            // margin and no-margin branches below are exactly the historical code (byte-identical output);
+            // the colour work lives only in the CC-on branches, which load explicitly so the grade can sit
+            // between load and scale.
+            const bool applyCC = colourCorrection.enabled && ccExcluded.count(file.uid) == 0;
+
             if (doMarginCrop) {
-                auto buf     = imageIO.load(file.filePath);
+                // ICC on load: when grading, ColourCorrection::iccToSRGB decides; otherwise keep the
+                // historical always-sRGB behaviour of the margin path.
+                auto buf = imageIO.load(file.filePath,
+                                        applyCC ? colourCorrection.iccToSRGB : true);
+                if (applyCC)
+                    buf = colourCorrector.apply(std::move(buf), colourCorrection);
                 auto cropped = cropper.crop(buf, matchedProfile->margins);
                 auto scaled  = scaler.scale(std::move(cropped), file.filePath,
                                             outProfile.targetWidth);
+                strip.append(std::move(scaled));
+            } else if (applyCC) {
+                auto buf = imageIO.load(file.filePath, colourCorrection.iccToSRGB);
+                buf = colourCorrector.apply(std::move(buf), colourCorrection);
+                auto scaled = scaler.scale(std::move(buf), file.filePath, outProfile.targetWidth);
                 strip.append(std::move(scaled));
             } else {
                 auto scaled = scaler.scale(file.filePath, outProfile.targetWidth);
