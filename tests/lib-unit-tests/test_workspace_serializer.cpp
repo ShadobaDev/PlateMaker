@@ -262,4 +262,91 @@ TEST(WorkspaceSerializerTest, BackCompatLoadWithoutIdGetsAMintedId)
     std::filesystem::remove(tmp);
 }
 
+// ---------------------------------------------------------------------------
+// Optional processing steps (colour correction + strip overlays)
+// ---------------------------------------------------------------------------
+
+TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
+{
+    // Colour-correction params and strip overlays are per-project config; they must survive save/load
+    // so a graded / annotated chapter reopens exactly as configured.
+    const WorkspaceSerializer ser;
+    Models::Workspace         original = makeMinimalWorkspace();
+
+    Models::ProjectItem proj;
+    proj.name = "Chapter";
+    proj.uid  = "proj-proc-001";
+    proj.colourCorrection.enabled           = true;
+    proj.colourCorrection.iccToSRGB         = false;
+    proj.colourCorrection.brightness        = 0.1;
+    proj.colourCorrection.contrast          = 1.2;
+    proj.colourCorrection.saturation        = 0.8;
+    proj.colourCorrection.excludedInputUids = {"file-001", "file-009"};
+    proj.stripOverlays.push_back(
+        Models::StripOverlay{"ovl-1", "/tmp/bubble.png", "deadbeef", 40, 1500, true});
+    original.projectItems.push_back(std::move(proj));
+
+    const std::filesystem::path tmp =
+        std::filesystem::temp_directory_path() / "pm_test_processing.platemaker.json";
+    ser.save(original, tmp.string());
+    const auto loaded = ser.load(tmp.string());
+
+    ASSERT_EQ(loaded.projectItems.size(), 1u);
+    const auto& p = loaded.projectItems.front();
+    EXPECT_TRUE(p.colourCorrection.enabled);
+    EXPECT_FALSE(p.colourCorrection.iccToSRGB);
+    EXPECT_DOUBLE_EQ(p.colourCorrection.brightness, 0.1);
+    EXPECT_DOUBLE_EQ(p.colourCorrection.contrast,   1.2);
+    EXPECT_DOUBLE_EQ(p.colourCorrection.saturation, 0.8);
+    EXPECT_EQ(p.colourCorrection.excludedInputUids,
+              (std::vector<std::string>{"file-001", "file-009"}));
+    ASSERT_EQ(p.stripOverlays.size(), 1u);
+    EXPECT_EQ(p.stripOverlays[0].uid,        "ovl-1");
+    EXPECT_EQ(p.stripOverlays[0].bitmapPath, "/tmp/bubble.png");
+    EXPECT_EQ(p.stripOverlays[0].sha256,     "deadbeef");
+    EXPECT_EQ(p.stripOverlays[0].x, 40);
+    EXPECT_EQ(p.stripOverlays[0].y, 1500);
+    EXPECT_TRUE(p.stripOverlays[0].enabled);
+
+    std::filesystem::remove(tmp);
+}
+
+TEST(WorkspaceSerializerTest, LegacyProjectLoadsProcessingDefaults)
+{
+    // A project written before optional processing steps existed — no colourCorrection / stripOverlays
+    // keys.  It must load with the step disabled and no overlays, so the render is unchanged.
+    const std::filesystem::path tmp =
+        std::filesystem::temp_directory_path() / "pm_test_processing_legacy.platemaker.json";
+
+    {
+        std::ofstream f(tmp);
+        f << R"({
+            "version": 2,
+            "canvasProfiles": [],
+            "outputProfiles": [],
+            "outputDirectory": "",
+            "projectItems": [{
+                "name": "Legacy",
+                "uid": "proj-legacy",
+                "inputFiles": [],
+                "outputFiles": [],
+                "outputDirectory": ""
+            }]
+        })";
+    }
+
+    const WorkspaceSerializer ser;
+    Models::Workspace loaded;
+    ASSERT_NO_THROW(loaded = ser.load(tmp.string()));
+
+    ASSERT_EQ(loaded.projectItems.size(), 1u);
+    const auto& p = loaded.projectItems.front();
+    EXPECT_FALSE(p.colourCorrection.enabled);
+    EXPECT_TRUE(p.colourCorrection.iccToSRGB); // struct default preserved when the key is absent
+    EXPECT_TRUE(p.colourCorrection.excludedInputUids.empty());
+    EXPECT_TRUE(p.stripOverlays.empty());
+
+    std::filesystem::remove(tmp);
+}
+
 } // namespace Platemaker::Infrastructure

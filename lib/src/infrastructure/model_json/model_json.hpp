@@ -27,6 +27,7 @@
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/common_types.hpp>
 #include <platemaker/models/output_profile.hpp>
+#include <platemaker/models/processing_steps.hpp>
 #include <platemaker/models/project_item.hpp>
 #include <platemaker/models/workspace.hpp>
 
@@ -93,6 +94,12 @@ void from_json(const nlohmann::json& j, CanvasProfile& v);
 
 void to_json(nlohmann::json& j, const OutputProfile& v);
 void from_json(const nlohmann::json& j, OutputProfile& v);
+
+void to_json(nlohmann::json& j, const ColourCorrection& v);
+void from_json(const nlohmann::json& j, ColourCorrection& v);
+
+void to_json(nlohmann::json& j, const StripOverlay& v);
+void from_json(const nlohmann::json& j, StripOverlay& v);
 
 void to_json(nlohmann::json& j, const InputFile& v);
 void from_json(const nlohmann::json& j, InputFile& v);

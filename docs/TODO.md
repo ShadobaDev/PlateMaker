@@ -213,19 +213,43 @@ workspace stays self-contained). CLI: `workspace export-profiles` / `import-prof
 a bundle *or* another workspace, `--only NAME,…` selects by name. The lib never chooses a file location;
 that is the consumer's job.
 
-**GUI — pending (see the GUI TODO).** An import dialog (cherry-pick + inspection) whose sources are
-another workspace, a bundle file, and a **GUI-managed user library** (a bundle at a fixed `AppData`
-path, `user.platemaker.profiles.json`), plus export. Workspaces stay self-contained; the library is only
-ever an import source (the earlier per-profile "global" flag was dropped). Reuses the existing Manage
-dialogs; new `widgets/importprofilesdialog/` + a read-only mode on the profile editors for inspection.
+**GUI — DONE (ships in GUI 1.5.0; see the GUI changelog).** Import/Export submenus under *Canvas Profiles*
+and *Output*, sourcing from another workspace, a bundle file, a **GUI-managed user library** (a bundle at
+a fixed `AppData` path, `user.platemaker.profiles.json`), and recent workspaces/bundles. A reusable
+`widgets/profilepickerdialog/` (cherry-pick + grouped read-only inspection panel + coloured badges); export
+upserts into the library (no duplicates, overwrite-confirmed). Workspaces stay self-contained; the library
+is only ever an import source / export target (the earlier per-profile "global" flag was dropped). **This
+item is closed.**
 
-### Infinite strip and lookup system
+### Infinite strip and lookup system (done?)
 The problem is that during work user may want to see how does the full strip look like; might be a GUI reposibility.
 Two ideas:
 1. Built-in webtoon-like viewer. Problem are margins and general rendereing - the files will have to be either rendered on fly or stored in temporary location with option to save
 2. Render infinite long strip either via designated output profile or separate button/menu option [Process]
 
 Both options could be implemented.
+
+### Project-wide colour correction. 
+  Comic/webtoon art is drawn on iPad in **Display P3** (wide gamut); most webtoon platforms and screens are **sRGB**, so even Procreate's "sRGB IEC61966-2.1" export
+  doesn't fully fix how colours land (gamut mapping / a perceived shift). Artists want the *whole chapter*
+  graded consistently, not tweaked page-by-page. Idea: a **project-level colour tool** that uniformly
+  adjusts every input page of a project at render time (non-destructive — source files untouched).
+  - Open design questions: proper **ICC colour management** (P3→sRGB via embedded/assumed profiles)
+    versus a simple **user-driven curves/levels** control (per-channel RGB curves, saturation,
+    brightness/contrast) versus both; how the settings are stored (a project setting, like the canvas /
+    output profile) and previewed before a full render.
+  - The pixel work belongs in the lib (libvips has `vips_icc_transform` plus curve/LUT ops) — mirror in
+    the lib TODO.
+  - **Scope idea:** apply project-wide but with optional per-page **exclusions** (e.g. everywhere except the first
+    and last page), which touches several GUI components (input tiles, a settings panel, the render
+    path).
+  - Consumer (GUI) has to visualize color correction in Infinite strip and lookup system.
+    Two ideas:
+    1. Persistenly modify input files - goes against rule not to modify raw user input.
+    2. Add do lib an additional step during render to overlay color correction. 
+  
+### Text and Text bubble creator
+  Add to lib an additional step to overlay text and text bubbles during render.
 
 ---
 

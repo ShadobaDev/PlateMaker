@@ -51,6 +51,7 @@
 #include "platemaker/platemaker_export.h"
 #include "platemaker/models/canvas_profile.hpp"
 #include "platemaker/models/processing_error.hpp"
+#include "platemaker/models/processing_steps.hpp"
 
 // Forward declarations only (no include, so Models stays independent of Infrastructure). The
 // project's profile-link fields are private; WorkspaceEditor is the sole runtime mutation authority
@@ -331,6 +332,14 @@ public:
     /// \c order-sorted uids (\c detectInputCompositionChange()) is what surfaces it.  Keyed by \c uid
     /// (not path) so a rename — same content, same position — does not false-invalidate.
     std::vector<std::string> inputOrderAtRender;
+
+    /// Optional project-wide colour correction applied per input page at render (page domain).
+    /// Disabled by default — an untouched project renders byte-identically.  See \c processing_steps.hpp.
+    ColourCorrection colourCorrection;
+
+    /// Optional text/bubble overlays composited onto the strip at render (strip domain), positioned in
+    /// strip coordinates.  Empty by default.  See \c StripOverlay in \c processing_steps.hpp.
+    std::vector<StripOverlay> stripOverlays;
 
     // -----------------------------------------------------------------------
     // Construction

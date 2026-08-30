@@ -165,6 +165,48 @@ void from_json(const nlohmann::json& j, OutputProfile& v) {
     j.at("startIndex").get_to(v.startIndex);
 }
 
+// --- ColourCorrection ---
+void to_json(nlohmann::json& j, const ColourCorrection& v) {
+    j = nlohmann::json{
+        {"enabled",           v.enabled},
+        {"iccToSRGB",         v.iccToSRGB},
+        {"brightness",        v.brightness},
+        {"contrast",          v.contrast},
+        {"saturation",        v.saturation},
+        {"excludedInputUids", v.excludedInputUids}
+    };
+}
+void from_json(const nlohmann::json& j, ColourCorrection& v) {
+    // All additive: an old workspace has no "colourCorrection" object at all, and a future field left
+    // out of an older file simply keeps its struct default (disabled / neutral).
+    if (j.contains("enabled"))           j.at("enabled").get_to(v.enabled);
+    if (j.contains("iccToSRGB"))         j.at("iccToSRGB").get_to(v.iccToSRGB);
+    if (j.contains("brightness"))        j.at("brightness").get_to(v.brightness);
+    if (j.contains("contrast"))          j.at("contrast").get_to(v.contrast);
+    if (j.contains("saturation"))        j.at("saturation").get_to(v.saturation);
+    if (j.contains("excludedInputUids")) j.at("excludedInputUids").get_to(v.excludedInputUids);
+}
+
+// --- StripOverlay ---
+void to_json(nlohmann::json& j, const StripOverlay& v) {
+    j = nlohmann::json{
+        {"uid",        v.uid},
+        {"bitmapPath", v.bitmapPath},
+        {"sha256",     v.sha256},
+        {"x",          v.x},
+        {"y",          v.y},
+        {"enabled",    v.enabled}
+    };
+}
+void from_json(const nlohmann::json& j, StripOverlay& v) {
+    if (j.contains("uid"))        j.at("uid").get_to(v.uid);
+    if (j.contains("bitmapPath")) j.at("bitmapPath").get_to(v.bitmapPath);
+    if (j.contains("sha256"))     j.at("sha256").get_to(v.sha256);
+    if (j.contains("x"))          j.at("x").get_to(v.x);
+    if (j.contains("y"))          j.at("y").get_to(v.y);
+    if (j.contains("enabled"))    j.at("enabled").get_to(v.enabled);
+}
+
 // --- InputFile ---
 void to_json(nlohmann::json& j, const InputFile& v) {
     j = nlohmann::json{
@@ -247,6 +289,8 @@ void to_json(nlohmann::json& j, const ProjectItem& v) {
         {"outputSignature",  v.outputSignature},
         {"canvasProfileIdsAtRender", v.canvasProfileIdsAtRender},
         {"inputOrderAtRender", v.inputOrderAtRender},
+        {"colourCorrection", v.colourCorrection},
+        {"stripOverlays",    v.stripOverlays},
         {"inputFiles",       v.getInputImages()},
         {"outputFiles",      v.getOutputImages()},
         {"outputDirectory",  v.getOutputDirectory()}
@@ -264,6 +308,10 @@ void from_json(const nlohmann::json& j, ProjectItem& v) {
         j.at("canvasProfileIdsAtRender").get_to(v.canvasProfileIdsAtRender);
     if (j.contains("inputOrderAtRender"))
         j.at("inputOrderAtRender").get_to(v.inputOrderAtRender);
+    // additive — absent in workspaces written before optional processing steps existed; an absent
+    // object / array leaves colourCorrection disabled and stripOverlays empty (a byte-identical render).
+    if (j.contains("colourCorrection")) j.at("colourCorrection").get_to(v.colourCorrection);
+    if (j.contains("stripOverlays"))    j.at("stripOverlays").get_to(v.stripOverlays);
     j.at("inputFiles").get_to(v.getInputImages());
     j.at("outputFiles").get_to(v.getOutputImages());
     j.at("outputDirectory").get_to(v.getOutputDirectory());
