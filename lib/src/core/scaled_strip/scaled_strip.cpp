@@ -75,7 +75,8 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
     const int sliceEndY = sliceStartY + sliceH;
 
     SliceResult result;
-    result.index = index;
+    result.index     = index;
+    result.stripTopY = sliceStartY; // the true strip-Y top — strip-domain overlays position against this
 
     // Collect one extracted sub-image per source entry that overlaps this slice.
     // We own these intermediate images until they are either transferred to

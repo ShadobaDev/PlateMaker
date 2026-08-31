@@ -45,21 +45,22 @@ namespace Platemaker::Infrastructure::Log {
  * and \c All are convenience masks, not components.
  */
 enum Component : std::uint64_t {
-    None                 = 0,
-    ProcessingPipeline   = 1ull << 0,   // 0x0001
-    Scaler               = 1ull << 1,   // 0x0002
-    ScaledStrip          = 1ull << 2,   // 0x0004
-    MarginCropper        = 1ull << 3,   // 0x0008
-    CanvasProfileMatcher = 1ull << 4,   // 0x0010
-    ImageIO              = 1ull << 5,   // 0x0020
-    TemplateGenerator    = 1ull << 6,   // 0x0040
-    WorkspaceSerializer  = 1ull << 7,   // 0x0080
-    WorkspaceEditor      = 1ull << 8,   // 0x0100
-    ProjectEditor        = 1ull << 9,   // 0x0200
-    ThumbnailCache       = 1ull << 10,  // 0x0400
-    FileMetaData         = 1ull << 11,  // 0x0800
-    ColourCorrector      = 1ull << 12,  // 0x1000
-    All                  = ~0ull,
+    None                    = 0,
+    ProcessingPipeline      = 1ull << 0,    // 0x0001
+    Scaler                  = 1ull << 1,    // 0x0002
+    ScaledStrip             = 1ull << 2,    // 0x0004
+    MarginCropper           = 1ull << 3,    // 0x0008
+    CanvasProfileMatcher    = 1ull << 4,    // 0x0010
+    ImageIO                 = 1ull << 5,    // 0x0020
+    TemplateGenerator       = 1ull << 6,    // 0x0040
+    WorkspaceSerializer     = 1ull << 7,    // 0x0080
+    WorkspaceEditor         = 1ull << 8,    // 0x0100
+    ProjectEditor           = 1ull << 9,    // 0x0200
+    ThumbnailCache          = 1ull << 10,   // 0x0400
+    FileMetaData            = 1ull << 11,   // 0x0800
+    ColourCorrector         = 1ull << 12,   // 0x1000
+    StripOverlayCompositor  = 1ull << 13,   // 0x2000
+    All                     = ~0ull,
 };
 
 /// Replace the enabled-component mask (thread-safe). Bits set → those components log.

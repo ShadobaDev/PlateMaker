@@ -47,6 +47,7 @@ namespace Platemaker::Core {
 struct PLATEMAKER_EXPORT SliceResult {
     PixelBuffer                image;       //!< Pixel data for this output slice.
     int                        index = 0;   //!< 0-based output index — use with startIndex to build the filename.
+    int                        stripTopY = 0; //!< Y of this slice's top within the continuous strip (strip coordinates).
     std::vector<Models::SourceSegment> sourceMap;   //!< Provenance: one entry per source file that contributed pixels to this slice.
 };
 

@@ -17,6 +17,7 @@
 #include <platemaker/core/margin_cropper/margin_cropper.hpp>
 #include <platemaker/core/scaled_strip/scaled_strip.hpp>
 #include <platemaker/core/scaler/scaler.hpp>
+#include <platemaker/core/strip_overlay_compositor/strip_overlay_compositor.hpp>
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/infrastructure/image_io/image_io.hpp>
 #include <platemaker/infrastructure/log/log.hpp>
@@ -108,7 +109,8 @@ ProcessingOutcome ProcessingPipeline::run(
     const ProcessingCallbacks&                callbacks,
     const std::unordered_set<std::string>*    onlySlices,
     const std::string&                        thumbnailCacheDir,
-    const Models::ColourCorrection&           colourCorrection)
+    const Models::ColourCorrection&           colourCorrection,
+    const std::vector<Models::StripOverlay>&  stripOverlays)
 {
     using namespace Platemaker::Models;
     using Platemaker::Infrastructure::FileMetaData;
@@ -127,11 +129,12 @@ ProcessingOutcome ProcessingPipeline::run(
     // need a separate crash handler).
     try {
 
-    Scaler          scaler;
-    MarginCropper   cropper;
-    ImageIO         imageIO;
-    ScaledStrip     strip;
-    ColourCorrector colourCorrector;
+    Scaler                 scaler;
+    MarginCropper          cropper;
+    ImageIO                imageIO;
+    ScaledStrip            strip;
+    ColourCorrector        colourCorrector;
+    StripOverlayCompositor overlayCompositor;
 
     namespace Log = Platemaker::Infrastructure::Log;
 
@@ -341,6 +344,10 @@ ProcessingOutcome ProcessingPipeline::run(
         }
     }
 
+    // Strip-domain overlays (text/bubbles): decode the bitmaps once, then composite the ones each slice
+    // intersects just before it is saved. Empty → no compositing (byte-identical output).
+    const std::vector<LoadedOverlay> loadedOverlays = overlayCompositor.load(stripOverlays);
+
     int savedCount = 0;
     const auto onSlice = [&](SliceResult&& slice) -> bool {
         const std::string outName = sliceName(slice.index);
@@ -353,6 +360,21 @@ ProcessingOutcome ProcessingPipeline::run(
         }
 
         const std::string outPath = outputDir + "/" + outName;
+
+        // Composite any overlays intersecting this slice (strip domain) before encoding. A slice no
+        // overlay touches is returned unchanged; a failure aborts the render with a typed error.
+        if (!loadedOverlays.empty()) {
+            try {
+                slice.image = overlayCompositor.apply(std::move(slice.image), slice.stripTopY, loadedOverlays);
+            } catch (const std::exception& e) {
+                outcome.failed = true;
+                outcome.error  = ProcessingError{
+                    ProcessingErrorCode::SliceEncodeFailed, ProcessingErrorCategory::Encode,
+                    "Failed to composite overlays on '" + outName + "': " + e.what(), {}, outName};
+                emitLog(callbacks.onLog, ProcessingLogLevel::Error, outcome.error->message);
+                return false;   // stop slicing
+            }
+        }
 
         try {
             imageIO.save(slice.image, outPath, outProfile);

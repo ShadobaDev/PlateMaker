@@ -1584,7 +1584,8 @@ static int cmdProcess(const Opts& opts)
         callbacks,
         /*onlySlices*/ partial ? &dirtySlices : nullptr,
         /*thumbnailCacheDir*/ {},
-        project.colourCorrection);
+        project.colourCorrection,
+        project.stripOverlays);
 
     if (outcome.failed) {
         if (!jsonMode) dump.failure(outcome.error);

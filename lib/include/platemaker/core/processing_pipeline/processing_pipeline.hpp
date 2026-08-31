@@ -90,6 +90,10 @@ public:
      *                         \c enabled==false → no colour work at all, so the output is byte-identical
      *                         to a build without this step.  Its \c iccToSRGB drives the sRGB conversion
      *                         at load for the graded pages.
+     * \param stripOverlays    Optional text/bubble overlays composited in the strip domain (per slice,
+     *                         at strip-Y).  Empty → no compositing, so the output is byte-identical to a
+     *                         build without this step; a slice no overlay intersects is likewise
+     *                         untouched even when overlays are present elsewhere.
      * \return A \c ProcessingOutcome with per-slice records, skipped pages and flags.
      */
     [[nodiscard]] static ProcessingOutcome run(
@@ -102,7 +106,8 @@ public:
         const ProcessingCallbacks&                 callbacks         = {},
         const std::unordered_set<std::string>*     onlySlices        = nullptr,
         const std::string&                         thumbnailCacheDir = {},
-        const Models::ColourCorrection&            colourCorrection  = {});
+        const Models::ColourCorrection&            colourCorrection  = {},
+        const std::vector<Models::StripOverlay>&   stripOverlays     = {});
 };
 
 } // namespace Platemaker::Core
