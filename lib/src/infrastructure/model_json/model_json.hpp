@@ -95,6 +95,12 @@ void from_json(const nlohmann::json& j, CanvasProfile& v);
 void to_json(nlohmann::json& j, const OutputProfile& v);
 void from_json(const nlohmann::json& j, OutputProfile& v);
 
+void to_json(nlohmann::json& j, const CurvePoint& v);
+void from_json(const nlohmann::json& j, CurvePoint& v);
+
+void to_json(nlohmann::json& j, const ColourCurves& v);
+void from_json(const nlohmann::json& j, ColourCurves& v);
+
 void to_json(nlohmann::json& j, const ColourCorrection& v);
 void from_json(const nlohmann::json& j, ColourCorrection& v);
 

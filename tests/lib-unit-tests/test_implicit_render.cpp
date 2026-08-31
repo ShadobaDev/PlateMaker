@@ -86,6 +86,38 @@ Models::CanvasProfile profile(const std::string& id, const std::string& name, in
     return cp;
 }
 
+/// Writes a synthetic solid-colour sRGB PNG and returns its absolute path (for grade tests, where a
+/// black image would make saturation a no-op).
+std::string writeSolidPng(const TempDir& tmp, const std::string& name, int w, int h,
+                          std::uint8_t r, std::uint8_t g, std::uint8_t b)
+{
+    const std::string path = tmp.file(name);
+    std::vector<std::uint8_t> px(static_cast<std::size_t>(w) * h * 3);
+    for (std::size_t i = 0; i < px.size(); i += 3) { px[i] = r; px[i + 1] = g; px[i + 2] = b; }
+    VipsImage* raw = vips_image_new_from_memory_copy(px.data(), px.size(), w, h, 3, VIPS_FORMAT_UCHAR);
+    EXPECT_NE(raw, nullptr) << vips_error_buffer();
+    VipsImage* srgb = nullptr;
+    EXPECT_EQ(vips_copy(raw, &srgb, "interpretation", VIPS_INTERPRETATION_sRGB, nullptr), 0)
+        << vips_error_buffer();
+    g_object_unref(raw);
+    EXPECT_EQ(vips_image_write_to_file(srgb, path.c_str(), nullptr), 0) << vips_error_buffer();
+    g_object_unref(srgb);
+    return path;
+}
+
+/// Reads pixel (x,y) of an image file as band values.
+std::vector<double> readPixel(const std::string& path, int x, int y)
+{
+    VipsImage* im = vips_image_new_from_file(path.c_str(), nullptr);
+    EXPECT_NE(im, nullptr) << vips_error_buffer();
+    double* v = nullptr; int n = 0;
+    EXPECT_EQ(vips_getpoint(im, &v, &n, x, y, nullptr), 0) << vips_error_buffer();
+    std::vector<double> out(v, v + n);
+    g_free(v);
+    g_object_unref(im);
+    return out;
+}
+
 Models::InputFile input(const std::string& path)
 {
     Models::InputFile f;
@@ -249,6 +281,45 @@ TEST(ProcessingErrorTest, PerInputLoadFailureCarriesTypedCode)
     EXPECT_EQ(cap.byPath[bad].status,        InputStatus::SkippedError);
     EXPECT_EQ(cap.byPath[bad].errorCode,     Models::ProcessingErrorCode::InputLoadFailed);
     EXPECT_EQ(cap.byPath[bad].errorCategory, Models::ProcessingErrorCategory::Load);
+}
+
+// Colour correction with a per-page exclusion: the excluded input is left ungraded while its
+// neighbour is graded — pinning the pipeline's excludedInputUids path end-to-end.
+TEST(ColourCorrectionPipelineTest, ExcludedInputIsNotGraded)
+{
+    TempDir tmp("cc-exclude");
+    // Two identical red pages (100x100 → one 100px slice each at smallOutput()).
+    const std::string a = writeSolidPng(tmp, "a.png", 100, 100, 220, 30, 30);
+    const std::string b = writeSolidPng(tmp, "b.png", 100, 100, 220, 30, 30);
+
+    Models::InputFile fa = input(a); fa.uid = "in-a";
+    Models::InputFile fb = input(b); fb.uid = "in-b";
+
+    Models::ColourCorrection cc;
+    cc.enabled           = true;
+    cc.iccToSRGB         = false; // isolate the grade (these synthetic pages carry no ICC profile)
+    cc.saturation        = 0.0;   // desaturate to grey — unless the page is excluded
+    cc.excludedInputUids = {"in-a"};
+
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::run(
+        {fa, fb}, smallOutput(), /*palette*/ {}, /*projectIds*/ {},
+        tmp.dir(), cancel, /*callbacks*/ {}, /*onlySlices*/ nullptr,
+        /*thumbnailCacheDir*/ {}, cc);
+
+    ASSERT_FALSE(outcome.failed);
+    ASSERT_EQ(outcome.records.size(), 2u);
+
+    // slice 0 = page A (excluded) → keeps its colour; slice 1 = page B (graded) → grey.
+    const auto pa = readPixel(tmp.file("output_001.png"), 50, 50);
+    const auto pb = readPixel(tmp.file("output_002.png"), 50, 50);
+    ASSERT_GE(pa.size(), 3u);
+    ASSERT_GE(pb.size(), 3u);
+
+    EXPECT_GT(pa[0], pa[1] + 100.0) << "excluded page must keep its colour (red >> green)";
+    EXPECT_NEAR(pb[0], pb[1], 2.0) << "graded page must be desaturated (grey)";
+    EXPECT_NEAR(pb[1], pb[2], 2.0);
+    EXPECT_LT(pb[0], 120.0)        << "graded page must be the luminance grey of red";
 }
 
 } // namespace Platemaker::Core

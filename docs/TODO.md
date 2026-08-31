@@ -251,6 +251,40 @@ Both options could be implemented.
 ### Text and Text bubble creator
   Add to lib an additional step to overlay text and text bubbles during render.
 
+### Lib processing-steps framework — core DONE (lib side); follow-ups below
+  The lib now runs both features as optional, non-destructive **render-time steps** at two seams —
+  **page domain** (colour correction: ICC P3→sRGB + brightness/contrast/saturation, project-wide with
+  per-page exclusions) and **strip domain** (text/bubble RGBA overlays, strip-anchored, straddling a
+  slice cut lands on both slices). Unified by a typed-step descriptor table (`k_processingStepDefs`)
+  and folded into staleness (`processingConfigSignature`). Config lives on `ProjectItem`
+  (`colourCorrection`, `stripOverlays`, `processingSignature`) and is serialized by the lib; opt-in /
+  default-off, so an unconfigured project renders byte-identically. See the `pipeline-two-seam-steps`
+  design note.
+
+  Remaining **lib** follow-ups (small, additive, opt-in):
+  - [x] **(E) Tone curves / LUT in CC** — per-channel master + R/G/B curves (control points → 256-entry
+    LUT via `vips_maplut`), applied before brightness/contrast/saturation. MVP: linear interpolation,
+    8-bit only (cubic + 16-bit deferred). Feeds `processingConfigSignature`.
+  - [ ] **(F+H) Overlay inventory (lib-owned) + blend modes** — overlays are **parallel resources to
+    inputs**: the GUI creates the RGBA bitmap file, the **lib inventories it**. Add `ProjectItem` methods
+    `addOverlay(path,x,y[,blend])` / `updateOverlay` / `removeOverlay` that mint the uid, compute the
+    sha256 and **dedup by sha** (same content → one path — the rename-detection mechanics inputs use),
+    mirroring `mergeFileScan` / `ensureUniqueFileUids`. Make `stripOverlays` private + const getter so the
+    inventory can't be bypassed. `StripOverlay.blend` (Over default, plus Multiply / Screen / Overlay /
+    Darken / Lighten → `VipsBlendMode`) replaces the hardcoded source-over, set via the add/update API.
+    Both feed the signature. Files stay referenced by path (lib never copies) — same self-containment as
+    inputs; a future uniform "collect assets" step (inputs + overlays) could add full portability later.
+  - [x] **(G) CC-exclusion pipeline test** — integration test proving `excludedInputUids` leaves a page
+    ungraded while its neighbours are graded (currently only manual/e2e coverage).
+
+  Persistence (decided): overlay bitmaps are treated **like inputs** — the GUI creates the file, the lib
+  owns the inventory (uid + path + sha256 + dedup) and serializes it; the config is already lib-serialized,
+  so after a restart the workspace reconstructs the pipeline 1:1. CC has no binary artifact (pure numbers).
+
+  Remaining **GUI** work (separate round): CC panel + per-page exclusion toggles; a bubble/text editor
+  over the strip viewer that rasterizes the RGBA overlay bitmaps and registers them via the lib's
+  `addOverlay` inventory API.
+
 ---
 
 ## MAJOR — next: 1.0.0

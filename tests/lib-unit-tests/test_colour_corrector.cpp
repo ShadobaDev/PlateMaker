@@ -141,4 +141,43 @@ TEST(ColourCorrectorTest, AlphaIsPreservedThroughGrade)
     EXPECT_DOUBLE_EQ(p[3], 200.0); // alpha untouched by the grade
 }
 
+TEST(ColourCorrectorTest, IdentityCurveIsNoOp)
+{
+    Models::ColourCorrection g = neutral();
+    g.curves.master = {{0.0, 0.0}, {1.0, 1.0}}; // identity line
+
+    ColourCorrector cc;
+    const auto p = pixel(cc.apply(makeSolid({100, 150, 200}), g));
+    ASSERT_EQ(p.size(), 3u);
+    EXPECT_DOUBLE_EQ(p[0], 100.0);
+    EXPECT_DOUBLE_EQ(p[1], 150.0);
+    EXPECT_DOUBLE_EQ(p[2], 200.0);
+}
+
+TEST(ColourCorrectorTest, MasterCurveMapsAllChannels)
+{
+    Models::ColourCorrection g = neutral();
+    g.curves.master = {{0.0, 0.0}, {0.5, 0.8}, {1.0, 1.0}}; // lift mid-tones
+
+    ColourCorrector cc;
+    const auto p = pixel(cc.apply(makeSolid({128, 128, 128}), g)); // t≈0.5 → ≈0.8 → ≈204
+    ASSERT_EQ(p.size(), 3u);
+    EXPECT_NEAR(p[0], 204.0, 3.0);
+    EXPECT_NEAR(p[1], 204.0, 3.0);
+    EXPECT_NEAR(p[2], 204.0, 3.0);
+}
+
+TEST(ColourCorrectorTest, PerChannelCurveOnlyAffectsItsChannel)
+{
+    Models::ColourCorrection g = neutral();
+    g.curves.r = {{0.0, 0.0}, {1.0, 0.5}}; // halve red; green/blue identity
+
+    ColourCorrector cc;
+    const auto p = pixel(cc.apply(makeSolid({128, 128, 128}), g));
+    ASSERT_EQ(p.size(), 3u);
+    EXPECT_NEAR(p[0], 64.0,  2.0); // red halved
+    EXPECT_NEAR(p[1], 128.0, 1.0); // green untouched
+    EXPECT_NEAR(p[2], 128.0, 1.0); // blue untouched
+}
+
 } // namespace Platemaker::Core

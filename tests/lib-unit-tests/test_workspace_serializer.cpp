@@ -281,6 +281,8 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     proj.colourCorrection.brightness        = 0.1;
     proj.colourCorrection.contrast          = 1.2;
     proj.colourCorrection.saturation        = 0.8;
+    proj.colourCorrection.curves.master     = {{0.0, 0.0}, {0.5, 0.8}, {1.0, 1.0}};
+    proj.colourCorrection.curves.r          = {{0.0, 0.0}, {1.0, 0.5}};
     proj.colourCorrection.excludedInputUids = {"file-001", "file-009"};
     proj.stripOverlays.push_back(
         Models::StripOverlay{"ovl-1", "/tmp/bubble.png", "deadbeef", 40, 1500, true});
@@ -298,6 +300,12 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     EXPECT_DOUBLE_EQ(p.colourCorrection.brightness, 0.1);
     EXPECT_DOUBLE_EQ(p.colourCorrection.contrast,   1.2);
     EXPECT_DOUBLE_EQ(p.colourCorrection.saturation, 0.8);
+    ASSERT_EQ(p.colourCorrection.curves.master.size(), 3u);
+    EXPECT_DOUBLE_EQ(p.colourCorrection.curves.master[1].x, 0.5);
+    EXPECT_DOUBLE_EQ(p.colourCorrection.curves.master[1].y, 0.8);
+    ASSERT_EQ(p.colourCorrection.curves.r.size(), 2u);
+    EXPECT_DOUBLE_EQ(p.colourCorrection.curves.r[1].y, 0.5);
+    EXPECT_TRUE(p.colourCorrection.curves.g.empty());
     EXPECT_EQ(p.colourCorrection.excludedInputUids,
               (std::vector<std::string>{"file-001", "file-009"}));
     ASSERT_EQ(p.stripOverlays.size(), 1u);

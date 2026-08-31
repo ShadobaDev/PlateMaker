@@ -165,11 +165,34 @@ void from_json(const nlohmann::json& j, OutputProfile& v) {
     j.at("startIndex").get_to(v.startIndex);
 }
 
+// --- CurvePoint ---
+void to_json(nlohmann::json& j, const CurvePoint& v) {
+    j = nlohmann::json{{"x", v.x}, {"y", v.y}};
+}
+void from_json(const nlohmann::json& j, CurvePoint& v) {
+    j.at("x").get_to(v.x);
+    j.at("y").get_to(v.y);
+}
+
+// --- ColourCurves ---
+void to_json(nlohmann::json& j, const ColourCurves& v) {
+    j = nlohmann::json{
+        {"master", v.master}, {"r", v.r}, {"g", v.g}, {"b", v.b}
+    };
+}
+void from_json(const nlohmann::json& j, ColourCurves& v) {
+    if (j.contains("master")) j.at("master").get_to(v.master);
+    if (j.contains("r"))      j.at("r").get_to(v.r);
+    if (j.contains("g"))      j.at("g").get_to(v.g);
+    if (j.contains("b"))      j.at("b").get_to(v.b);
+}
+
 // --- ColourCorrection ---
 void to_json(nlohmann::json& j, const ColourCorrection& v) {
     j = nlohmann::json{
         {"enabled",           v.enabled},
         {"iccToSRGB",         v.iccToSRGB},
+        {"curves",            v.curves},
         {"brightness",        v.brightness},
         {"contrast",          v.contrast},
         {"saturation",        v.saturation},
@@ -178,9 +201,10 @@ void to_json(nlohmann::json& j, const ColourCorrection& v) {
 }
 void from_json(const nlohmann::json& j, ColourCorrection& v) {
     // All additive: an old workspace has no "colourCorrection" object at all, and a future field left
-    // out of an older file simply keeps its struct default (disabled / neutral).
+    // out of an older file simply keeps its struct default (disabled / neutral / identity curves).
     if (j.contains("enabled"))           j.at("enabled").get_to(v.enabled);
     if (j.contains("iccToSRGB"))         j.at("iccToSRGB").get_to(v.iccToSRGB);
+    if (j.contains("curves"))            j.at("curves").get_to(v.curves);
     if (j.contains("brightness"))        j.at("brightness").get_to(v.brightness);
     if (j.contains("contrast"))          j.at("contrast").get_to(v.contrast);
     if (j.contains("saturation"))        j.at("saturation").get_to(v.saturation);
