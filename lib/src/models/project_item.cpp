@@ -42,6 +42,7 @@ ProjectItem::ProjectItem(ProjectItem&& other) noexcept
     , outputSignature(std::move(other.outputSignature))
     , canvasProfileIdsAtRender(std::move(other.canvasProfileIdsAtRender))
     , inputOrderAtRender(std::move(other.inputOrderAtRender))
+    , processingSignature(std::move(other.processingSignature))
     , colourCorrection(std::move(other.colourCorrection))
     , stripOverlays(std::move(other.stripOverlays))
     , m_canvasProfileIds(std::move(other.m_canvasProfileIds))
@@ -63,6 +64,7 @@ ProjectItem& ProjectItem::operator=(ProjectItem&& other) noexcept
         outputSignature       = std::move(other.outputSignature);
         canvasProfileIdsAtRender = std::move(other.canvasProfileIdsAtRender);
         inputOrderAtRender    = std::move(other.inputOrderAtRender);
+        processingSignature   = std::move(other.processingSignature);
         colourCorrection      = std::move(other.colourCorrection);
         stripOverlays         = std::move(other.stripOverlays);
         m_canvasProfileIds    = std::move(other.m_canvasProfileIds);

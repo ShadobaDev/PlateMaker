@@ -289,6 +289,7 @@ void to_json(nlohmann::json& j, const ProjectItem& v) {
         {"outputSignature",  v.outputSignature},
         {"canvasProfileIdsAtRender", v.canvasProfileIdsAtRender},
         {"inputOrderAtRender", v.inputOrderAtRender},
+        {"processingSignature", v.processingSignature},
         {"colourCorrection", v.colourCorrection},
         {"stripOverlays",    v.stripOverlays},
         {"inputFiles",       v.getInputImages()},
@@ -308,6 +309,8 @@ void from_json(const nlohmann::json& j, ProjectItem& v) {
         j.at("canvasProfileIdsAtRender").get_to(v.canvasProfileIdsAtRender);
     if (j.contains("inputOrderAtRender"))
         j.at("inputOrderAtRender").get_to(v.inputOrderAtRender);
+    if (j.contains("processingSignature"))
+        j.at("processingSignature").get_to(v.processingSignature);
     // additive — absent in workspaces written before optional processing steps existed; an absent
     // object / array leaves colourCorrection disabled and stripOverlays empty (a byte-identical render).
     if (j.contains("colourCorrection")) j.at("colourCorrection").get_to(v.colourCorrection);

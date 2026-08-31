@@ -31,6 +31,7 @@
 #ifndef PLATEMAKER_MODELS_PROCESSING_STEPS_HPP
 #define PLATEMAKER_MODELS_PROCESSING_STEPS_HPP
 
+#include <algorithm>
 #include <array>
 #include <string>
 #include <string_view>
@@ -135,6 +136,50 @@ inline constexpr std::array<ProcessingStepDef, 2> k_processingStepDefs = {{
     for (const auto& d : k_processingStepDefs)
         if (d.id == id) return &d;
     return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Staleness signature
+// ---------------------------------------------------------------------------
+
+/**
+ * \brief A deterministic fingerprint of the processing config that changes output bytes.
+ *
+ * Empty when nothing would alter the render (colour correction disabled *and* no enabled overlay), so a
+ * project using neither has an empty signature — the same value a workspace saved before these steps
+ * existed carries, so comparing against it never forces a needless re-render.  Any output-affecting
+ * change — enabling/adjusting the grade, a page exclusion, an overlay's content (sha256), position or
+ * enabled state — changes the string, so a caller folds a mismatch into its "config changed → full
+ * re-render" decision exactly like \c outputProfileSignature().
+ *
+ * Overlays are emitted in composite order (their z-order affects the output); excluded input uids are
+ * sorted (their order does not change the result, so it must not change the signature).
+ */
+[[nodiscard]] inline std::string processingConfigSignature(
+    const ColourCorrection& cc, const std::vector<StripOverlay>& overlays)
+{
+    using std::to_string;
+    std::string s;
+
+    if (cc.enabled) {
+        s += "cc{icc" + to_string(cc.iccToSRGB)
+           + ";b" + to_string(cc.brightness)
+           + ";c" + to_string(cc.contrast)
+           + ";s" + to_string(cc.saturation) + ";x";
+        std::vector<std::string> excluded = cc.excludedInputUids;
+        std::sort(excluded.begin(), excluded.end());
+        for (const auto& uid : excluded)
+            s += uid + ",";
+        s += "}";
+    }
+
+    for (const auto& o : overlays) {
+        if (!o.enabled)
+            continue;
+        s += "ov{" + o.sha256 + ";" + to_string(o.x) + "," + to_string(o.y) + "}";
+    }
+
+    return s;
 }
 
 } // namespace Platemaker::Models

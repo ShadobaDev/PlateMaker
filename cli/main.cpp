@@ -1457,8 +1457,20 @@ static int cmdProcess(const Opts& opts)
     // (applyProcessingResults refreshes the baseline; the partial path would leave it stale forever).
     const bool inputOrderChanged = project.detectInputCompositionChange();
 
+    // Colour correction / overlays change output bytes but touch no input or output file, so — like the
+    // output-profile signature — only a stored fingerprint catches it. No empty-guard: "no processing"
+    // has an empty signature, so a pre-feature project (empty stored) that stays without processing does
+    // not re-render, while enabling the grade or an overlay flips the signature and forces a full render.
+    const std::string curProcSig =
+        Platemaker::Models::processingConfigSignature(project.colourCorrection, project.stripOverlays);
+    const bool procSigMismatch = project.processingSignature != curProcSig;
+
     const bool configChanged =
-        hasOutputs && (sigMismatch || formatMismatch || canvasChange.any() || inputOrderChanged);
+        hasOutputs && (sigMismatch || formatMismatch || canvasChange.any() || inputOrderChanged
+                       || procSigMismatch);
+
+    if (!jsonMode && procSigMismatch)
+        std::cerr << "Colour correction / overlays changed since the last render — re-rendering.\n";
 
     if (!jsonMode && canvasChange.any()) {
         if (canvasChange.listChanged)
@@ -1629,6 +1641,8 @@ static int cmdProcess(const Opts& opts)
     // Record the configuration that produced these outputs so a later
     // format/size/quality change is detected as stale.
     project.outputSignature = curSig;
+    // Same, for the colour-correction / overlay config (empty when none is configured).
+    project.processingSignature = curProcSig;
 
     try {
         WorkspaceSerializer{}.save(ws, wsFile);

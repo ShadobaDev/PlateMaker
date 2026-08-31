@@ -95,19 +95,21 @@ void write(std::uint64_t component, std::string_view message)
 const char* componentName(std::uint64_t component) noexcept
 {
     switch (component) {
-        case ProcessingPipeline:   return "ProcessingPipeline";
-        case Scaler:               return "Scaler";
-        case ScaledStrip:          return "ScaledStrip";
-        case MarginCropper:        return "MarginCropper";
-        case CanvasProfileMatcher: return "CanvasProfileMatcher";
-        case ImageIO:              return "ImageIO";
-        case TemplateGenerator:    return "TemplateGenerator";
-        case WorkspaceSerializer:  return "WorkspaceSerializer";
-        case WorkspaceEditor:      return "WorkspaceEditor";
-        case ProjectEditor:        return "ProjectEditor";
-        case ThumbnailCache:       return "ThumbnailCache";
-        case FileMetaData:         return "FileMetaData";
-        default:                   return "component";
+        case ProcessingPipeline:        return "ProcessingPipeline";
+        case Scaler:                    return "Scaler";
+        case ScaledStrip:               return "ScaledStrip";
+        case MarginCropper:             return "MarginCropper";
+        case CanvasProfileMatcher:      return "CanvasProfileMatcher";
+        case ImageIO:                   return "ImageIO";
+        case TemplateGenerator:         return "TemplateGenerator";
+        case WorkspaceSerializer:       return "WorkspaceSerializer";
+        case WorkspaceEditor:           return "WorkspaceEditor";
+        case ProjectEditor:             return "ProjectEditor";
+        case ThumbnailCache:            return "ThumbnailCache";
+        case FileMetaData:              return "FileMetaData";
+        case ColourCorrector:           return "ColourCorrector";
+        case StripOverlayCompositor:    return "StripOverlayCompositor";
+        default:                        return "component";
     }
 }
 

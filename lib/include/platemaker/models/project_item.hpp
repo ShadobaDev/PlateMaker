@@ -333,6 +333,14 @@ public:
     /// (not path) so a rename — same content, same position — does not false-invalidate.
     std::vector<std::string> inputOrderAtRender;
 
+    /// \c processingConfigSignature() of the colour-correction + overlay config at the last render.
+    /// Empty until the first render, and empty whenever no processing is configured (so it matches a
+    /// pre-feature workspace and never forces a needless re-render).  A mismatch against the current
+    /// config means the outputs are stale for a reason no file hash can see — enabling/adjusting the
+    /// grade or moving an overlay leaves every input and output file untouched — so the caller folds it
+    /// into its full-re-render decision, exactly like \c outputSignature does for the output profile.
+    std::string processingSignature;
+
     /// Optional project-wide colour correction applied per input page at render (page domain).
     /// Disabled by default — an untouched project renders byte-identically.  See \c processing_steps.hpp.
     ColourCorrection colourCorrection;
