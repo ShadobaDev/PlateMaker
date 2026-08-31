@@ -55,6 +55,15 @@ NLOHMANN_JSON_SERIALIZE_ENUM(JpegSubsampling, {
     {JpegSubsampling::YUV_420, "YUV_420"}
 })
 
+NLOHMANN_JSON_SERIALIZE_ENUM(BlendMode, {
+    {BlendMode::Over,     "Over"},
+    {BlendMode::Multiply, "Multiply"},
+    {BlendMode::Screen,   "Screen"},
+    {BlendMode::Overlay,  "Overlay"},
+    {BlendMode::Darken,   "Darken"},
+    {BlendMode::Lighten,  "Lighten"}
+})
+
 NLOHMANN_JSON_SERIALIZE_ENUM(FileStatus, {
     {FileStatus::Pending,        "Pending"},
     {FileStatus::Processed,      "Processed"},

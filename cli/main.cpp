@@ -1462,7 +1462,7 @@ static int cmdProcess(const Opts& opts)
     // has an empty signature, so a pre-feature project (empty stored) that stays without processing does
     // not re-render, while enabling the grade or an overlay flips the signature and forces a full render.
     const std::string curProcSig =
-        Platemaker::Models::processingConfigSignature(project.colourCorrection, project.stripOverlays);
+        Platemaker::Models::processingConfigSignature(project.colourCorrection, project.getStripOverlays());
     const bool procSigMismatch = project.processingSignature != curProcSig;
 
     const bool configChanged =
@@ -1597,7 +1597,7 @@ static int cmdProcess(const Opts& opts)
         /*onlySlices*/ partial ? &dirtySlices : nullptr,
         /*thumbnailCacheDir*/ {},
         project.colourCorrection,
-        project.stripOverlays);
+        project.getStripOverlays());
 
     if (outcome.failed) {
         if (!jsonMode) dump.failure(outcome.error);

@@ -35,6 +35,7 @@ add_executable(platemaker-lib-tests
     test_colour_corrector.cpp
     test_strip_overlay_compositor.cpp
     test_processing_signature.cpp
+    test_overlay_inventory.cpp
     test_thumbnail_cache.cpp
     test_image_io.cpp
     test_image_io_concurrency.cpp

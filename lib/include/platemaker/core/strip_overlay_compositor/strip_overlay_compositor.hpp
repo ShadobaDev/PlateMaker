@@ -47,6 +47,7 @@ struct PLATEMAKER_EXPORT LoadedOverlay {
     int y = 0;            //!< Top-left Y in strip coordinates.
     int w = 0;            //!< Bitmap width in pixels.
     int h = 0;            //!< Bitmap height in pixels.
+    Models::BlendMode blend = Models::BlendMode::Over; //!< How it blends onto the slice.
 };
 
 /**

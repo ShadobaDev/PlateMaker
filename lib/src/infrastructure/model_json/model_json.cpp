@@ -219,7 +219,8 @@ void to_json(nlohmann::json& j, const StripOverlay& v) {
         {"sha256",     v.sha256},
         {"x",          v.x},
         {"y",          v.y},
-        {"enabled",    v.enabled}
+        {"enabled",    v.enabled},
+        {"blend",      v.blend}
     };
 }
 void from_json(const nlohmann::json& j, StripOverlay& v) {
@@ -229,6 +230,7 @@ void from_json(const nlohmann::json& j, StripOverlay& v) {
     if (j.contains("x"))          j.at("x").get_to(v.x);
     if (j.contains("y"))          j.at("y").get_to(v.y);
     if (j.contains("enabled"))    j.at("enabled").get_to(v.enabled);
+    if (j.contains("blend"))      j.at("blend").get_to(v.blend); // additive (default Over)
 }
 
 // --- InputFile ---
@@ -315,7 +317,7 @@ void to_json(nlohmann::json& j, const ProjectItem& v) {
         {"inputOrderAtRender", v.inputOrderAtRender},
         {"processingSignature", v.processingSignature},
         {"colourCorrection", v.colourCorrection},
-        {"stripOverlays",    v.stripOverlays},
+        {"stripOverlays",    v.getStripOverlays()},
         {"inputFiles",       v.getInputImages()},
         {"outputFiles",      v.getOutputImages()},
         {"outputDirectory",  v.getOutputDirectory()}
@@ -338,7 +340,7 @@ void from_json(const nlohmann::json& j, ProjectItem& v) {
     // additive — absent in workspaces written before optional processing steps existed; an absent
     // object / array leaves colourCorrection disabled and stripOverlays empty (a byte-identical render).
     if (j.contains("colourCorrection")) j.at("colourCorrection").get_to(v.colourCorrection);
-    if (j.contains("stripOverlays"))    j.at("stripOverlays").get_to(v.stripOverlays);
+    if (j.contains("stripOverlays"))    j.at("stripOverlays").get_to(v.getStripOverlays());
     j.at("inputFiles").get_to(v.getInputImages());
     j.at("outputFiles").get_to(v.getOutputImages());
     j.at("outputDirectory").get_to(v.getOutputDirectory());

@@ -118,4 +118,27 @@ TEST(StripOverlayCompositorTest, OverlayStraddlingACutLandsOnBothSlices)
     EXPECT_NEAR(pixel(s1, 5, 50)[1], 255.0, 1.0); // below the overlay → still white
 }
 
+TEST(StripOverlayCompositorTest, BlendModeChangesTheResult)
+{
+    StripOverlayCompositor comp;
+    // Opaque mid-grey overlay covering the whole slice, over a mid-grey base.
+    const auto make = [](Models::BlendMode b) {
+        std::vector<LoadedOverlay> ovs;
+        LoadedOverlay o;
+        o.bitmap = makeSolid(W, 100, {128, 128, 128, 255});
+        o.x = 0; o.y = 0; o.w = W; o.h = 100; o.blend = b;
+        ovs.push_back(std::move(o));
+        return ovs;
+    };
+
+    auto over = make(Models::BlendMode::Over);
+    auto mult = make(Models::BlendMode::Multiply);
+    const auto pOver = pixel(comp.apply(makeSolid(W, 100, {128, 128, 128}), 0, over), 5, 50);
+    const auto pMult = pixel(comp.apply(makeSolid(W, 100, {128, 128, 128}), 0, mult), 5, 50);
+
+    EXPECT_NEAR(pOver[0], 128.0, 1.0);            // opaque source-over → the overlay grey
+    EXPECT_NEAR(pMult[0], 128.0 * 128.0 / 255.0, 2.0); // multiply darkens (≈64)
+    EXPECT_LT(pMult[0], pOver[0] - 40.0);         // clearly different from Over
+}
+
 } // namespace Platemaker::Core

@@ -77,6 +77,16 @@ TEST(ProcessingSignatureTest, OverlayContentPositionAndEnabledMatter)
     EXPECT_TRUE(processingConfigSignature(none, { overlay("o1", "sha-A", 10, 20, false) }).empty());
 }
 
+TEST(ProcessingSignatureTest, OverlayBlendModeMatters)
+{
+    ColourCorrection none;
+    StripOverlay over = overlay("o1", "sha-A", 0, 0);
+    StripOverlay mult = over;
+    over.blend = BlendMode::Over;
+    mult.blend = BlendMode::Multiply;
+    EXPECT_NE(processingConfigSignature(none, {over}), processingConfigSignature(none, {mult}));
+}
+
 TEST(ProcessingSignatureTest, OverlayOrderIsSignificant)
 {
     ColourCorrection none;

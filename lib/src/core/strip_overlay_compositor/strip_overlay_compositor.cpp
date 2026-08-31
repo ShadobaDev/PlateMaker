@@ -40,6 +40,20 @@ bool intersectsSlice(const LoadedOverlay& ov, int sliceTop, int sliceH)
     return ov.y < sliceTop + sliceH && ov.y + ov.h > sliceTop;
 }
 
+//! Maps the model's curated blend set to the matching libvips blend mode.
+VipsBlendMode toVipsBlend(Models::BlendMode b)
+{
+    switch (b) {
+        case Models::BlendMode::Multiply: return VIPS_BLEND_MODE_MULTIPLY;
+        case Models::BlendMode::Screen:   return VIPS_BLEND_MODE_SCREEN;
+        case Models::BlendMode::Overlay:  return VIPS_BLEND_MODE_OVERLAY;
+        case Models::BlendMode::Darken:   return VIPS_BLEND_MODE_DARKEN;
+        case Models::BlendMode::Lighten:  return VIPS_BLEND_MODE_LIGHTEN;
+        case Models::BlendMode::Over:
+        default:                          return VIPS_BLEND_MODE_OVER;
+    }
+}
+
 } // namespace
 
 std::vector<LoadedOverlay> StripOverlayCompositor::load(
@@ -84,6 +98,7 @@ std::vector<LoadedOverlay> StripOverlayCompositor::load(
         lo.y = ov.y;
         lo.w = rgba->Xsize;
         lo.h = rgba->Ysize;
+        lo.blend = ov.blend;
         PLATEMAKER_LOG(Log::StripOverlayCompositor,
                 "loaded overlay '" + ov.uid + "' " + std::to_string(lo.w) + "x" + std::to_string(lo.h)
                 + " @ (" + std::to_string(lo.x) + "," + std::to_string(lo.y) + ")");
@@ -137,9 +152,9 @@ PixelBuffer StripOverlayCompositor::apply(
         if (erc != 0)
             failVips(work, "embed overlay layer");
 
-        // Source-over blend: transparent regions of the layer leave the slice untouched.
+        // Blend the layer onto the slice; transparent regions of the layer leave the slice untouched.
         VipsImage* comp = nullptr;
-        const int crc = vips_composite2(work, layer, &comp, VIPS_BLEND_MODE_OVER, nullptr);
+        const int crc = vips_composite2(work, layer, &comp, toVipsBlend(ov.blend), nullptr);
         g_object_unref(layer);
         if (crc != 0)
             failVips(work, "composite overlay");

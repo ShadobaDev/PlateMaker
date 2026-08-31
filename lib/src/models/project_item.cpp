@@ -44,11 +44,11 @@ ProjectItem::ProjectItem(ProjectItem&& other) noexcept
     , inputOrderAtRender(std::move(other.inputOrderAtRender))
     , processingSignature(std::move(other.processingSignature))
     , colourCorrection(std::move(other.colourCorrection))
-    , stripOverlays(std::move(other.stripOverlays))
     , m_canvasProfileIds(std::move(other.m_canvasProfileIds))
     , m_outputProfileId(std::move(other.m_outputProfileId))
     , m_input_images(std::move(other.m_input_images))
     , m_output_images(std::move(other.m_output_images))
+    , m_stripOverlays(std::move(other.m_stripOverlays))
     , m_output_directory(std::move(other.m_output_directory))
     , m_isUpToDate(other.m_isUpToDate)
     , m_inputToOutputLookup(std::move(other.m_inputToOutputLookup))
@@ -66,11 +66,11 @@ ProjectItem& ProjectItem::operator=(ProjectItem&& other) noexcept
         inputOrderAtRender    = std::move(other.inputOrderAtRender);
         processingSignature   = std::move(other.processingSignature);
         colourCorrection      = std::move(other.colourCorrection);
-        stripOverlays         = std::move(other.stripOverlays);
         m_canvasProfileIds    = std::move(other.m_canvasProfileIds);
         m_outputProfileId     = std::move(other.m_outputProfileId);
         m_input_images        = std::move(other.m_input_images);
         m_output_images       = std::move(other.m_output_images);
+        m_stripOverlays       = std::move(other.m_stripOverlays);
         m_output_directory    = std::move(other.m_output_directory);
         m_isUpToDate          = other.m_isUpToDate;
         m_inputToOutputLookup = std::move(other.m_inputToOutputLookup);
@@ -135,6 +135,69 @@ std::string& ProjectItem::getOutputDirectory() noexcept
 const std::string& ProjectItem::getOutputDirectory() const noexcept
 {
     return m_output_directory;
+}
+
+// ---------------------------------------------------------------------------
+// Strip overlays — inventory parallel to input files
+// ---------------------------------------------------------------------------
+
+std::vector<StripOverlay>& ProjectItem::getStripOverlays() noexcept
+{
+    return m_stripOverlays;
+}
+
+const std::vector<StripOverlay>& ProjectItem::getStripOverlays() const noexcept
+{
+    return m_stripOverlays;
+}
+
+std::string ProjectItem::addOverlay(const std::string& bitmapPath, int x, int y, BlendMode blend)
+{
+    std::vector<std::string> taken;
+    taken.reserve(m_stripOverlays.size());
+    for (const auto& o : m_stripOverlays)
+        taken.push_back(o.uid);
+
+    StripOverlay ov;
+    ov.uid   = Infrastructure::makeUniqueId("ovl", taken);
+    ov.x     = x;
+    ov.y     = y;
+    ov.blend = blend;
+    ov.enabled = true;
+
+    // Hash the content (dedup + staleness). A hash failure is non-fatal: the overlay is still
+    // registered with an empty sha (no dedup, and a later silent content change won't be caught until
+    // it is re-added) — the same tolerance applyProcessingResults() gives an unhashable input.
+    try {
+        ov.sha256 = Infrastructure::FileMetaData::computeFileSha256(bitmapPath);
+    } catch (const std::exception&) {
+        ov.sha256.clear();
+    }
+
+    // Dedup by content: if an existing overlay references a bitmap with the same hash, reuse that stored
+    // path so identical content is kept once (the consumer can drop its duplicate file).
+    ov.bitmapPath = bitmapPath;
+    if (!ov.sha256.empty()) {
+        for (const auto& e : m_stripOverlays) {
+            if (e.sha256 == ov.sha256 && !e.bitmapPath.empty()) {
+                ov.bitmapPath = e.bitmapPath;
+                break;
+            }
+        }
+    }
+
+    m_stripOverlays.push_back(std::move(ov));
+    return m_stripOverlays.back().uid;
+}
+
+bool ProjectItem::removeOverlay(const std::string& overlayUid)
+{
+    const auto it = std::find_if(m_stripOverlays.begin(), m_stripOverlays.end(),
+                                 [&](const StripOverlay& o) { return o.uid == overlayUid; });
+    if (it == m_stripOverlays.end())
+        return false;
+    m_stripOverlays.erase(it);
+    return true;
 }
 
 bool ProjectItem::isUpToDate() const noexcept

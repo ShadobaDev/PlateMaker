@@ -100,20 +100,40 @@ struct ColourCorrection {
 };
 
 /**
+ * \brief How an overlay is blended onto the slice beneath it — a curated subset of libvips' blend modes.
+ *
+ * \c Over is normal source-over (the default). The others are the painting modes useful for
+ * bubbles/effects; the compositor maps each to the matching \c VipsBlendMode.
+ */
+enum class BlendMode {
+    Over,     //!< Normal source-over (default).
+    Multiply, //!< Darkens: result = base × overlay.
+    Screen,   //!< Lightens: inverse-multiply.
+    Overlay,  //!< Multiply/screen by base lightness (contrast).
+    Darken,   //!< Per-channel minimum.
+    Lighten   //!< Per-channel maximum.
+};
+
+/**
  * \brief One text/bubble overlay composited onto the strip at render time (strip domain).
  *
  * The overlay is a consumer-rendered RGBA bitmap positioned by its top-left corner in **strip
  * coordinates** (the continuous, post-scale strip the slices are cut from).  The compositor draws it
  * onto every output slice its box intersects; libvips clips a layer that straddles a slice cut, so an
  * overlay spanning two slices lands correctly on both.
+ *
+ * Treated as a **resource parallel to an input file**: the consumer creates the bitmap, but the library
+ * owns the inventory — \c ProjectItem::addOverlay() mints the \c uid, computes the \c sha256, and dedups
+ * identical content. Prefer that over constructing a record by hand (see \c ProjectItem).
  */
 struct StripOverlay {
-    std::string uid;        //!< Local unique id (e.g. "ovl-<hex>"). Not an RFC 4122 UUID.
+    std::string uid;        //!< Local unique id (e.g. "ovl-<hex>"), minted by ProjectItem::addOverlay().
     std::string bitmapPath; //!< Absolute path to the pre-rendered RGBA layer on disk.
-    std::string sha256;     //!< SHA-256 of the bitmap — feeds staleness (a re-rendered layer re-renders output).
-    int  x = 0;             //!< Top-left X in strip coordinates (pixels).
-    int  y = 0;             //!< Top-left Y in strip coordinates (pixels).
-    bool enabled = true;    //!< Per-overlay toggle; a disabled overlay is not composited.
+    std::string sha256;     //!< SHA-256 of the bitmap — feeds staleness + dedup (a re-rendered layer re-renders output).
+    int       x = 0;                    //!< Top-left X in strip coordinates (pixels).
+    int       y = 0;                    //!< Top-left Y in strip coordinates (pixels).
+    bool      enabled = true;           //!< Per-overlay toggle; a disabled overlay is not composited.
+    BlendMode blend   = BlendMode::Over; //!< How it blends onto the slice beneath.
 };
 
 // ---------------------------------------------------------------------------
@@ -214,7 +234,8 @@ inline constexpr std::array<ProcessingStepDef, 2> k_processingStepDefs = {{
     for (const auto& o : overlays) {
         if (!o.enabled)
             continue;
-        s += "ov{" + o.sha256 + ";" + to_string(o.x) + "," + to_string(o.y) + "}";
+        s += "ov{" + o.sha256 + ";" + to_string(o.x) + "," + to_string(o.y)
+           + ";" + to_string(static_cast<int>(o.blend)) + "}";
     }
 
     return s;

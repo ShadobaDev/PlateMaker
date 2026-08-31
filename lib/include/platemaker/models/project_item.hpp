@@ -345,10 +345,6 @@ public:
     /// Disabled by default — an untouched project renders byte-identically.  See \c processing_steps.hpp.
     ColourCorrection colourCorrection;
 
-    /// Optional text/bubble overlays composited onto the strip at render (strip domain), positioned in
-    /// strip coordinates.  Empty by default.  See \c StripOverlay in \c processing_steps.hpp.
-    std::vector<StripOverlay> stripOverlays;
-
     // -----------------------------------------------------------------------
     // Construction
     // -----------------------------------------------------------------------
@@ -408,6 +404,47 @@ public:
 
     /// \overload Const accessor for read-only contexts.
     [[nodiscard]] const std::string& getOutputDirectory() const noexcept;
+
+    // -----------------------------------------------------------------------
+    // Strip overlays (text/bubbles) — a resource inventory parallel to the input files
+    // -----------------------------------------------------------------------
+
+    /**
+     * \brief The project's strip overlays (text/bubble placements + their bitmaps).
+     * \return Mutable reference for non-const objects (used by the serializer / undo snapshot).
+     *
+     * Prefer \c addOverlay() / \c removeOverlay() for mutation — they own the inventory (uid minting,
+     * SHA-256, dedup). This mutable accessor mirrors \c getInputImages() and exists for the codec.
+     */
+    [[nodiscard]] std::vector<StripOverlay>& getStripOverlays() noexcept;
+
+    /// \overload Const accessor for read-only contexts (render feed, staleness signature).
+    [[nodiscard]] const std::vector<StripOverlay>& getStripOverlays() const noexcept;
+
+    /**
+     * \brief Registers a consumer-created overlay bitmap and returns the new overlay's uid.
+     *
+     * The library owns the inventory, exactly as it does for input files: this mints a unique
+     * \c "ovl-<hex>" uid, computes the bitmap's SHA-256, and **dedups by content** — if an existing
+     * overlay already references a bitmap with the same hash, the new placement reuses that stored path
+     * so identical content is kept once (the same sha-identity mechanic \c mergeFileScan() uses for
+     * input renames). The bitmap file itself is created and owned by the consumer (like an input file);
+     * the library never copies it.
+     *
+     * \param bitmapPath Absolute path to the RGBA bitmap the consumer rasterised. Must exist.
+     * \param x,y        Top-left placement in strip coordinates.
+     * \param blend      Blend mode (default \c Over).
+     * \return The minted uid. If the file cannot be hashed the overlay is still added with an empty
+     *         sha256 (no dedup, and staleness cannot see a later content change until it is re-added).
+     */
+    std::string addOverlay(const std::string& bitmapPath, int x, int y,
+                           BlendMode blend = BlendMode::Over);
+
+    /**
+     * \brief Removes the overlay with \p overlayUid.
+     * \return \c true if an overlay was removed, \c false if \p overlayUid was not found.
+     */
+    bool removeOverlay(const std::string& overlayUid);
 
     // -----------------------------------------------------------------------
     // Queries
@@ -680,9 +717,10 @@ private:
     /// \c inputOrderAtRender and compared by \c detectInputCompositionChange().
     [[nodiscard]] std::vector<std::string> orderedInputUids() const;
 
-    std::vector<InputFile>  m_input_images;     //!< Ordered input image list.
-    std::vector<OutputFile> m_output_images;    //!< Output slice list from last run.
-    std::string             m_output_directory; //!< Absolute path for output slices.
+    std::vector<InputFile>    m_input_images;     //!< Ordered input image list.
+    std::vector<OutputFile>   m_output_images;    //!< Output slice list from last run.
+    std::vector<StripOverlay> m_stripOverlays;    //!< Overlay inventory (see getStripOverlays() / addOverlay()).
+    std::string               m_output_directory; //!< Absolute path for output slices.
 
     bool m_isUpToDate = false; //!< Updated by sanitize() / applyProcessingResults().
 

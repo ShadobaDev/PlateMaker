@@ -284,8 +284,9 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     proj.colourCorrection.curves.master     = {{0.0, 0.0}, {0.5, 0.8}, {1.0, 1.0}};
     proj.colourCorrection.curves.r          = {{0.0, 0.0}, {1.0, 0.5}};
     proj.colourCorrection.excludedInputUids = {"file-001", "file-009"};
-    proj.stripOverlays.push_back(
-        Models::StripOverlay{"ovl-1", "/tmp/bubble.png", "deadbeef", 40, 1500, true});
+    proj.getStripOverlays().push_back(
+        Models::StripOverlay{"ovl-1", "/tmp/bubble.png", "deadbeef", 40, 1500, true,
+                             Models::BlendMode::Multiply});
     original.projectItems.push_back(std::move(proj));
 
     const std::filesystem::path tmp =
@@ -308,13 +309,14 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     EXPECT_TRUE(p.colourCorrection.curves.g.empty());
     EXPECT_EQ(p.colourCorrection.excludedInputUids,
               (std::vector<std::string>{"file-001", "file-009"}));
-    ASSERT_EQ(p.stripOverlays.size(), 1u);
-    EXPECT_EQ(p.stripOverlays[0].uid,        "ovl-1");
-    EXPECT_EQ(p.stripOverlays[0].bitmapPath, "/tmp/bubble.png");
-    EXPECT_EQ(p.stripOverlays[0].sha256,     "deadbeef");
-    EXPECT_EQ(p.stripOverlays[0].x, 40);
-    EXPECT_EQ(p.stripOverlays[0].y, 1500);
-    EXPECT_TRUE(p.stripOverlays[0].enabled);
+    ASSERT_EQ(p.getStripOverlays().size(), 1u);
+    EXPECT_EQ(p.getStripOverlays()[0].uid,        "ovl-1");
+    EXPECT_EQ(p.getStripOverlays()[0].bitmapPath, "/tmp/bubble.png");
+    EXPECT_EQ(p.getStripOverlays()[0].sha256,     "deadbeef");
+    EXPECT_EQ(p.getStripOverlays()[0].x, 40);
+    EXPECT_EQ(p.getStripOverlays()[0].y, 1500);
+    EXPECT_TRUE(p.getStripOverlays()[0].enabled);
+    EXPECT_EQ(p.getStripOverlays()[0].blend, Models::BlendMode::Multiply);
 
     std::filesystem::remove(tmp);
 }
@@ -352,7 +354,7 @@ TEST(WorkspaceSerializerTest, LegacyProjectLoadsProcessingDefaults)
     EXPECT_FALSE(p.colourCorrection.enabled);
     EXPECT_TRUE(p.colourCorrection.iccToSRGB); // struct default preserved when the key is absent
     EXPECT_TRUE(p.colourCorrection.excludedInputUids.empty());
-    EXPECT_TRUE(p.stripOverlays.empty());
+    EXPECT_TRUE(p.getStripOverlays().empty());
 
     std::filesystem::remove(tmp);
 }
