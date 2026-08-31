@@ -215,6 +215,7 @@ struct SourceSegment {
 struct SliceResult {
     PixelBuffer image;
     int index;                            // 0-based output index
+    int stripTopY;                        // this slice's top Y in the continuous strip (strip domain)
     std::vector<SourceSegment> sourceMap; // provenance — used for incremental hashing
 };
 ```
@@ -229,6 +230,22 @@ struct SliceResult {
 - Output: PNG image file
 - Renders: white background, semi-transparent margin zone overlay, safe-area border, horizontal slice lines
 - Uses libvips draw operations (no Qt dependency)
+
+#### `ColourCorrector` *(optional processing step — page domain)*
+- Input: pixel buffer + `ColourCorrection` config
+- Output: graded pixel buffer (brightness/contrast/saturation + per-channel tone curves)
+- Point operation, applied per input page **before** scale/append; a neutral config returns the buffer
+  unchanged. ICC→sRGB is done at load (`ImageIO::load(convertToSRGB)`), gated by `iccToSRGB`, so this
+  step owns only the creative grade. Alpha is split off and re-attached untouched. Pure libvips
+  (`vips_maplut` for curves, `vips_linear`, luminance recomb for saturation), no Qt.
+
+#### `StripOverlayCompositor` *(optional processing step — strip domain)*
+- Input: an output slice + its `stripTopY` + the loaded overlays; Output: the slice with overlays composited
+- `load()` decodes each `StripOverlay` bitmap once (promoted to RGBA); `apply()` composites the overlays
+  whose strip-Y span intersects the slice, at `(x, y − stripTopY)`, using each overlay's `BlendMode`
+  (`vips_composite2`). libvips clips a layer straddling a slice cut, so it lands on **both** adjacent
+  slices; a slice no overlay touches is returned unchanged. Format-agnostic — it composites bytes, it
+  does not render text.
 
 ### 5.2 Infrastructure
 
@@ -457,8 +474,18 @@ canvasProfileIds  : uid[]       // ordered list of CanvasProfile.id values
                                 // whose canvasSize is identical (conflict guard)
 pages             : PageItem[]  // ordered input images
 processedFiles    : ProcessedFileRecord[]
+colourCorrection  : ColourCorrection  // optional per-page grade (page domain); disabled by default
+stripOverlays     : StripOverlay[]    // optional text/bubble overlays (strip domain); a lib-owned inventory
+processingSignature : string          // fingerprint of the two steps at last render (staleness axis, §7)
 stripDirty        : bool
 ```
+
+**Overlays are a lib-owned inventory, parallel to input files.** The consumer creates the RGBA bitmap;
+the library inventories it: `ProjectItem::addOverlay(path, x, y, blend)` mints the `ovl-…` uid, hashes
+the bitmap and **dedups identical content** by sha256, `removeOverlay(uid)` drops one. The field is
+private, read through `getStripOverlays()` (const + mutable, like `getInputImages()`). Files are
+referenced by path and never copied — the same self-containment level as input files. Colour correction
+carries no binary artifact (pure numbers), so it is fully contained in the workspace JSON.
 
 **Why a list, not a single id?**  
 An artist may work with multiple canvas heights within one chapter (e.g. a normal
@@ -479,6 +506,32 @@ sha256        : string    // hex digest at time of last processing
 lastProcessed : datetime  // ISO 8601
 contributesTo : string[]  // output filenames that contain pixels from this input
 ```
+
+### `ColourCorrection` *(optional processing step — page domain)*
+```
+enabled           : bool             // master toggle; false = no colour work (byte-identical output)
+iccToSRGB         : bool             // convert to sRGB via the embedded ICC profile (P3→sRGB gamut fix)
+curves            : ColourCurves     // per-channel master + R/G/B tone curves (empty = identity)
+brightness        : float            // additive lift, ~[-1,1]; 0 = no change
+contrast          : float            // multiplicative around mid-grey; 1 = no change
+saturation        : float            // chroma scale; 1 = no change, 0 = greyscale
+excludedInputUids : string[]         // input uids this grade skips (e.g. a title/end page)
+```
+`ColourCurves` holds four `CurvePoint[]` (`master`, `r`, `g`, `b`); a `CurvePoint` is `{ x, y }` in
+normalised [0,1]. The effective map is `channelCurve(masterCurve(v))`. Point operations, so a
+project-wide grade equals a per-page one — which is what lets it be project-wide yet allow exclusions.
+
+### `StripOverlay` *(optional processing step — strip domain)*
+```
+uid        : uid        // "ovl-…", minted by ProjectItem::addOverlay()
+bitmapPath : string     // absolute path to the consumer-rasterised RGBA bitmap (lib never copies it)
+sha256     : string     // content hash — feeds dedup + staleness
+x, y       : int        // top-left placement in strip coordinates
+enabled    : bool       // per-overlay toggle
+blend      : BlendMode  // Over (default) | Multiply | Screen | Overlay | Darken | Lighten
+```
+Positioned in the continuous strip's coordinates, so one overlay can straddle a slice cut and lands on
+both slices (§7). Treated as a resource inventory parallel to input files (see `ProjectItem`).
 
 ### `Workspace`
 ```
@@ -561,6 +614,36 @@ For each PageItem in order:
 strip.sliceAll(sliceHeight, lastSlicePolicy)
   → saveEach(outputDir, "output_NNN.png", startIndex)
 ```
+
+### Optional processing steps (two seams)
+
+Two optional, non-destructive steps hook into the pipeline at **two distinct seams**, in two different
+coordinate spaces (mirroring DaVinci Resolve's Color page vs Fusion). Both are **opt-in / default-off**,
+so a project that uses neither renders byte-identically to a build without them, and both are passed to
+`ProcessingPipeline::run()` as optional trailing parameters (`colourCorrection`, `stripOverlays`).
+
+- **Page domain — colour correction.** Between `scale` and `strip.append`, for each input **not** in
+  `colourCorrection.excludedInputUids`: `ImageIO::load(convertToSRGB = iccToSRGB)` then
+  `ColourCorrector::apply(buffer, cc)`. The CC-off path is exactly the historical load/scale, untouched.
+  Being point operations, per-page grading equals grading the whole strip, so the grade is project-wide
+  while exclusions and per-source ICC still work.
+- **Strip domain — text/bubble overlays.** Inside the slice loop, before each slice is saved:
+  `StripOverlayCompositor::apply(slice.image, slice.stripTopY, overlays)`. Overlays are positioned in
+  strip coordinates; the compositor draws each onto every slice its box intersects (clipped by libvips),
+  so an overlay straddling a cut appears on **both** adjacent slices. A slice no overlay intersects is
+  returned unchanged.
+
+**Staleness (a fourth axis).** Editing the grade or an overlay changes output bytes but touches no input
+or output file, so — like the output-profile signature — a stored fingerprint is what catches it.
+`Models::processingConfigSignature(colourCorrection, overlays)` produces that fingerprint (empty when
+nothing is configured, so a pre-feature project is never falsely invalidated); it is stored as
+`ProjectItem::processingSignature` and folded into the consumer's "config changed → full re-render"
+decision, alongside the output-profile / canvas / input-composition axes (§7.5.3).
+
+**Extensibility.** The two steps are described by a compile-time table `Models::k_processingStepDefs`
+(id, name, kind, domain) — the enumerable contract a GUI renders a step stack from. A future step is a
+new config struct + a stateless Core applier at one of the two seams + one table row + a signature
+contribution, with no change to the existing steps.
 
 ### Orientation & output metadata
 

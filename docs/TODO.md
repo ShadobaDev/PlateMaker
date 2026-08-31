@@ -16,10 +16,14 @@ work happens in.
 - **Cascade.** Whichever section releases first takes its slot; the rest re-derive from the new
   baseline — ship a MINOR before a pending PATCH and the patch re-derives onto the new baseline.
 
-Baseline: **0.5.1 released (packaging: MSVC dev/cli packages); 0.5.2 in progress** (`CMakeLists.txt`).
-0.5.2 is additive — portable profile bundles (`.platemaker.profiles.json`),
-`WorkspaceEditor::importProfiles`, and the CLI `export/import-profiles` commands — so it is a **PATCH**:
-code built against 0.5.1 keeps compiling. (Released tags: 0.4.0 → 0.4.1 → 0.5.0 → 0.5.1.)
+Baseline: **0.5.1 released; 0.6.0 in progress** (`CMakeLists.txt`). The next release bundles the additive
+profile-portability work once staged as 0.5.2 (never tagged — bundles, `WorkspaceEditor::importProfiles`,
+CLI `export/import-profiles`) with the new optional **processing steps** (colour correction + text/bubble
+overlays). It is a **MINOR** in the 0.x shifted scale — i.e. breaking — because `ProcessingPipeline::run()`
+and `ImageIO::load()` gained trailing parameters: source-compatible via their defaults, but the mangled
+symbols change, so a GUI built against 0.5.1 must be rebuilt (the same reason 0.5.0 bumped for `run()`).
+The additive 0.5.2 work re-derives onto this baseline per the cascade rule. (Released tags: 0.4.0 → 0.4.1
+→ 0.5.0 → 0.5.1.)
 
 ---
 
@@ -251,7 +255,7 @@ Both options could be implemented.
 ### Text and Text bubble creator
   Add to lib an additional step to overlay text and text bubbles during render.
 
-### Lib processing-steps framework — core DONE (lib side); follow-ups below
+### Lib processing-steps framework — DONE (lib side, 0.6.0); GUI pending
   The lib now runs both features as optional, non-destructive **render-time steps** at two seams —
   **page domain** (colour correction: ICC P3→sRGB + brightness/contrast/saturation, project-wide with
   per-page exclusions) and **strip domain** (text/bubble RGBA overlays, strip-anchored, straddling a
@@ -265,15 +269,15 @@ Both options could be implemented.
   - [x] **(E) Tone curves / LUT in CC** — per-channel master + R/G/B curves (control points → 256-entry
     LUT via `vips_maplut`), applied before brightness/contrast/saturation. MVP: linear interpolation,
     8-bit only (cubic + 16-bit deferred). Feeds `processingConfigSignature`.
-  - [ ] **(F+H) Overlay inventory (lib-owned) + blend modes** — overlays are **parallel resources to
-    inputs**: the GUI creates the RGBA bitmap file, the **lib inventories it**. Add `ProjectItem` methods
-    `addOverlay(path,x,y[,blend])` / `updateOverlay` / `removeOverlay` that mint the uid, compute the
-    sha256 and **dedup by sha** (same content → one path — the rename-detection mechanics inputs use),
-    mirroring `mergeFileScan` / `ensureUniqueFileUids`. Make `stripOverlays` private + const getter so the
-    inventory can't be bypassed. `StripOverlay.blend` (Over default, plus Multiply / Screen / Overlay /
-    Darken / Lighten → `VipsBlendMode`) replaces the hardcoded source-over, set via the add/update API.
-    Both feed the signature. Files stay referenced by path (lib never copies) — same self-containment as
-    inputs; a future uniform "collect assets" step (inputs + overlays) could add full portability later.
+  - [x] **(F+H) Overlay inventory (lib-owned) + blend modes** — overlays are **parallel resources to
+    inputs**: the GUI creates the RGBA bitmap file, the **lib inventories it**. `ProjectItem::addOverlay`
+    mints the `ovl-…` uid, computes the sha256 and **dedups by sha** (same content → one path — the
+    rename-detection mechanics inputs use), `removeOverlay(uid)` drops one; `stripOverlays` is private,
+    read via `getStripOverlays()` (const + mutable, mirroring `getInputImages()`), mutated through the
+    inventory API. `StripOverlay.blend` (Over default, plus Multiply / Screen / Overlay / Darken / Lighten
+    → `VipsBlendMode`) replaces the hardcoded source-over. Both feed the signature. Files stay referenced
+    by path (lib never copies) — same self-containment as inputs; a future uniform "collect assets" step
+    (inputs + overlays) could add full portability later.
   - [x] **(G) CC-exclusion pipeline test** — integration test proving `excludedInputUids` leaves a page
     ungraded while its neighbours are graded (currently only manual/e2e coverage).
 

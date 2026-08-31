@@ -1,11 +1,56 @@
 # Changelog
 
-## [0.5.2] — Unreleased
+## [0.6.0] — Unreleased
 
-Additive — profile portability. Code built against 0.5.1 is unaffected (a PATCH).
+Adds two optional, non-destructive **render-time processing steps** — project-wide **colour correction**
+(page domain) and text/bubble **overlays** (strip domain) — behind a small typed-step framework.
+Breaking (a MINOR in the 0.x shifted scale) only because `ProcessingPipeline::run()` and
+`ImageIO::load()` gained trailing parameters: source-compatible via their defaults, but the mangled
+symbols change, so the GUI pins the version in lockstep (exactly as 0.5.0 did for `run()`). Output is
+**byte-identical for any project that uses neither step**, and older workspaces load unchanged (the new
+config is additive, guarded fields). Also carries the additive profile-portability work originally
+staged for 0.5.2 (never released), which re-derives onto this baseline per the cascade rule.
+
+### Changed
+
+- **`ProcessingPipeline::run()` gains two optional trailing parameters — `colourCorrection` and
+  `stripOverlays`.** Both default to empty/disabled, so existing source compiles unchanged and the
+  render is byte-identical when neither is used; the mangled symbol changes (ABI), which is what makes
+  this a minor bump.
+- **`ImageIO::load()` gains an optional trailing `convertToSRGB` (default `true`).** `true` keeps the
+  historical always-sRGB-on-load behaviour; the colour-correction step loads with it set from
+  `ColourCorrection::iccToSRGB`, so that toggle is the single authority over the P3→sRGB conversion for
+  graded pages. Defaulted (source-compatible); the mangled symbol changes.
+- **`ProjectItem::stripOverlays` is now a lib-owned inventory, not a public field.** It is private,
+  read through `getStripOverlays()` (const + mutable, like `getInputImages()`); mutation goes through
+  `addOverlay()` / `removeOverlay()`.
 
 ### Added
 
+- **Project-wide colour correction (page domain).** A `Models::ColourCorrection` on each `ProjectItem`
+  — ICC→sRGB, per-channel tone curves (control points → a 256-entry LUT via `vips_maplut`),
+  brightness/contrast/saturation, and per-page exclusions by input uid — applied to each input page
+  before scale by a new stateless `Core::ColourCorrector`. Because these are point operations, a
+  project-wide grade equals a per-page one while keeping exclusions and correct per-source ICC. Curves
+  are 8-bit/3-band in this release (cubic interpolation + 16-bit deferred).
+- **Text/bubble overlays (strip domain).** A `Models::StripOverlay` list on each `ProjectItem` — a
+  consumer-rasterised RGBA bitmap positioned in **strip coordinates** with a blend mode — composited
+  onto each output slice by a new `Core::StripOverlayCompositor`. An overlay straddling a slice cut
+  lands on **both** adjacent slices (libvips clips it), and the library is format-agnostic: it
+  composites bytes, never renders text. Curated `Models::BlendMode` set (Over / Multiply / Screen /
+  Overlay / Darken / Lighten).
+- **Lib-owned overlay inventory.** `ProjectItem::addOverlay(path, x, y, blend)` mints the `ovl-…` uid,
+  hashes the bitmap and **dedups identical content** (the SHA mechanic input renames use);
+  `removeOverlay(uid)` drops one. The bitmap files are created and owned by the consumer and referenced
+  by path (like input files) — the library never copies them.
+- **Processing-step staleness axis.** `Models::processingConfigSignature(colourCorrection, overlays)`
+  fingerprints the colour/overlay config — **empty when nothing is configured**, so a pre-feature
+  project is never falsely invalidated — stored per project as `ProjectItem::processingSignature` and
+  folded into the render's full-re-render decision, so a grade or overlay edit re-renders even though no
+  input or output file changed.
+- **Typed-step descriptor table.** `Models::k_processingStepDefs` enumerates the built-in steps (id,
+  name, kind, domain) — the enumerable contract a GUI renders a step stack from; adding a future step is
+  a new config struct + a stateless Core applier + one table row, with no change to the existing steps.
 - **Portable profile bundles (`.platemaker.profiles.json`).** A new
   `Infrastructure::ProfileBundleSerializer` reads and writes a standalone set of canvas + output
   profiles (a `ProfileBundle`), independent of any workspace, so profiles can move between workspaces
