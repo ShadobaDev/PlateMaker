@@ -88,6 +88,17 @@ def make_solid_rgba_png(
     pathlib.Path(path).write_bytes(sig + ihdr + idat + iend)
 
 
+def png_size(path: str | pathlib.Path) -> tuple[int, int]:
+    """
+    Return ``(width, height)`` from a PNG's IHDR (stdlib only).
+
+    Both are big-endian uint32 immediately after the 8-byte signature and the
+    8-byte chunk header.
+    """
+    data = pathlib.Path(path).read_bytes()
+    return struct.unpack(">II", data[16:24])
+
+
 def png_color_type(path: str | pathlib.Path) -> int:
     """
     Return the PNG colour-type byte from a file's IHDR (stdlib only).
