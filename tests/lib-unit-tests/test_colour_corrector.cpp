@@ -180,4 +180,48 @@ TEST(ColourCorrectorTest, PerChannelCurveOnlyAffectsItsChannel)
     EXPECT_NEAR(p[2], 128.0, 1.0); // blue untouched
 }
 
+TEST(ColourCorrectorTest, ApplyToRgbaGradesInPlaceLikeApply)
+{
+    // A 2x2 solid RGBA red (alpha 200). Fully desaturating must match apply(): luminance grey, alpha kept.
+    std::vector<std::uint8_t> px(static_cast<std::size_t>(2) * 2 * 4);
+    for (std::size_t i = 0; i < px.size(); i += 4) {
+        px[i + 0] = 255; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 200;
+    }
+
+    Models::ColourCorrection g = neutral();
+    g.saturation = 0.0;
+
+    ColourCorrector cc;
+    cc.applyToRgba(px.data(), 2, 2, g);
+
+    const double lum = 0.2126 * 255.0; // ≈ 54
+    for (std::size_t i = 0; i < px.size(); i += 4) {
+        EXPECT_NEAR(px[i + 0], lum, 1.5);
+        EXPECT_NEAR(px[i + 1], lum, 1.5);
+        EXPECT_NEAR(px[i + 2], lum, 1.5);
+        EXPECT_EQ(px[i + 3], 200);     // alpha untouched
+    }
+}
+
+TEST(ColourCorrectorTest, ApplyToRgbaNeutralLeavesBytesUntouched)
+{
+    std::vector<std::uint8_t> px = {10, 20, 30, 40,   50, 60, 70, 80,
+                                    90, 100, 110, 120, 130, 140, 150, 160};
+    const auto before = px;
+
+    ColourCorrector cc;
+    cc.applyToRgba(px.data(), 2, 2, neutral());
+    EXPECT_EQ(px, before);
+}
+
+TEST(ColourCorrectorTest, ApplyToRgbaRejectsBadArgs)
+{
+    std::vector<std::uint8_t> px(2 * 2 * 4, 128);
+    ColourCorrector cc;
+    Models::ColourCorrection g = neutral();
+    g.brightness = 0.1; // non-neutral so it actually tries to grade
+    EXPECT_THROW(cc.applyToRgba(nullptr, 2, 2, g), std::runtime_error);
+    EXPECT_THROW(cc.applyToRgba(px.data(), 0, 2, g), std::runtime_error);
+}
+
 } // namespace Platemaker::Core

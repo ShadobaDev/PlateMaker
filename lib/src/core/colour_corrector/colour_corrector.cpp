@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -201,6 +202,60 @@ PixelBuffer ColourCorrector::apply(PixelBuffer buffer, const Models::ColourCorre
             + " c=" + std::to_string(cc.contrast) + " s=" + std::to_string(cc.saturation) + ")");
 
     return PixelBuffer{result};
+}
+
+void ColourCorrector::applyToRgba(unsigned char* rgba, int width, int height,
+                                  const Models::ColourCorrection& cc) const
+{
+    if (!rgba || width <= 0 || height <= 0)
+        throw std::runtime_error("ColourCorrector::applyToRgba — invalid buffer or dimensions");
+
+    // The lib does not own the vips lifecycle, and a GUI consumer cannot call VIPS_INIT itself (it has no
+    // vips headers) — it may reach here (a live grade preview) before any render has initialised vips.
+    // VIPS_INIT only does anything on its first successful call, so ensure it before touching vips.
+    if (VIPS_INIT("platemaker"))
+        vips_error_clear(); // a genuine init failure surfaces as a throw from the vips calls below
+
+    // Neutral grade → leave the bytes untouched (matches apply()'s no-op fast path).
+    if (cc.brightness == 0.0 && cc.contrast == 1.0 && cc.saturation == 1.0
+        && !Models::hasAnyCurve(cc.curves))
+        return;
+
+    const std::size_t nbytes = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u;
+
+    // Wrap the caller's RGBA in a vips image — a *copy*, so the caller's buffer lifetime never matters —
+    // then tag it sRGB so apply() classifies the 4th band as alpha and grades only the colour bands.
+    VipsImage* mem = vips_image_new_from_memory_copy(rgba, nbytes, width, height, 4, VIPS_FORMAT_UCHAR);
+    if (!mem) {
+        const std::string err = vips_error_buffer();
+        vips_error_clear();
+        throw std::runtime_error("ColourCorrector::applyToRgba — wrap RGBA buffer: " + err);
+    }
+    VipsImage* srgb = nullptr;
+    if (vips_copy(mem, &srgb, "interpretation", VIPS_INTERPRETATION_sRGB, nullptr) != 0) {
+        const std::string err = vips_error_buffer();
+        vips_error_clear();
+        g_object_unref(mem);
+        throw std::runtime_error("ColourCorrector::applyToRgba — tag sRGB: " + err);
+    }
+    g_object_unref(mem);
+
+    // Grade through the shared engine (takes ownership of srgb), then read the result back into rgba.
+    PixelBuffer graded = apply(PixelBuffer{srgb}, cc);
+    VipsImage*  out    = graded.get();
+    if (!out || out->Xsize != width || out->Ysize != height
+        || out->Bands != 4 || out->BandFmt != VIPS_FORMAT_UCHAR)
+        throw std::runtime_error("ColourCorrector::applyToRgba — unexpected graded image layout");
+
+    std::size_t outSize = 0;
+    void* outData = vips_image_write_to_memory(out, &outSize);
+    if (!outData) {
+        const std::string err = vips_error_buffer();
+        vips_error_clear();
+        throw std::runtime_error("ColourCorrector::applyToRgba — read graded pixels: " + err);
+    }
+    std::memcpy(rgba, outData, std::min(outSize, nbytes));
+    g_free(outData);
 }
 
 } // namespace Platemaker::Core

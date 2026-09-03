@@ -57,6 +57,27 @@ public:
      * \throws std::runtime_error if \p buffer is invalid or a libvips operation fails.
      */
     [[nodiscard]] PixelBuffer apply(PixelBuffer buffer, const Models::ColourCorrection& cc) const;
+
+    /**
+     * \brief Grades an interleaved 8-bit RGBA buffer in place, reusing \c apply().
+     *
+     * \p rgba is \p width × \p height × 4 bytes (R,G,B,A per pixel, row-major). It is wrapped in a libvips
+     * image tagged sRGB (so the 4th band is treated as alpha), graded by \c apply(), and the result copied
+     * back over \p rgba. A neutral grade leaves the bytes untouched.
+     *
+     * This is the entry point a GUI uses for a live grade *preview* of an already-decoded output slice —
+     * libvips stays inside the lib, so the consumer needs no vips dependency. Because it is a point grade,
+     * grading a decoded output slice matches grading the source page then re-slicing (see the class doc),
+     * so the preview equals the committed render for the brightness / contrast / saturation / curve
+     * scalars. (The \c iccToSRGB choice is baked at load, so it is not reflected by grading a slice.)
+     *
+     * \param rgba   Interleaved RGBA8888 pixels, graded in place. Must be non-null and hold width*height*4 bytes.
+     * \param width  Image width in pixels (> 0).
+     * \param height Image height in pixels (> 0).
+     * \param cc     The grade to apply (same semantics as \c apply()).
+     * \throws std::runtime_error on invalid input or a libvips failure.
+     */
+    void applyToRgba(unsigned char* rgba, int width, int height, const Models::ColourCorrection& cc) const;
 };
 
 } // namespace Platemaker::Core

@@ -33,6 +33,9 @@ staged for 0.5.2 (never released), which re-derives onto this baseline per the c
   before scale by a new stateless `Core::ColourCorrector`. Because these are point operations, a
   project-wide grade equals a per-page one while keeping exclusions and correct per-source ICC. Curves
   are 8-bit/3-band in this release (cubic interpolation + 16-bit deferred).
+  `ColourCorrector::applyToRgba()` grades an in-memory RGBA8888 buffer in place (reusing `apply()`), so a
+  consumer with no libvips dependency — a GUI — can drive a live grade *preview* of already-decoded output
+  slices; being a point grade, that preview equals the committed render (bar the load-time ICC toggle).
 - **Text/bubble overlays (strip domain).** A `Models::StripOverlay` list on each `ProjectItem` — a
   consumer-rasterised RGBA bitmap positioned in **strip coordinates** with a blend mode — composited
   onto each output slice by a new `Core::StripOverlayCompositor`. An overlay straddling a slice cut
@@ -48,6 +51,12 @@ staged for 0.5.2 (never released), which re-derives onto this baseline per the c
   project is never falsely invalidated — stored per project as `ProjectItem::processingSignature` and
   folded into the render's full-re-render decision, so a grade or overlay edit re-renders even though no
   input or output file changed.
+- **`Memory` diagnostic trace channel (`Log::Memory`, `--trace=0x4000`).** Reports decoded-pixel
+  residency — what libvips is holding right now, the run's high-water mark, and which source pages the
+  strip still references — at each append, each slice, and each release. The strip's streaming contract
+  ("only the sources overlapping the current slice stay decoded") was previously unobservable from
+  outside, because libvips decodes lazily inside its own operations; this reads it back out of the
+  libvips allocator instead of requiring a profiler. Off by default, zero cost when disabled.
 - **Typed-step descriptor table.** `Models::k_processingStepDefs` enumerates the built-in steps (id,
   name, kind, domain) — the enumerable contract a GUI renders a step stack from; adding a future step is
   a new config struct + a stateless Core applier + one table row, with no change to the existing steps.
