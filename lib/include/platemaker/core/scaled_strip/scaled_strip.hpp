@@ -224,6 +224,13 @@ private:
      * lets libvips free the decoded source.  Entries themselves stay in \c m_entries —
      * their \c startY / \c height keep the strip's geometry intact.
      *
+     * Releasing does not free the pixels *synchronously*: the libvips operation cache holds a
+     * reference of its own, so a released page is reclaimed on that cache's LRU schedule, within
+     * its budget (100 operations / ~100 MB by default).  Peak residency is therefore bounded by
+     * that budget rather than by exactly one page — but it is bounded, and independent of how
+     * long the chapter is, which is the property that matters.  Without the release nothing can
+     * be reclaimed at all and peak memory grows with the chapter.
+     *
      * \param sliceStartY Y position of the slice about to be built.
      */
     void releaseConsumedEntries(int sliceStartY) noexcept;
@@ -251,6 +258,23 @@ private:
      * \throws std::runtime_error if a libvips band operation fails.
      */
     void normalizeBandCounts();
+
+    /**
+     * \brief Emits one \c Log::Memory line describing decoded-pixel residency at \p phase.
+     *
+     * The streaming contract ("only the sources overlapping the current slice stay decoded") is not
+     * observable from the C++ side: libvips decodes lazily, inside the operations, whenever a
+     * consumer first pulls a pixel.  This probe reads it back out of libvips instead — its allocator
+     * tracks every buffer it hands out, so \c vips_tracked_get_mem() *is* "how much image data is
+     * resident right now" and its high-water mark is the peak the run ever reached.  Paired with the
+     * strip's own count of entries that still hold a buffer, one line answers both halves of the
+     * question: how many pages the strip *intends* to keep, and how much libvips actually holds.
+     *
+     * Costs nothing unless \c Log::Memory is enabled (\c --trace=0x4000).
+     *
+     * \param phase Short tag for the point in the run (e.g. "append", "post-release", "post-slice").
+     */
+    void memTrace(const char* phase) const;
 }; // class ScaledStrip
 
 } // namespace Platemaker::Core

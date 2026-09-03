@@ -109,6 +109,7 @@ const char* componentName(std::uint64_t component) noexcept
         case FileMetaData:              return "FileMetaData";
         case ColourCorrector:           return "ColourCorrector";
         case StripOverlayCompositor:    return "StripOverlayCompositor";
+        case Memory:                    return "Memory";
         default:                        return "component";
     }
 }

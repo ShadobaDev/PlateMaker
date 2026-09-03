@@ -32,6 +32,45 @@ namespace Platemaker::Core {
 
 namespace { namespace Log = Platemaker::Infrastructure::Log; }
 
+namespace {
+
+// Bytes → whole KiB. KiB rather than MiB because a test's pages are small (a 400×2560 RGB page is
+// 3000 KiB, i.e. 2 MiB after integer division — too coarse to tell one resident page from two), and
+// because every size in play is an exact multiple of 1 KiB, so nothing is lost.
+std::string kib(std::size_t bytes) { return std::to_string(bytes / 1024); }
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// memTrace (private)
+// ---------------------------------------------------------------------------
+
+void ScaledStrip::memTrace(const char* phase) const
+{
+    PLATEMAKER_LOG(Log::Memory, [&] {
+        // Entries the strip still intends to keep (buffer not yet released).
+        int live = 0;
+        std::string names;
+        for (const auto& entry : m_entries) {
+            if (!entry.image.buffer.isValid()) continue;
+            ++live;
+            const auto& p   = entry.image.sourceFilePath;
+            const auto  pos = p.find_last_of("/\\");
+            names += (names.empty() ? "" : ",") + (pos == std::string::npos ? p : p.substr(pos + 1));
+        }
+        // vipsMem is what libvips is *actually* holding; live/entries is what the strip is holding
+        // references to. They diverge when a released page is still pinned elsewhere (a slice in
+        // flight, or the libvips operation cache — hence cacheOps).
+        return std::string(phase)
+                + " vipsMemKiB=" + kib(vips_tracked_get_mem())
+                + " peakKiB="    + kib(vips_tracked_get_mem_highwater())
+                + " files="   + std::to_string(vips_tracked_get_files())
+                + " cacheOps=" + std::to_string(vips_cache_get_size())
+                + " live="    + std::to_string(live) + "/" + std::to_string(m_entries.size())
+                + " [" + names + "]";
+    }());
+}
+
 // ---------------------------------------------------------------------------
 // append
 // ---------------------------------------------------------------------------
@@ -57,6 +96,10 @@ void ScaledStrip::append(ScaledImage image)
             + " -> totalHeight=" + std::to_string(m_totalHeight));
 
     m_entries.push_back(std::move(entry));
+
+    // Phase-1 residency: if load → crop → scale stayed lazy, vipsMem barely moves here no matter how
+    // many pages are appended. A linear climb means the pages are being decoded up front.
+    memTrace("append");
 }
 
 // ---------------------------------------------------------------------------
@@ -209,13 +252,23 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
 void ScaledStrip::releaseConsumedEntries(int sliceStartY) noexcept
 {
     // Slices advance in increasing Y, so an entry ending at or above the next slice's
-    // top can never contribute again. Dropping the buffer unrefs the VipsImage, which
-    // lets libvips free the decoded source — this is what keeps peak memory flat.
+    // top can never contribute again. Dropping the buffer unrefs the VipsImage, which is
+    // what *allows* libvips to free the decoded source. Necessary but not sufficient: the
+    // libvips operation cache still holds a reference of its own, so the memory comes back
+    // on that cache's LRU schedule, bounded by its budget (100 operations / ~100 MB by
+    // default) rather than immediately. Skipping the release keeps every page alive
+    // instead, and peak memory then grows with the chapter — see tests/cli-tests/test_memory.py.
     // The entry stays in place; its startY/height still define the strip's geometry.
     for (auto& entry : m_entries) {
         if (entry.startY >= sliceStartY) break;  // entries are ordered — rest are below
-        if (entry.startY + entry.height <= sliceStartY)
+        if (entry.startY + entry.height <= sliceStartY && entry.image.buffer.isValid()) {
             entry.image.buffer = PixelBuffer{};
+            PLATEMAKER_LOG(Log::Memory,
+                    "release " + entry.image.sourceFilePath
+                    + " (rows " + std::to_string(entry.startY) + ".."
+                    + std::to_string(entry.startY + entry.height)
+                    + ") at sliceStartY=" + std::to_string(sliceStartY));
+        }
     }
 }
 
@@ -312,7 +365,9 @@ void ScaledStrip::sliceAll(
 
     // Homogenise band counts before any slice is built (all buffers are still live here) so a strip
     // mixing RGB and RGBA sources joins cleanly instead of aborting mid-render.
+    memTrace("pre-normalize");
     normalizeBandCounts();
+    memTrace("post-normalize");
 
     const int numFull = m_totalHeight / sliceHeight;
     const int tail    = m_totalHeight % sliceHeight;
@@ -329,8 +384,12 @@ void ScaledStrip::sliceAll(
 
         const int sliceStartY = i * sliceHeight;
         releaseConsumedEntries(sliceStartY);
+        memTrace(("slice " + std::to_string(i) + " post-release").c_str());
 
+        // The slice is only a lazy graph until onSlice pulls it (encode + save), so the decode of any
+        // page this slice newly touches lands *inside* the callback — hence the sample after it.
         if (!onSlice(buildSlice(i, sliceStartY, sliceHeight))) return;
+        memTrace(("slice " + std::to_string(i) + " post-write  ").c_str());
     }
 
     // --- Tail slice ---
@@ -370,6 +429,8 @@ void ScaledStrip::sliceAll(
             }
         }
     }
+
+    memTrace("done         ");
 }
 
 } // namespace Platemaker::Core

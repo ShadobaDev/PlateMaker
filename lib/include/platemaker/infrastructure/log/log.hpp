@@ -43,6 +43,12 @@ namespace Platemaker::Infrastructure::Log {
  * The numeric bit is the wire format of the CLI's \c --trace=0x... argument, so the values are
  * stable: append new components at the next free bit, never renumber an existing one. \c None
  * and \c All are convenience masks, not components.
+ *
+ * \c Memory is a cross-cutting channel rather than one class: it reports *decoded-pixel residency* —
+ * how much image data libvips is holding right now, the run's high-water mark, and which source pages
+ * are still live — at the points where that can change (a page appended to the strip, a slice built,
+ * a consumed page released). It answers "does the strip really stream, or does the whole chapter sit
+ * in RAM?" without a profiler. Enable it alone (\c --trace=0x4000) for a clean, parseable trace.
  */
 enum Component : std::uint64_t {
     None                    = 0,
@@ -60,6 +66,7 @@ enum Component : std::uint64_t {
     FileMetaData            = 1ull << 11,   // 0x0800
     ColourCorrector         = 1ull << 12,   // 0x1000
     StripOverlayCompositor  = 1ull << 13,   // 0x2000
+    Memory                  = 1ull << 14,   // 0x4000 — decoded-pixel residency (see below)
     All                     = ~0ull,
 };
 

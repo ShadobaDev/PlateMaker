@@ -2299,7 +2299,7 @@ static int cmdTemplate(const Opts& opts)
 // Shadow global argument: --trace=0xHEX (or a decimal / 0-prefixed value) turns on the library's
 // per-component diagnostic logging (Platemaker::Infrastructure::Log). The value is a bitmask, one
 // bit per component — see log.hpp for the assignment (0x1 ProcessingPipeline, 0x2 Scaler,
-// 0x4 ScaledStrip, …; ~0 / a big hex enables everything). Recognised anywhere on the command line
+// 0x4 ScaledStrip, … 0x4000 Memory; ~0 / a big hex enables everything). Recognised anywhere on the command line
 // and consumed here, so ordinary subcommand parsing ignores it. Output goes to the logger sink
 // (stderr by default). Off unless requested — a normal run stays silent.
 static void applyTraceArg(int argc, char** argv)
