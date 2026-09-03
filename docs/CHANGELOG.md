@@ -51,6 +51,19 @@ staged for 0.5.2 (never released), which re-derives onto this baseline per the c
   project is never falsely invalidated — stored per project as `ProjectItem::processingSignature` and
   folded into the render's full-re-render decision, so a grade or overlay edit re-renders even though no
   input or output file changed.
+- **Page-domain preview API — `ProcessingPipeline::previewLayout()` + `previewPageRgba()`.** The same
+  page domain the render uses, stopped before the strip: `previewLayout()` returns where every input
+  page lands (width, height, matched profile, and the status `run()` would report) decoding no pixels,
+  and `previewPageRgba()` writes one page's **ungraded** pixels at strip scale into a caller-owned
+  RGBA8888 buffer. Together they let a consumer show a chapter's strip **before any render exists**, at
+  a cost that tracks the viewport rather than the chapter: layout every page once (a header read each),
+  fetch pixels only for what is on screen, and grade those with `ColourCorrector::applyToRgba()` — the
+  same engine the render uses, so the preview matches, and a slider move never re-decodes a page. The
+  grade is deliberately not baked in; the colour config is still passed because part of it happens at
+  *load* (`iccToSRGB`, and whether the page is excluded, select the render's load path) and that part
+  cannot be applied afterwards. Both go through the same private page-domain helpers as `run()`, so
+  preview geometry cannot drift from the render's — a regression test asserts the layout's total height
+  equals the strip a real render builds. Additive: `run()` is unchanged.
 - **`Memory` diagnostic trace channel (`Log::Memory`, `--trace=0x4000`).** Reports decoded-pixel
   residency — what libvips is holding right now, the run's high-water mark, and which source pages the
   strip still references — at each append, each slice, and each release. The strip's streaming contract

@@ -51,6 +51,7 @@ add_executable(platemaker-lib-tests
     test_project_item_errors.cpp
     test_file_uids.cpp
     test_implicit_render.cpp
+    test_page_preview.cpp
     test_build_info.cpp
 )
 

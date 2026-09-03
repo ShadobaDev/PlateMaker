@@ -51,6 +51,32 @@ struct ProcessingOutcome {
 };
 
 /**
+ * \brief Where one input page lands on the preview strip.
+ *
+ * Produced by \c ProcessingPipeline::previewLayout().  The dimensions are the *render's* — they come
+ * from the same page-domain code \c run() uses, not from re-derived arithmetic — so a consumer can
+ * stack these into a strip that agrees with what a render would produce, before any render exists.
+ */
+struct PagePreviewGeometry {
+    std::string sourceFilePath;      //!< The input this describes (absolute path, as given).
+    int         width        = 0;    //!< Scaled width — the output profile's target width, in practice.
+    int         height       = 0;    //!< Scaled height: this page's slot in the strip.
+    int         sourceWidth  = 0;    //!< Display size from the header (EXIF-rotated), before margins/scale.
+    int         sourceHeight = 0;
+    std::string canvasProfileId;     //!< Profile applied, or empty when the page is rendered implicitly.
+    InputStatus status = InputStatus::Appended; //!< Exactly what \c run() would report for this page.
+
+    /**
+     * \brief False when this page contributes nothing to the strip.
+     *
+     * Missing, unreadable, or failing the same checks that make \c run() skip a page — in which case
+     * \c width / \c height are 0.  A consumer stacking pages **must** skip these exactly as the render
+     * does, or every page below sits at the wrong strip offset.
+     */
+    bool readable = true;
+};
+
+/**
  * \class ProcessingPipeline
  * \brief Stateless runner for the scale → strip → slice → save pipeline.
  *
@@ -108,6 +134,87 @@ public:
         const std::string&                         thumbnailCacheDir = {},
         const Models::ColourCorrection&            colourCorrection  = {},
         const std::vector<Models::StripOverlay>&   stripOverlays     = {});
+
+    // -----------------------------------------------------------------------
+    // Preview — the same page domain, stopped before the strip
+    // -----------------------------------------------------------------------
+    //
+    // A consumer that wants to *show* the strip does not want slices: slices are an output artifact
+    // (files to publish), and a viewer draws a continuous strip and hides the seams anyway. It wants the
+    // pages, and only the ones on screen. These two calls give it exactly that — the layout of every
+    // page (cheap) and the pixels of one (on demand) — so the cost of showing a chapter tracks the
+    // viewport, not the chapter. They live here, beside run(), because they must go through the same
+    // page-domain code: a preview that re-derived page geometry would drift from the render silently.
+
+    /**
+     * \brief The preview strip's layout: one entry per input, in strip order.
+     *
+     * Decodes no pixels. Every libvips operation the page domain builds — open, autorotate, crop,
+     * resize — is lazy: it settles the output dimensions on construction and reads the file's header,
+     * but touches a pixel only when a consumer pulls one, which this never does. The dimensions
+     * therefore come from the real pipeline rather than from arithmetic that could drift from it.
+     * Budget roughly a header read per page (~1 ms); cache the result and refresh it when the inputs,
+     * the canvas profiles or the output profile's target width change.
+     *
+     * Never throws for a bad page: one that cannot be read is returned with \c readable false and zero
+     * dimensions, exactly as \c run() skips it. A consumer must skip those when stacking.
+     *
+     * \param inputs           The project's input files, in strip order.
+     * \param outProfile       Supplies \c targetWidth — the width every page is scaled to.
+     * \param canvasProfiles   The workspace's canvas profile palette (margins, sizes).
+     * \param canvasProfileIds The profiles linked to this project, in priority order.
+     * \return One entry per input, in the same order.
+     */
+    [[nodiscard]] static std::vector<PagePreviewGeometry> previewLayout(
+        const std::vector<Models::InputFile>&      inputs,
+        const Models::OutputProfile&               outProfile,
+        const std::vector<Models::CanvasProfile>&  canvasProfiles,
+        const std::vector<std::string>&            canvasProfileIds);
+
+    /**
+     * \brief Writes one page's **ungraded** pixels, at strip scale, into a caller-owned RGBA buffer.
+     *
+     * Runs the page exactly as \c run() would — EXIF-upright, profile-matched, margin-cropped, scaled —
+     * and stops there. The result is always **8-bit sRGB RGBA8888**, four interleaved bytes per pixel
+     * with no row padding, whatever the source's depth or band count was; that narrowing is
+     * preview-only, the committed render still keeps the source's format.
+     *
+     * \par Why ungraded, and what \p colourCorrection is for
+     * The grade is deliberately **not** applied: its consumer re-grades on every slider move, and
+     * re-decoding a page for that would cost ~100× what grading the buffer costs. Grade the returned
+     * buffer with \c ColourCorrector::applyToRgba() instead — the same engine the render uses, so the
+     * preview matches. \p colourCorrection is still needed here because part of the colour step happens
+     * at *load* (its \c iccToSRGB, and whether this page is excluded, select which load path the render
+     * takes) and that part cannot be applied afterwards. Change it and the page must be fetched again;
+     * change only the grade values and it must not.
+     *
+     * \par Buffer ownership
+     * The caller allocates and owns \p rgba, as with \c ColourCorrector::applyToRgba() — no allocation
+     * crosses the library boundary. Size it from this page's \c previewLayout() entry: exactly
+     * \p width × \p height × 4 bytes. A mismatch throws rather than writing a plausible-looking wrong
+     * image, so a layout that went stale surfaces immediately.
+     *
+     * \param input            The input file to render (its \c uid decides colour exclusion).
+     * \param outProfile       Supplies \c targetWidth.
+     * \param canvasProfiles   The workspace's canvas profile palette.
+     * \param canvasProfileIds The profiles linked to this project, in priority order.
+     * \param colourCorrection The project's colour step — consulted for the load path only (see above).
+     * \param rgba             Destination buffer, at least \p width × \p height × 4 bytes.
+     * \param width            Expected width  (from \c previewLayout()).
+     * \param height           Expected height (from \c previewLayout()).
+     *
+     * \throws std::runtime_error if \p rgba is null, the dimensions are not positive, the page cannot be
+     *         read, or the page's real size differs from \p width × \p height.
+     */
+    static void previewPageRgba(
+        const Models::InputFile&                   input,
+        const Models::OutputProfile&               outProfile,
+        const std::vector<Models::CanvasProfile>&  canvasProfiles,
+        const std::vector<std::string>&            canvasProfileIds,
+        const Models::ColourCorrection&            colourCorrection,
+        unsigned char*                             rgba,
+        int                                        width,
+        int                                        height);
 };
 
 } // namespace Platemaker::Core
