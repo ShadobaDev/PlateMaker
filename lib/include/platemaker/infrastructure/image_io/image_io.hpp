@@ -79,9 +79,8 @@ public:
      * Loads with random access (so downstream crop/extract can read any row), rotates to display
      * orientation per EXIF, and — when \p convertToSRGB is true — normalises the colour profile to
      * sRGB via any embedded ICC profile (a no-op / kept-as-is when none is present or the transform
-     * fails).  Pass \c false to keep the source colour space untouched; the optional colour-correction
-     * step uses that so its own \c ColourCorrection::iccToSRGB toggle is the single authority over the
-     * sRGB conversion, rather than it happening unconditionally on load.
+     * fails).  Pass \c false to keep the source colour space untouched — what the margin-less pipeline does,
+     * since it scales straight from the file without a colour transform.
      *
      * \param filePath      Absolute path to the image file to load.
      * \param convertToSRGB Convert to sRGB via the embedded ICC profile when true (default, historical

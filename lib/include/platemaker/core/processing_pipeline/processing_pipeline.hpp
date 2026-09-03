@@ -114,8 +114,8 @@ public:
      * \param colourCorrection Optional per-page colour grade applied in the page domain (before scale)
      *                         to every input except those in its \c excludedInputUids.  Default /
      *                         \c enabled==false → no colour work at all, so the output is byte-identical
-     *                         to a build without this step.  Its \c iccToSRGB drives the sRGB conversion
-     *                         at load for the graded pages.
+     *                         to a build without this step.  The grade never changes how a page is
+     *                         *read*, only what happens to its pixels, so a neutral grade is a no-op.
      * \param stripOverlays    Optional text/bubble overlays composited in the strip domain (per slice,
      *                         at strip-Y).  Empty → no compositing, so the output is byte-identical to a
      *                         build without this step; a slice no overlay intersects is likewise
@@ -179,14 +179,12 @@ public:
      * with no row padding, whatever the source's depth or band count was; that narrowing is
      * preview-only, the committed render still keeps the source's format.
      *
-     * \par Why ungraded, and what \p colourCorrection is for
+     * \par Why ungraded
      * The grade is deliberately **not** applied: its consumer re-grades on every slider move, and
      * re-decoding a page for that would cost ~100× what grading the buffer costs. Grade the returned
      * buffer with \c ColourCorrector::applyToRgba() instead — the same engine the render uses, so the
-     * preview matches. \p colourCorrection is still needed here because part of the colour step happens
-     * at *load* (its \c iccToSRGB, and whether this page is excluded, select which load path the render
-     * takes) and that part cannot be applied afterwards. Change it and the page must be fetched again;
-     * change only the grade values and it must not.
+     * preview matches. The colour step never influences how a page is *read*, so this needs no colour
+     * argument at all: a page fetched once stays a valid baseline for every grade the user tries on it.
      *
      * \par Buffer ownership
      * The caller allocates and owns \p rgba, as with \c ColourCorrector::applyToRgba() — no allocation
@@ -198,7 +196,6 @@ public:
      * \param outProfile       Supplies \c targetWidth.
      * \param canvasProfiles   The workspace's canvas profile palette.
      * \param canvasProfileIds The profiles linked to this project, in priority order.
-     * \param colourCorrection The project's colour step — consulted for the load path only (see above).
      * \param rgba             Destination buffer, at least \p width × \p height × 4 bytes.
      * \param width            Expected width  (from \c previewLayout()).
      * \param height           Expected height (from \c previewLayout()).
@@ -211,7 +208,6 @@ public:
         const Models::OutputProfile&               outProfile,
         const std::vector<Models::CanvasProfile>&  canvasProfiles,
         const std::vector<std::string>&            canvasProfileIds,
-        const Models::ColourCorrection&            colourCorrection,
         unsigned char*                             rgba,
         int                                        width,
         int                                        height);

@@ -297,7 +297,6 @@ TEST(ColourCorrectionPipelineTest, ExcludedInputIsNotGraded)
 
     Models::ColourCorrection cc;
     cc.enabled           = true;
-    cc.iccToSRGB         = false; // isolate the grade (these synthetic pages carry no ICC profile)
     cc.saturation        = 0.0;   // desaturate to grey — unless the page is excluded
     cc.excludedInputUids = {"in-a"};
 

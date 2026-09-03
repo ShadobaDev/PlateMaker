@@ -191,7 +191,6 @@ void from_json(const nlohmann::json& j, ColourCurves& v) {
 void to_json(nlohmann::json& j, const ColourCorrection& v) {
     j = nlohmann::json{
         {"enabled",           v.enabled},
-        {"iccToSRGB",         v.iccToSRGB},
         {"curves",            v.curves},
         {"brightness",        v.brightness},
         {"contrast",          v.contrast},
@@ -203,7 +202,6 @@ void from_json(const nlohmann::json& j, ColourCorrection& v) {
     // All additive: an old workspace has no "colourCorrection" object at all, and a future field left
     // out of an older file simply keeps its struct default (disabled / neutral / identity curves).
     if (j.contains("enabled"))           j.at("enabled").get_to(v.enabled);
-    if (j.contains("iccToSRGB"))         j.at("iccToSRGB").get_to(v.iccToSRGB);
     if (j.contains("curves"))            j.at("curves").get_to(v.curves);
     if (j.contains("brightness"))        j.at("brightness").get_to(v.brightness);
     if (j.contains("contrast"))          j.at("contrast").get_to(v.contrast);

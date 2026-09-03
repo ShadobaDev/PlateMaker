@@ -53,8 +53,8 @@ Core::PixelBuffer ImageIO::load(const std::string& filePath, bool convertToSRGB)
     g_object_unref(image);
     image = upright;
 
-    // Keep the source colour space when the caller opts out (the colour-correction step drives the
-    // sRGB conversion itself via ColourCorrection::iccToSRGB, so it must be able to load raw).
+    // Keep the source colour space when the caller opts out (the margin-less pipeline scales straight
+    // from the file with no colour transform, so a load standing in for it must be able to match that).
     if (!convertToSRGB)
         return Core::PixelBuffer{image};
 

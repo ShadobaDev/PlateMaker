@@ -167,19 +167,17 @@ PagePlan planPage(const std::string& filePath, const CanvasProfileMatcher& match
 /**
  * \brief Turns a plan into the scaled page the strip receives: load → [grade] → [crop] → scale.
  *
- * \param ccApplies True when the colour step applies to this page (enabled and the page not excluded).
- *                  It drives the *load* — `ColourCorrection::iccToSRGB` decides the sRGB conversion
- *                  instead of the margin path's historical always-sRGB — independently of \p bakeGrade.
- * \param bakeGrade Whether to actually run the grade. The render bakes it in; the preview does not,
- *                  because its consumer grades the returned pixels itself (see previewPageRgba) and
- *                  must be able to re-grade on every slider move without re-decoding the page.
+ * The grade never changes how the file is *read* — only what happens to the pixels afterwards — so
+ * enabling the colour step with neutral values is a true no-op on every path.
+ *
+ * \param grade Non-null to bake the grade into the returned pixels; null for an ungraded page. The
+ *              render bakes it in; the preview does not, because its consumer re-grades the returned
+ *              pixels on every slider move and must not pay for a re-decode to do it.
  */
 ScaledImage renderPage(const PagePlan&                 plan,
                        const std::string&              filePath,
                        int                             targetWidth,
-                       const Models::ColourCorrection& cc,
-                       bool                            ccApplies,
-                       bool                            bakeGrade)
+                       const Models::ColourCorrection* grade)
 {
     // All four are stateless and empty — constructing them per page costs nothing and keeps the page
     // domain self-contained.
@@ -195,20 +193,21 @@ ScaledImage renderPage(const PagePlan&                 plan,
          plan.profile->margins.left   > 0 ||
          plan.profile->margins.right  > 0);
 
-    // When the colour step is off, both branches below are exactly the historical code paths, so the
-    // output stays byte-identical to a build without the step.
     if (doMarginCrop) {
-        auto buf = imageIO.load(filePath, ccApplies ? cc.iccToSRGB : true);
-        if (ccApplies && bakeGrade)
-            buf = colourCorrector.apply(std::move(buf), cc);
+        // The margin path has always normalised to sRGB on load (a no-op for a file with no embedded
+        // profile, which is the common case) — keep it, graded or not.
+        auto buf = imageIO.load(filePath, /*convertToSRGB=*/true);
+        if (grade)
+            buf = colourCorrector.apply(std::move(buf), *grade);
         auto cropped = cropper.crop(buf, plan.profile->margins);
         return scaler.scale(std::move(cropped), filePath, targetWidth);
     }
-    if (ccApplies) {
-        // Load explicitly so the grade can sit between load and scale.
-        auto buf = imageIO.load(filePath, cc.iccToSRGB);
-        if (bakeGrade)
-            buf = colourCorrector.apply(std::move(buf), cc);
+    if (grade) {
+        // Load explicitly so the grade can sit between load and scale. `false` because the un-graded
+        // version of this path goes straight through Scaler, which does not transform — same pixels in,
+        // whether or not a grade follows.
+        auto buf = imageIO.load(filePath, /*convertToSRGB=*/false);
+        buf = colourCorrector.apply(std::move(buf), *grade);
         return scaler.scale(std::move(buf), filePath, targetWidth);
     }
     return scaler.scale(filePath, targetWidth);
@@ -323,7 +322,7 @@ ProcessingOutcome ProcessingPipeline::run(
             const bool applyCC = colourCorrection.enabled && ccExcluded.count(file.uid) == 0;
 
             strip.append(renderPage(plan, file.filePath, outProfile.targetWidth,
-                                    colourCorrection, applyCC, /*bakeGrade=*/true));
+                                    applyCC ? &colourCorrection : nullptr));
 
             if (callbacks.onInput)
                 callbacks.onInput({file.filePath, plan.status, std::move(plan.candidateIds), {}});
@@ -552,11 +551,9 @@ std::vector<PagePreviewGeometry> ProcessingPipeline::previewLayout(
             // Run the real page domain and read the dimensions off the result. Every operation it
             // builds is lazy — nothing is decoded because nothing pulls a pixel — so this costs a
             // header read, and in exchange the numbers are the render's by construction instead of
-            // arithmetic that could drift from it. The colour step is irrelevant here: neither the ICC
-            // transform nor the grade changes an image's size.
+            // arithmetic that could drift from it.
             const ScaledImage scaled = renderPage(plan, file.filePath, outProfile.targetWidth,
-                                                  Models::ColourCorrection{},
-                                                  /*ccApplies=*/false, /*bakeGrade=*/false);
+                                                  /*grade=*/nullptr);
 
             g.sourceWidth     = plan.geo.width;
             g.sourceHeight    = plan.geo.height;
@@ -589,7 +586,6 @@ void ProcessingPipeline::previewPageRgba(
     const Models::OutputProfile&              outProfile,
     const std::vector<Models::CanvasProfile>& canvasProfiles,
     const std::vector<std::string>&           canvasProfileIds,
-    const Models::ColourCorrection&           colourCorrection,
     unsigned char*                            rgba,
     int                                       width,
     int                                       height)
@@ -607,14 +603,8 @@ void ProcessingPipeline::previewPageRgba(
     CanvasProfileMatcher matcher(canvasProfiles, canvasProfileIds);
     const PagePlan       plan = planPage(input.filePath, matcher, hasProfiles);
 
-    // Whether the colour step applies decides which *load* path the render takes for this page, and
-    // therefore what the ungraded baseline looks like. The grade itself is not baked — see the header.
-    const auto& ex        = colourCorrection.excludedInputUids;
-    const bool  ccApplies = colourCorrection.enabled &&
-                            std::find(ex.begin(), ex.end(), input.uid) == ex.end();
-
     const ScaledImage scaled = renderPage(plan, input.filePath, outProfile.targetWidth,
-                                          colourCorrection, ccApplies, /*bakeGrade=*/false);
+                                          /*grade=*/nullptr);
 
     if (scaled.buffer.width() != width || scaled.buffer.height() != height) {
         throw std::runtime_error(

@@ -9,9 +9,8 @@
  * can be project-wide yet still allow per-page exclusions.
  *
  * ICC → sRGB is deliberately **not** done here: it is a colour-normalisation concern handled at load
- * (\c ImageIO::load(path, convertToSRGB)), gated by \c ColourCorrection::iccToSRGB.  ColourCorrector
- * owns only the creative scalars, so a page loaded straight (no ICC) and one converted to sRGB both
- * receive the identical grade.
+ * (\c ImageIO::load(path, convertToSRGB)).  ColourCorrector owns only the creative scalars, so a page
+ * loaded straight (no ICC) and one converted to sRGB both receive the identical grade.
  *
  * Stateless and thread-safe, like \c Scaler / \c MarginCropper — construct once, call \c apply() freely.
  *
@@ -51,8 +50,8 @@ public:
      * would for an ungraded page.
      *
      * \param buffer Source page pixels (ownership transferred in).  Must be valid.
-     * \param cc     The grade to apply.  \c cc.iccToSRGB and \c cc.excludedInputUids are the caller's
-     *               concern (ICC at load; exclusion decided before calling) — ignored here.
+     * \param cc     The grade to apply.  \c cc.excludedInputUids is the caller's concern (the exclusion is
+     *               decided before calling) — ignored here.
      * \return The graded buffer (or \p buffer unchanged for a neutral grade).
      * \throws std::runtime_error if \p buffer is invalid or a libvips operation fails.
      */
@@ -69,8 +68,7 @@ public:
      * libvips stays inside the lib, so the consumer needs no vips dependency. Because it is a point grade,
      * grading a decoded output slice matches grading the source page then re-slicing (see the class doc),
      * so the preview equals the committed render for the brightness / contrast / saturation / curve
-     * scalars. (The \c iccToSRGB choice is baked at load, so it is not reflected by grading a slice.)
-     *
+         *
      * \param rgba   Interleaved RGBA8888 pixels, graded in place. Must be non-null and hold width*height*4 bytes.
      * \param width  Image width in pixels (> 0).
      * \param height Image height in pixels (> 0).

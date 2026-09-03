@@ -82,8 +82,7 @@ struct ColourCurves {
  * Apply order within the grade: tone curves → brightness/contrast → saturation.
  */
 struct ColourCorrection {
-    bool enabled   = false; //!< Master toggle. When false the step is skipped entirely.
-    bool iccToSRGB = true;  //!< Convert each page to sRGB via its embedded/assumed ICC profile (gamut fix).
+    bool enabled = false; //!< Master toggle. When false the step is skipped entirely.
 
     ColourCurves curves;     //!< Per-channel tone curves (empty = identity). Applied first, 8-bit only (MVP).
     double brightness = 0.0; //!< Additive lift, roughly [-1, 1]; 0 = no change.
@@ -218,8 +217,7 @@ inline constexpr std::array<ProcessingStepDef, 2> k_processingStepDefs = {{
     std::string s;
 
     if (cc.enabled) {
-        s += "cc{icc" + to_string(cc.iccToSRGB)
-           + ";cu m" + curveSig(cc.curves.master) + "r" + curveSig(cc.curves.r)
+        s += "cc{cu m" + curveSig(cc.curves.master) + "r" + curveSig(cc.curves.r)
            + "g" + curveSig(cc.curves.g) + "b" + curveSig(cc.curves.b)
            + ";b" + to_string(cc.brightness)
            + ";c" + to_string(cc.contrast)

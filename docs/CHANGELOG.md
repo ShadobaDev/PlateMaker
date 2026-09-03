@@ -18,9 +18,9 @@ staged for 0.5.2 (never released), which re-derives onto this baseline per the c
   render is byte-identical when neither is used; the mangled symbol changes (ABI), which is what makes
   this a minor bump.
 - **`ImageIO::load()` gains an optional trailing `convertToSRGB` (default `true`).** `true` keeps the
-  historical always-sRGB-on-load behaviour; the colour-correction step loads with it set from
-  `ColourCorrection::iccToSRGB`, so that toggle is the single authority over the P3→sRGB conversion for
-  graded pages. Defaulted (source-compatible); the mangled symbol changes.
+  historical always-sRGB-on-load behaviour; `false` leaves the source colour space alone, which is what a
+  load standing in for the margin-less pipeline needs (that path scales straight from the file with no
+  colour transform). Defaulted (source-compatible); the mangled symbol changes.
 - **`ProjectItem::stripOverlays` is now a lib-owned inventory, not a public field.** It is private,
   read through `getStripOverlays()` (const + mutable, like `getInputImages()`); mutation goes through
   `addOverlay()` / `removeOverlay()`.
@@ -28,14 +28,14 @@ staged for 0.5.2 (never released), which re-derives onto this baseline per the c
 ### Added
 
 - **Project-wide colour correction (page domain).** A `Models::ColourCorrection` on each `ProjectItem`
-  — ICC→sRGB, per-channel tone curves (control points → a 256-entry LUT via `vips_maplut`),
+  — per-channel tone curves (control points → a 256-entry LUT via `vips_maplut`),
   brightness/contrast/saturation, and per-page exclusions by input uid — applied to each input page
   before scale by a new stateless `Core::ColourCorrector`. Because these are point operations, a
-  project-wide grade equals a per-page one while keeping exclusions and correct per-source ICC. Curves
-  are 8-bit/3-band in this release (cubic interpolation + 16-bit deferred).
+  project-wide grade equals a per-page one while keeping exclusions. Curves are 8-bit/3-band in 
+  this release (cubic interpolation + 16-bit deferred).
   `ColourCorrector::applyToRgba()` grades an in-memory RGBA8888 buffer in place (reusing `apply()`), so a
   consumer with no libvips dependency — a GUI — can drive a live grade *preview* of already-decoded output
-  slices; being a point grade, that preview equals the committed render (bar the load-time ICC toggle).
+  slices; being a point grade, that preview equals the committed render.
 - **Text/bubble overlays (strip domain).** A `Models::StripOverlay` list on each `ProjectItem` — a
   consumer-rasterised RGBA bitmap positioned in **strip coordinates** with a blend mode — composited
   onto each output slice by a new `Core::StripOverlayCompositor`. An overlay straddling a slice cut
@@ -59,10 +59,10 @@ staged for 0.5.2 (never released), which re-derives onto this baseline per the c
   a cost that tracks the viewport rather than the chapter: layout every page once (a header read each),
   fetch pixels only for what is on screen, and grade those with `ColourCorrector::applyToRgba()` — the
   same engine the render uses, so the preview matches, and a slider move never re-decodes a page. The
-  grade is deliberately not baked in; the colour config is still passed because part of it happens at
-  *load* (`iccToSRGB`, and whether the page is excluded, select the render's load path) and that part
-  cannot be applied afterwards. Both go through the same private page-domain helpers as `run()`, so
-  preview geometry cannot drift from the render's — a regression test asserts the layout's total height
+  grade is deliberately not baked in, and needs no colour argument at all: because the colour step never
+  influences how a page is read, a page fetched once stays a valid baseline for every grade tried on it.
+  Both go through the same private page-domain helpers as `run()`, so preview geometry cannot drift
+  from the render's — a regression test asserts the layout's total height
   equals the strip a real render builds. Additive: `run()` is unchanged.
 - **`Memory` diagnostic trace channel (`Log::Memory`, `--trace=0x4000`).** Reports decoded-pixel
   residency — what libvips is holding right now, the run's high-water mark, and which source pages the

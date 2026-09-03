@@ -222,7 +222,7 @@ TEST(PagePreviewTest, PageRgbaMatchesTheRenderedPage)
     const int h = layout[0].height;
 
     std::vector<unsigned char> rgba(static_cast<std::size_t>(w) * h * 4, 0);
-    ProcessingPipeline::previewPageRgba({input(page)}, output(80, 180), palette, ids, {},
+    ProcessingPipeline::previewPageRgba(input(page), output(80, 180), palette, ids,
                                         rgba.data(), w, h);
 
     // A source without alpha comes back fully opaque, and the colour survives the round trip.
@@ -243,8 +243,10 @@ TEST(PagePreviewTest, PageRgbaMatchesTheRenderedPage)
     EXPECT_EQ(rendered.second, h);
 }
 
-/// The grade is deliberately NOT baked in: the consumer applies it afterwards, per slider move.
-TEST(PagePreviewTest, PageRgbaIsUngradedEvenWhenColourCorrectionIsOn)
+/// The preview is the ungraded baseline the consumer grades itself — a render of the same page with
+/// the grade on must therefore differ from it. This is the property the whole design rests on: the
+/// viewer can re-grade resident pixels on every slider move without ever re-reading the file.
+TEST(PagePreviewTest, PageRgbaIsTheUngradedBaselineTheRenderGrades)
 {
     TempDir tmp("ungraded");
     const std::string page = writeSolidPng(tmp, "a.png", 100, 200, 120, 120, 120);
@@ -254,16 +256,34 @@ TEST(PagePreviewTest, PageRgbaIsUngradedEvenWhenColourCorrectionIsOn)
     ASSERT_EQ(layout.size(), 1u);
     const int w = layout[0].width, h = layout[0].height;
 
-    Models::ColourCorrection cc;
-    cc.enabled    = true;
-    cc.brightness = 60.0; // would be plainly visible if it were applied here
-
     std::vector<unsigned char> rgba(static_cast<std::size_t>(w) * h * 4, 0);
-    ProcessingPipeline::previewPageRgba(input(page), op, {}, {}, cc, rgba.data(), w, h);
+    ProcessingPipeline::previewPageRgba(input(page), op, {}, {}, rgba.data(), w, h);
 
-    EXPECT_EQ(rgba[0], 120) << "previewPageRgba must return the ungraded page";
+    EXPECT_EQ(rgba[0], 120) << "previewPageRgba must return the page ungraded";
     EXPECT_EQ(rgba[1], 120);
     EXPECT_EQ(rgba[2], 120);
+
+    // The same page rendered WITH the grade lands somewhere else entirely.
+    Models::ColourCorrection cc;
+    cc.enabled    = true;
+    cc.brightness = 60.0;
+
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::run({input(page)}, op, {}, {}, tmp.dir(), cancel,
+                                                 {}, nullptr, {}, cc);
+    ASSERT_FALSE(outcome.failed) << (outcome.error ? outcome.error->message : "");
+    ASSERT_FALSE(outcome.records.empty());
+
+    const std::string out = (fs::path(tmp.dir()) / outcome.records[0].fileName).string();
+    VipsImage* im = vips_image_new_from_file(out.c_str(), nullptr);
+    ASSERT_NE(im, nullptr) << vips_error_buffer();
+    double* v = nullptr; int n = 0;
+    ASSERT_EQ(vips_getpoint(im, &v, &n, 0, 0, nullptr), 0) << vips_error_buffer();
+    const double rendered = v[0];
+    g_free(v);
+    g_object_unref(im);
+
+    EXPECT_GT(rendered, 120.0) << "the render must bake the grade the preview leaves out";
 }
 
 /// Bad arguments fail loudly rather than writing a plausible-looking wrong image.
@@ -278,15 +298,15 @@ TEST(PagePreviewTest, PageRgbaRejectsBadArgs)
     const int w = layout[0].width, h = layout[0].height;
     std::vector<unsigned char> rgba(static_cast<std::size_t>(w) * h * 4, 0);
 
-    EXPECT_THROW(ProcessingPipeline::previewPageRgba(input(page), op, {}, {}, {}, nullptr, w, h),
+    EXPECT_THROW(ProcessingPipeline::previewPageRgba(input(page), op, {}, {}, nullptr, w, h),
                  std::runtime_error);
-    EXPECT_THROW(ProcessingPipeline::previewPageRgba(input(page), op, {}, {}, {}, rgba.data(), 0, h),
+    EXPECT_THROW(ProcessingPipeline::previewPageRgba(input(page), op, {}, {}, rgba.data(), 0, h),
                  std::runtime_error);
     // A stale layout — the caller's dimensions no longer match the page.
-    EXPECT_THROW(ProcessingPipeline::previewPageRgba(input(page), op, {}, {}, {}, rgba.data(), w, h + 1),
+    EXPECT_THROW(ProcessingPipeline::previewPageRgba(input(page), op, {}, {}, rgba.data(), w, h + 1),
                  std::runtime_error);
     // An unreadable page.
-    EXPECT_THROW(ProcessingPipeline::previewPageRgba(input(tmp.file("nope.png")), op, {}, {}, {},
+    EXPECT_THROW(ProcessingPipeline::previewPageRgba(input(tmp.file("nope.png")), op, {}, {},
                                                      rgba.data(), w, h),
                  std::runtime_error);
 }
