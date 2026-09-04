@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">
+  <!-- Jagged "shout" burst — the spikes give the rasteriser plenty of anti-aliased diagonal edges,
+       which is what makes this a better compositing fixture than a rectangle. -->
+  <path d="M 120 4 L 141 34 L 178 18 L 172 56 L 214 54 L 190 82 L 232 100 L 190 112 L 208 146
+           L 166 136 L 158 156 L 126 132 L 96 156 L 84 128 L 44 144 L 52 108 L 8 96 L 44 76
+           L 14 46 L 56 48 L 54 14 L 92 30 Z"
+        fill="#fff8e6" stroke="#141414" stroke-width="5" stroke-linejoin="round"/>
+</svg>

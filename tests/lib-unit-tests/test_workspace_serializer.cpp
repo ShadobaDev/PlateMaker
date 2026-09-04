@@ -283,9 +283,16 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     proj.colourCorrection.curves.master     = {{0.0, 0.0}, {0.5, 0.8}, {1.0, 1.0}};
     proj.colourCorrection.curves.r          = {{0.0, 0.0}, {1.0, 0.5}};
     proj.colourCorrection.excludedInputUids = {"file-001", "file-009"};
-    proj.getStripOverlays().push_back(
-        Models::StripOverlay{"ovl-1", "/tmp/bubble.png", "deadbeef", 40, 1500, true,
-                             Models::BlendMode::Multiply});
+    Models::StripOverlay ovl;
+    ovl.uid            = "ovl-1";
+    ovl.bitmapPath     = "/tmp/bubble.png";
+    ovl.sha256         = "deadbeef";
+    ovl.anchorInputUid = "file-004";   // page-anchored: y is relative to that page's top
+    ovl.x              = 40;
+    ovl.y              = 1500;
+    ovl.enabled        = true;
+    ovl.blend          = Models::BlendMode::Multiply;
+    proj.getStripOverlays().push_back(std::move(ovl));
     original.projectItems.push_back(std::move(proj));
 
     const std::filesystem::path tmp =
@@ -311,6 +318,9 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     EXPECT_EQ(p.getStripOverlays()[0].uid,        "ovl-1");
     EXPECT_EQ(p.getStripOverlays()[0].bitmapPath, "/tmp/bubble.png");
     EXPECT_EQ(p.getStripOverlays()[0].sha256,     "deadbeef");
+    EXPECT_EQ(p.getStripOverlays()[0].anchorInputUid, "file-004")
+        << "the anchor must survive the round-trip — without it the overlay reloads as an absolute "
+           "strip-Y and lands on whatever artwork now happens to sit there";
     EXPECT_EQ(p.getStripOverlays()[0].x, 40);
     EXPECT_EQ(p.getStripOverlays()[0].y, 1500);
     EXPECT_TRUE(p.getStripOverlays()[0].enabled);

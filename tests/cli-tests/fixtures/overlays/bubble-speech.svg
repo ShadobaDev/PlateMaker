@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">
+  <!-- Rounded balloon with a tail pointing down-left. Transparent outside the shape, so the
+       rasterised PNG composites over artwork as a real bubble rather than a white box. -->
+  <path d="M 26 8 H 214 A 18 18 0 0 1 232 26 V 106 A 18 18 0 0 1 214 124 H 100 L 58 152 L 72 124 H 26
+           A 18 18 0 0 1 8 106 V 26 A 18 18 0 0 1 26 8 Z"
+        fill="#ffffff" stroke="#141414" stroke-width="5" stroke-linejoin="round"/>
+</svg>

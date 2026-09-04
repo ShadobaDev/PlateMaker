@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="96" viewBox="0 0 240 96">
+  <!-- Narration caption: a plain bordered box, the shape a text overlay usually needs. -->
+  <rect x="6" y="6" width="228" height="84" rx="4"
+        fill="#f4efe4" stroke="#141414" stroke-width="5"/>
+</svg>
