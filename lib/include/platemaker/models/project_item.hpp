@@ -431,14 +431,20 @@ public:
      * input renames). The bitmap file itself is created and owned by the consumer (like an input file);
      * the library never copies it.
      *
-     * \param bitmapPath Absolute path to the RGBA bitmap the consumer rasterised. Must exist.
-     * \param x,y        Top-left placement in strip coordinates.
-     * \param blend      Blend mode (default \c Over).
+     * \param bitmapPath    Absolute path to the RGBA bitmap the consumer rasterised. Must exist.
+     * \param x,y            Top-left placement — page-relative when \p anchorInputUid is given, else in
+     *                      absolute strip coordinates (see \c StripOverlay::anchorInputUid).
+     * \param blend          Blend mode (default \c Over).
+     * \param anchorInputUid The \c InputFile::uid of the page this overlay rides on. Prefer passing it:
+     *                      an anchored overlay follows its page when the chapter is edited, while an
+     *                      absolute one silently drifts onto different artwork as soon as anything above
+     *                      it changes height. Empty (the default) keeps the absolute placement.
      * \return The minted uid. If the file cannot be hashed the overlay is still added with an empty
      *         sha256 (no dedup, and staleness cannot see a later content change until it is re-added).
      */
     std::string addOverlay(const std::string& bitmapPath, int x, int y,
-                           BlendMode blend = BlendMode::Over);
+                           BlendMode blend = BlendMode::Over,
+                           const std::string& anchorInputUid = {});
 
     /**
      * \brief Removes the overlay with \p overlayUid.

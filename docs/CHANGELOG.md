@@ -37,12 +37,21 @@ staged for 0.5.2 (never released), which re-derives onto this baseline per the c
   consumer with no libvips dependency — a GUI — can drive a live grade *preview* of already-decoded output
   slices; being a point grade, that preview equals the committed render.
 - **Text/bubble overlays (strip domain).** A `Models::StripOverlay` list on each `ProjectItem` — a
-  consumer-rasterised RGBA bitmap positioned in **strip coordinates** with a blend mode — composited
-  onto each output slice by a new `Core::StripOverlayCompositor`. An overlay straddling a slice cut
-  lands on **both** adjacent slices (libvips clips it), and the library is format-agnostic: it
-  composites bytes, never renders text. Curated `Models::BlendMode` set (Over / Multiply / Screen /
-  Overlay / Darken / Lighten).
-- **Lib-owned overlay inventory.** `ProjectItem::addOverlay(path, x, y, blend)` mints the `ovl-…` uid,
+  consumer-rasterised RGBA bitmap with a blend mode — composited onto each output slice by a new
+  `Core::StripOverlayCompositor`. An overlay straddling a slice cut lands on **both** adjacent slices
+  (libvips clips it), and the library is format-agnostic: it composites bytes, never renders text.
+  Curated `Models::BlendMode` set (Over / Multiply / Screen / Overlay / Darken / Lighten).
+- **Overlays are anchored to a page, not to a strip offset.** `StripOverlay::anchorInputUid` names the
+  input page an overlay rides on (by `InputFile::uid`, the identity the grade's exclusions already use),
+  and its `y` is then measured from that page's top edge. `Models::resolveOverlayAnchors()` turns the
+  pair into an absolute strip-Y once a layout is known, and `run()` calls it with the strip it just
+  built. This is what survives editing a chapter: a bubble stored at an absolute strip-Y drifts onto
+  different artwork the moment anything above it changes height — a page inserted, reordered, dropped as
+  unreadable, or a canvas profile's margins edited — and drifts silently. An overlay whose anchor page
+  is not in the render is logged and skipped rather than falling through to an unrelated page; the
+  record survives in the project, so it reappears when its page does. An empty anchor keeps the
+  absolute placement, which is what an older workspace loads as.
+- **Lib-owned overlay inventory.** `ProjectItem::addOverlay(path, x, y, blend, anchorInputUid)` mints the `ovl-…` uid,
   hashes the bitmap and **dedups identical content** (the SHA mechanic input renames use);
   `removeOverlay(uid)` drops one. The bitmap files are created and owned by the consumer and referenced
   by path (like input files) — the library never copies them.
@@ -55,7 +64,8 @@ staged for 0.5.2 (never released), which re-derives onto this baseline per the c
   page domain the render uses, stopped before the strip: `previewLayout()` returns where every input
   page lands (width, height, matched profile, and the status `run()` would report) decoding no pixels,
   and `previewPageRgba()` writes one page's **ungraded** pixels at strip scale into a caller-owned
-  RGBA8888 buffer. Together they let a consumer show a chapter's strip **before any render exists**, at
+  RGBA8888 buffer. Each entry carries its `inputUid`, so a consumer stacking the layout can build the
+  uid → strip-Y map `resolveOverlayAnchors()` takes and place overlays exactly where the render will. Together they let a consumer show a chapter's strip **before any render exists**, at
   a cost that tracks the viewport rather than the chapter: layout every page once (a header read each),
   fetch pixels only for what is on screen, and grade those with `ColourCorrector::applyToRgba()` — the
   same engine the render uses, so the preview matches, and a slider move never re-decodes a page. The

@@ -12,6 +12,11 @@
  * consumer.  Whether that bitmap came from raster art, an SVG, or laid-out rich text is the consumer's
  * concern — the lib never grows a text engine.
  *
+ * Both entry points take overlays in **absolute strip coordinates**. A project stores them anchored to
+ * a page instead (\c Models::StripOverlay::anchorInputUid), so the caller runs
+ * \c Models::resolveOverlayAnchors() over the finished layout first; that keeps this class a placement
+ * consumer with no opinion about how a chapter is laid out.
+ *
  * Usage: call \c load() once (after the strip is built, before slicing) to decode the overlay bitmaps,
  * then \c apply() per slice inside the pipeline's slice loop.  Stateless and thread-safe like the other
  * Core steps; the decoded bitmaps live in the returned \c LoadedOverlay vector, not in the compositor.
@@ -65,7 +70,7 @@ public:
      * (logged, non-fatal — a broken bubble must not abort a whole chapter render).  Each decoded
      * bitmap is promoted to RGBA so compositing has a consistent band layout.
      *
-     * \param overlays The project's overlay definitions.
+     * \param overlays The overlay definitions, already resolved to absolute strip coordinates.
      * \return The successfully decoded overlays with their placement; empty when none are usable.
      */
     [[nodiscard]] std::vector<LoadedOverlay> load(const std::vector<Models::StripOverlay>& overlays) const;

@@ -32,6 +32,7 @@
 #include <functional>
 #include <iomanip>
 #include <sstream>
+#include <unordered_map>
 
 namespace Platemaker::Core {
 
@@ -260,6 +261,12 @@ ProcessingOutcome ProcessingPipeline::run(
     const std::unordered_set<std::string> ccExcluded(
         colourCorrection.excludedInputUids.begin(), colourCorrection.excludedInputUids.end());
 
+    // Strip layout (strip domain): where each page's top edge lands, keyed by input uid. Filled as the
+    // strip is built and consumed once it is complete, to place the page-anchored overlays — the only
+    // point in the run where a page uid and a strip-Y are both known. Pages that fail to load never get
+    // an entry, so an overlay on one is reported as orphaned instead of landing on its neighbour.
+    std::unordered_map<std::string, int> pageTopByUid;
+
     // -----------------------------------------------------------------------
     // 1. Build the virtual strip (load → optional margin crop → scale → append).
     // -----------------------------------------------------------------------
@@ -321,8 +328,15 @@ ProcessingOutcome ProcessingPipeline::run(
             // renderPage() runs exactly the historical code paths (byte-identical output).
             const bool applyCC = colourCorrection.enabled && ccExcluded.count(file.uid) == 0;
 
+            // Read before the append: appending is what moves the strip's bottom edge, so this is the
+            // Y the page starts at.
+            const int pageTopY = strip.totalHeight();
+
             strip.append(renderPage(plan, file.filePath, outProfile.targetWidth,
                                     applyCC ? &colourCorrection : nullptr));
+
+            if (!file.uid.empty())
+                pageTopByUid[file.uid] = pageTopY;
 
             if (callbacks.onInput)
                 callbacks.onInput({file.filePath, plan.status, std::move(plan.candidateIds), {}});
@@ -402,9 +416,17 @@ ProcessingOutcome ProcessingPipeline::run(
         }
     }
 
-    // Strip-domain overlays (text/bubbles): decode the bitmaps once, then composite the ones each slice
-    // intersects just before it is saved. Empty → no compositing (byte-identical output).
-    const std::vector<LoadedOverlay> loadedOverlays = overlayCompositor.load(stripOverlays);
+    // Strip-domain overlays (text/bubbles): resolve page anchors against the strip we just built, decode
+    // the bitmaps once, then composite the ones each slice intersects just before it is saved. Empty →
+    // no compositing (byte-identical output).
+    std::vector<std::string> orphanedOverlays;
+    const std::vector<Models::StripOverlay> placedOverlays =
+        Models::resolveOverlayAnchors(stripOverlays, pageTopByUid, &orphanedOverlays);
+    for (const auto& uid : orphanedOverlays)
+        emitLog(callbacks.onLog, ProcessingLogLevel::Warning,
+                "Skipping overlay " + uid + ": the page it is anchored to is not in this render.");
+
+    const std::vector<LoadedOverlay> loadedOverlays = overlayCompositor.load(placedOverlays);
 
     int savedCount = 0;
     const auto onSlice = [&](SliceResult&& slice) -> bool {
@@ -538,6 +560,7 @@ std::vector<PagePreviewGeometry> ProcessingPipeline::previewLayout(
     for (const auto& file : inputs) {
         PagePreviewGeometry g;
         g.sourceFilePath = file.filePath;
+        g.inputUid       = file.uid;
 
         if (file.status == Models::FileStatus::Missing) {
             g.readable = false;
@@ -568,6 +591,7 @@ std::vector<PagePreviewGeometry> ProcessingPipeline::previewLayout(
                     "previewLayout: " + file.filePath + " is not renderable (" + e.what() + ")");
             g          = PagePreviewGeometry{};
             g.sourceFilePath = file.filePath;
+            g.inputUid       = file.uid;
             g.readable = false;
         }
 

@@ -258,8 +258,8 @@ Both options could be implemented.
 ### Lib processing-steps framework — DONE (lib side, 0.6.0); GUI pending
   The lib now runs both features as optional, non-destructive **render-time steps** at two seams —
   **page domain** (colour correction: ICC P3→sRGB + brightness/contrast/saturation, project-wide with
-  per-page exclusions) and **strip domain** (text/bubble RGBA overlays, strip-anchored, straddling a
-  slice cut lands on both slices). Unified by a typed-step descriptor table (`k_processingStepDefs`)
+  per-page exclusions) and **strip domain** (text/bubble RGBA overlays, anchored to an input page and
+  resolved to strip-Y at render, straddling a slice cut lands on both slices). Unified by a typed-step descriptor table (`k_processingStepDefs`)
   and folded into staleness (`processingConfigSignature`). Config lives on `ProjectItem`
   (`colourCorrection`, `stripOverlays`, `processingSignature`) and is serialized by the lib; opt-in /
   default-off, so an unconfigured project renders byte-identically. See the `pipeline-two-seam-steps`
@@ -280,14 +280,23 @@ Both options could be implemented.
     (inputs + overlays) could add full portability later.
   - [x] **(G) CC-exclusion pipeline test** — integration test proving `excludedInputUids` leaves a page
     ungraded while its neighbours are graded (currently only manual/e2e coverage).
+  - [x] **(I) Page-anchored overlays** — `StripOverlay.anchorInputUid` + `Models::resolveOverlayAnchors()`
+    (uid → strip-Y map, built by `run()` as it appends and by a consumer from `previewLayout()`, whose
+    entries now carry `inputUid`). An absolute strip-Y silently drifts onto different artwork whenever
+    anything above it changes height — inserting a page is the everyday case — so the anchor is the
+    placement a GUI should always write; an empty anchor stays absolute. An overlay whose page is not in
+    the render is logged and skipped, never re-homed. Pinned by
+    `tests/lib-unit-tests/test_overlay_anchoring.cpp` and `tests/cli-tests/test_overlays.py`, both with a
+    deliberate absolute-placement control so the drift they prevent is itself asserted.
 
   Persistence (decided): overlay bitmaps are treated **like inputs** — the GUI creates the file, the lib
   owns the inventory (uid + path + sha256 + dedup) and serializes it; the config is already lib-serialized,
   so after a restart the workspace reconstructs the pipeline 1:1. CC has no binary artifact (pure numbers).
 
-  Remaining **GUI** work (separate round): CC panel + per-page exclusion toggles; a bubble/text editor
-  over the strip viewer that rasterizes the RGBA overlay bitmaps and registers them via the lib's
-  `addOverlay` inventory API.
+  Remaining **GUI** work (separate round): per-page CC exclusion toggles (the CC panel itself shipped
+  with the input-sourced strip viewer); a bubble/text editor over the strip viewer that rasterizes the
+  RGBA overlay bitmaps and registers them via the lib's `addOverlay` inventory API, anchored to the page
+  under the cursor. Design: `temp/PLAN-C-text-and-bubbles-gui.md` in the GUI repo.
 
 ---
 

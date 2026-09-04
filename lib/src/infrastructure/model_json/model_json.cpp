@@ -215,6 +215,7 @@ void to_json(nlohmann::json& j, const StripOverlay& v) {
         {"uid",        v.uid},
         {"bitmapPath", v.bitmapPath},
         {"sha256",     v.sha256},
+        {"anchorInputUid", v.anchorInputUid},
         {"x",          v.x},
         {"y",          v.y},
         {"enabled",    v.enabled},
@@ -225,6 +226,8 @@ void from_json(const nlohmann::json& j, StripOverlay& v) {
     if (j.contains("uid"))        j.at("uid").get_to(v.uid);
     if (j.contains("bitmapPath")) j.at("bitmapPath").get_to(v.bitmapPath);
     if (j.contains("sha256"))     j.at("sha256").get_to(v.sha256);
+    // Additive: absent -> empty -> the overlay keeps the absolute strip-Y an older workspace stored.
+    if (j.contains("anchorInputUid")) j.at("anchorInputUid").get_to(v.anchorInputUid);
     if (j.contains("x"))          j.at("x").get_to(v.x);
     if (j.contains("y"))          j.at("y").get_to(v.y);
     if (j.contains("enabled"))    j.at("enabled").get_to(v.enabled);

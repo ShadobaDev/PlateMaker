@@ -11,6 +11,9 @@
  *  - **Strip overlays** — text/bubbles composited in the *strip domain* (per output slice, at strip-Y).
  *    The library is format-agnostic: it composites a pre-rendered RGBA bitmap supplied by the consumer;
  *    whether that layer came from raster art, an SVG, or laid-out text is the consumer's concern.
+ *    Placement is stored **relative to an input page** (\c StripOverlay::anchorInputUid) and resolved
+ *    to strip-Y at render time by \c resolveOverlayAnchors(), so editing the chapter moves a bubble
+ *    with its own artwork instead of leaving it stranded where the strip used to be.
  *
  * Both are **opt-in and default-off**, so a project that uses neither renders byte-identically to one
  * built before these types existed — the additive JSON codec (guarded reads) preserves old workspaces.
@@ -35,6 +38,7 @@
 #include <array>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace Platemaker::Models {
@@ -129,11 +133,84 @@ struct StripOverlay {
     std::string uid;        //!< Local unique id (e.g. "ovl-<hex>"), minted by ProjectItem::addOverlay().
     std::string bitmapPath; //!< Absolute path to the pre-rendered RGBA layer on disk.
     std::string sha256;     //!< SHA-256 of the bitmap — feeds staleness + dedup (a re-rendered layer re-renders output).
-    int       x = 0;                    //!< Top-left X in strip coordinates (pixels).
-    int       y = 0;                    //!< Top-left Y in strip coordinates (pixels).
+
+    /**
+     * \brief The input page this overlay rides on — empty means absolute strip coordinates.
+     *
+     * Keyed by \c InputFile::uid, the same stable page identity \c ColourCorrection::excludedInputUids
+     * uses, so a rename does not detach a bubble from its page.  When set, \c y is measured from that
+     * page's top edge in the strip rather than from the strip's; \c resolveOverlayAnchors() turns the
+     * pair back into an absolute strip-Y once the layout is known.
+     *
+     * This is what survives editing the chapter.  A bubble stored at an absolute strip-Y drifts onto the
+     * wrong artwork the moment anything above it changes height — a page inserted or reordered, a canvas
+     * profile's margins edited, a page dropped as unreadable — and the drift is silent.  Anchored, the
+     * bubble moves with its page and only its own page can move it.
+     */
+    std::string anchorInputUid;
+
+    int       x = 0;                    //!< Top-left X (pixels). Every page is scaled to the same target
+                                        //!< width, so the strip and a page share one X origin — \c x means
+                                        //!< the same thing anchored or not.
+    int       y = 0;                    //!< Top-left Y (pixels): from the anchor page's top when
+                                        //!< \c anchorInputUid is set, else from the strip's top.
     bool      enabled = true;           //!< Per-overlay toggle; a disabled overlay is not composited.
     BlendMode blend   = BlendMode::Over; //!< How it blends onto the slice beneath.
 };
+
+/**
+ * \brief Turns page-anchored overlays into absolute strip coordinates for a known strip layout.
+ *
+ * The bridge between the two ways an overlay can be placed (see \c StripOverlay::anchorInputUid): the
+ * durable, page-relative form the project stores, and the absolute strip-Y the compositor draws at.
+ * Both the render and a consumer's preview call this with the layout they are about to draw, so the
+ * preview cannot disagree with the render about where a bubble lands.
+ *
+ * An unanchored overlay passes through untouched.  An anchored one gets its page's top added to \c y and
+ * comes back unanchored — the result is uniformly absolute, so calling this twice is harmless.
+ *
+ * An overlay whose anchor page is **not in the layout** is *dropped from the result* and reported in
+ * \p orphanedUids.  That is the honest reading of "the page it sat on is not being rendered": the page
+ * may have been removed, or skipped this run as missing/unreadable.  Nothing is deleted — the record
+ * stays in the project, so a consumer can list orphans and offer to re-anchor them, and the overlay
+ * reappears by itself once its page is back.
+ *
+ * \param overlays          The project's overlays, in composite order.
+ * \param pageTopByInputUid Strip-Y of each page's top edge, keyed by \c InputFile::uid — built from the
+ *                          pages that actually landed in the strip (or, in a consumer, from the same
+ *                          preview layout it is drawing).
+ * \param orphanedUids      Optional: receives the \c uid of each overlay dropped for a missing anchor.
+ * \return The overlays that can be placed, in the input order, all in absolute strip coordinates.
+ */
+[[nodiscard]] inline std::vector<StripOverlay> resolveOverlayAnchors(
+    const std::vector<StripOverlay>&            overlays,
+    const std::unordered_map<std::string, int>& pageTopByInputUid,
+    std::vector<std::string>*                   orphanedUids = nullptr)
+{
+    std::vector<StripOverlay> resolved;
+    resolved.reserve(overlays.size());
+
+    for (const auto& o : overlays) {
+        if (o.anchorInputUid.empty()) {   // already absolute
+            resolved.push_back(o);
+            continue;
+        }
+
+        const auto it = pageTopByInputUid.find(o.anchorInputUid);
+        if (it == pageTopByInputUid.end()) {
+            if (orphanedUids)
+                orphanedUids->push_back(o.uid);
+            continue;
+        }
+
+        StripOverlay abs = o;
+        abs.y += it->second;
+        abs.anchorInputUid.clear();
+        resolved.push_back(std::move(abs));
+    }
+
+    return resolved;
+}
 
 // ---------------------------------------------------------------------------
 // Step descriptor catalogue (compile-time; GUI-facing enumeration)
@@ -202,6 +279,13 @@ inline constexpr std::array<ProcessingStepDef, 2> k_processingStepDefs = {{
  *
  * Overlays are emitted in composite order (their z-order affects the output); excluded input uids are
  * sorted (their order does not change the result, so it must not change the signature).
+ *
+ * An overlay contributes its **stored** placement — anchor uid plus the offset — not the strip-Y it
+ * resolves to, because the signature is computed from the project alone, before any layout exists. Two
+ * placements that happen to resolve to the same strip-Y therefore differ here; that errs towards
+ * re-rendering, which is the safe direction. Where an anchored overlay actually lands also depends on
+ * the pages above it, and a change to those is already a change to the input set that forces a
+ * re-render on its own axis.
  */
 [[nodiscard]] inline std::string processingConfigSignature(
     const ColourCorrection& cc, const std::vector<StripOverlay>& overlays)
@@ -232,7 +316,7 @@ inline constexpr std::array<ProcessingStepDef, 2> k_processingStepDefs = {{
     for (const auto& o : overlays) {
         if (!o.enabled)
             continue;
-        s += "ov{" + o.sha256 + ";" + to_string(o.x) + "," + to_string(o.y)
+        s += "ov{" + o.sha256 + ";" + o.anchorInputUid + "@" + to_string(o.x) + "," + to_string(o.y)
            + ";" + to_string(static_cast<int>(o.blend)) + "}";
     }
 

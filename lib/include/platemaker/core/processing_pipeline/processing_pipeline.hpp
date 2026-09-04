@@ -59,6 +59,10 @@ struct ProcessingOutcome {
  */
 struct PagePreviewGeometry {
     std::string sourceFilePath;      //!< The input this describes (absolute path, as given).
+    std::string inputUid;            //!< That input's \c uid — the key overlays anchor to and the grade
+                                     //!< excludes by, carried here so a consumer stacking this layout can
+                                     //!< build the uid → strip-Y map \c Models::resolveOverlayAnchors()
+                                     //!< takes without joining back through paths.
     int         width        = 0;    //!< Scaled width — the output profile's target width, in practice.
     int         height       = 0;    //!< Scaled height: this page's slot in the strip.
     int         sourceWidth  = 0;    //!< Display size from the header (EXIF-rotated), before margins/scale.
@@ -117,9 +121,12 @@ public:
      *                         to a build without this step.  The grade never changes how a page is
      *                         *read*, only what happens to its pixels, so a neutral grade is a no-op.
      * \param stripOverlays    Optional text/bubble overlays composited in the strip domain (per slice,
-     *                         at strip-Y).  Empty → no compositing, so the output is byte-identical to a
-     *                         build without this step; a slice no overlay intersects is likewise
-     *                         untouched even when overlays are present elsewhere.
+     *                         at strip-Y).  An overlay carrying an \c anchorInputUid is placed relative
+     *                         to that page's top edge in the strip this run builds, so it stays on its
+     *                         own artwork when the chapter is edited; one anchored to a page that did
+     *                         not load is logged and skipped.  Empty → no compositing, so the output is
+     *                         byte-identical to a build without this step; a slice no overlay intersects
+     *                         is likewise untouched even when overlays are present elsewhere.
      * \return A \c ProcessingOutcome with per-slice records, skipped pages and flags.
      */
     [[nodiscard]] static ProcessingOutcome run(

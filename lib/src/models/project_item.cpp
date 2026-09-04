@@ -151,7 +151,8 @@ const std::vector<StripOverlay>& ProjectItem::getStripOverlays() const noexcept
     return m_stripOverlays;
 }
 
-std::string ProjectItem::addOverlay(const std::string& bitmapPath, int x, int y, BlendMode blend)
+std::string ProjectItem::addOverlay(const std::string& bitmapPath, int x, int y, BlendMode blend,
+                                    const std::string& anchorInputUid)
 {
     std::vector<std::string> taken;
     taken.reserve(m_stripOverlays.size());
@@ -164,6 +165,7 @@ std::string ProjectItem::addOverlay(const std::string& bitmapPath, int x, int y,
     ov.y     = y;
     ov.blend = blend;
     ov.enabled = true;
+    ov.anchorInputUid = anchorInputUid;
 
     // Hash the content (dedup + staleness). A hash failure is non-fatal: the overlay is still
     // registered with an empty sha (no dedup, and a later silent content change won't be caught until
