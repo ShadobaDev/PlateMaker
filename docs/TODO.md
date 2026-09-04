@@ -6,7 +6,7 @@ work happens in.
 **How to read this**
 - The version numbers are provisional, non-binding hints — a *kind of bump*, not a schedule.
 - A section is the **minimum bump the change forces**. This lib is pre-1.0, so the shifted scale
-  applies (recorded in `temp/SEMVER.md`): a **breaking** change bumps the **MINOR**, additions and
+  applies: a **breaking** change bumps the **MINOR**, additions and
   fixes bump the **PATCH**. "Breaking" means **removing or modifying** an existing public symbol
   — a changed signature, argument, or semantics — not only deleting it, and it is judged over
   the *whole* change: a new class whose purpose is to take away existing public access is breaking,
@@ -48,13 +48,15 @@ Fixes and additive changes — nothing a consumer must react to; code built agai
 ### Multi-source slices get a black band, and EXIF orientation is ignored → camera-photo inputs render wrong
 
 > **Update 2026-08-17 — Step 1 (diagnostic instrumentation) is done and has been run against the
-> three `temp/win10/` photos. It overturned the single-cause hypothesis below: there are TWO
+> three phone photos (now `tests/cli-tests/fixtures/real_photos/`). It overturned the single-cause
+> hypothesis below: there are TWO
 > independent defects, and the *black band* is the bigger, more general one — it is a
 > `vips_arrayjoin` layout bug, not the EXIF issue. See "Step 1 — findings" further down.**
 
 **Reported from a Windows 10 test with three 3264×2448 phone photos.** Two rendered fine, the third
 landed in its own output slice with a black band, instead of all three flowing into one continuous
-strip (`output_001` full + tail). See the GUI TODO's matching entry and `temp/win10/`.
+strip (`output_001` full + tail). The three photos are checked in as
+`tests/cli-tests/fixtures/real_photos/`; see also the GUI TODO's matching entry.
 
 **Root cause: the pipeline assumes inputs have no meaningful EXIF orientation, which is false for
 camera JPEGs.** Two independent code paths read the image and neither normalises orientation, and
@@ -132,7 +134,7 @@ requested slice height and no output exceeds it.
 > **Step 2a — DONE (2026-08-17).** `ScaledStrip::buildSlice()` now folds
 > `vips_join(…, VIPS_DIRECTION_VERTICAL)` over the same-width parts instead of the padding
 > `vips_arrayjoin`, and asserts `built.height == sliceH` as a post-condition (throws on a padded slice).
-> Verified on the three `temp/win10/` photos (`--trace=0x7`): the multi-source slice now reads
+> Verified on the three real phone photos (`--trace=0x7`): the multi-source slice now reads
 > `buildSlice 0 req=[0,1280) built=800x1280 parts=3` (600+600+80 — was `800x1800` with a black band);
 > tail `buildSlice 1 built=800x520 parts=1`. Two clean output files, exit 0, assertion silent, full
 > suite **145/145** green. **Still pending: Step 2b** — the same trace confirms the `Orientation 6`
@@ -179,7 +181,7 @@ Both **2a and 2b** were bugfixes (wrong output → correct output) but each *cha
 the `[0.5.0]` changelog. **The win10 render bug is now fully closed.**
 
 **Mixed band counts abort a whole render — DONE (2026-08-20; ships in 0.5.0).** Rendering the
-`temp/win10/` folder *including* its PNG screenshots failed hard: originally `arrayjoin: not one band or
+same folder of phone photos *including* its PNG screenshots failed hard: originally `arrayjoin: not one band or
 4 bands`, and after Step 2a swapped in `vips_join` the same cause surfaced as `vips_join failed: … images
 must have the same number of bands`. Root cause was never the join op — the pipeline did not normalise band
 count (RGB vs RGBA vs grey) before joining, so one odd input killed the run. Fixed by normalising the strip
@@ -293,10 +295,13 @@ Both options could be implemented.
   owns the inventory (uid + path + sha256 + dedup) and serializes it; the config is already lib-serialized,
   so after a restart the workspace reconstructs the pipeline 1:1. CC has no binary artifact (pure numbers).
 
-  Remaining **GUI** work (separate round): per-page CC exclusion toggles (the CC panel itself shipped
-  with the input-sourced strip viewer); a bubble/text editor over the strip viewer that rasterizes the
-  RGBA overlay bitmaps and registers them via the lib's `addOverlay` inventory API, anchored to the page
-  under the cursor. Design: `temp/PLAN-C-text-and-bubbles-gui.md` in the GUI repo.
+  **GUI side — DONE (2026-09-04).** The strip editor now authors both steps: a Grade panel driving
+  `ColourCorrector::applyToRgba()` live against the strip, and Bubble/Text tools that rasterize an RGBA
+  bitmap per overlay and register it through `addOverlay()`, anchored to the page it was drawn on. The
+  GUI keeps its own authoring records (shape/text/font) beside the workspace, because the library
+  composites bytes and has no text model — see the GUI repo's SPECIFICATION §2.5.
+  - *Still open on the GUI side:* the per-page CC exclusion toggles (the model and render already honour
+    `excludedInputUids`) and a curve editor (the render already applies curves).
 
 ---
 
@@ -363,7 +368,7 @@ Investigations and test/dev work that ships no change in the library itself.
 0.4.0 added a Layer-A safety net for **C++ exceptions** (the `ProcessingPipeline::run()` guard + the CLI
 top-level `try/catch` in `runCli`). Hard faults — SIGSEGV / null deref / Windows SEH — are **not** C++
 exceptions and need an OS-level handler in each app's `main()` (app-level, no lib change). Cost/benefit
-verdict (`temp/crash-handling-options.md`, §0): a minidump/Breakpad apparatus is disproportionate for a
+verdict: a minidump/Breakpad apparatus is disproportionate for a
 simple tool with a small user base; it only helps unreproducible **field** crashes, and archiving only
 libplatemaker's small `-g` symbols already covers the frames that matter. **Cheap CLI step, do anytime:**
 `std::set_terminate` in `main.cpp`. Defer the OS-level handler until field crashes justify it; the primary

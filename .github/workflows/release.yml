@@ -5,7 +5,7 @@
 # job never blocks the MinGW release). No MSVC yet, and no Qt (the lib doesn't use Qt — that's the GUI).
 #
 # Tests are deliberately NOT gating the release for now (the dist-* presets don't run ctest); adding a
-# ctest gate is noted as a future improvement (temp/CI-release-github-actions.md).
+# ctest gate is a noted future improvement.
 name: Release
 
 on:

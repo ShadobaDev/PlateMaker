@@ -1,7 +1,7 @@
 # real_photos — geometry/orientation regression fixtures
 
 Three real phone-camera JPEGs, moved here from an ad-hoc manual-verification
-folder (`Platemaker-qt/Platemaker/temp/win10/`) used while diagnosing the two
+folder used while diagnosing the two
 defects logged in `docs/TODO.md` ("(A) vips_arrayjoin black-band padding" and
 "(B) EXIF orientation is ignored"). Checked in so the regression checks that
 were previously manual (`--trace=0x7` + eyeballing) run automatically in
