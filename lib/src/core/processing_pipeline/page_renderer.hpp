@@ -5,14 +5,14 @@
  * Internal to the pipeline: this header lives under \c src/ and is never installed.  What it
  * describes, though, is the single most load-bearing rule in the library — **there is exactly one
  * definition of what a page looks like on the strip**, and all three public entry points
- * (\c run(), \c previewLayout(), \c previewPageRgba()) go through it.  A preview that re-derived
+ * (\c render(), \c layoutPagesFromHeaders(), \c decodePageToRgba()) go through it.  A viewer that re-derived
  * any of this would drift from the render *silently*: both would work, the numbers would just stop
  * agreeing, and every page below the first disagreement would sit at the wrong strip offset.
  *
  * Split in two deliberately.  \c planFromHeader() makes every *decision* about a page — its
  * EXIF-upright display size, which canvas profile applies, what to report about that — from the
  * header alone, touching no pixels.  \c scaledPage() turns a plan into pixels.  The split is what
- * lets \c previewLayout() price a whole chapter at a header read per page.
+ * lets \c layoutPagesFromHeaders() price a whole chapter at a header read per page.
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
  *
@@ -57,7 +57,7 @@ struct HeaderGeometry {
 struct PagePlan {
     HeaderGeometry               geo;                //!< Display size + EXIF orientation, from the header.
     const Models::CanvasProfile* profile = nullptr;  //!< Matched profile; null → render implicitly, no margins.
-    InputStatus                  status  = InputStatus::Appended; //!< What run() reports for this page.
+    InputStatus                  status  = InputStatus::Appended; //!< What render() reports for this page.
     std::vector<std::string>     candidateIds;       //!< Same-size workspace profiles not linked to the project.
     std::string                  candidateName;      //!< The first of those — for the diagnostic message only.
 };
@@ -105,7 +105,7 @@ public:
      *
      * Every libvips operation this builds is lazy: it settles the output dimensions on
      * construction and reads the file's header, but decodes nothing until a consumer pulls a
-     * pixel.  That is what lets \c previewLayout() call this purely to read dimensions off the
+     * pixel.  That is what lets \c layoutPagesFromHeaders() call this purely to read dimensions off the
      * result and still pay only for a header read.
      *
      * \param plan     The plan from \c planFromHeader().

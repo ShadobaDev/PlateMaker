@@ -136,6 +136,21 @@ Models::OutputProfile smallOutput()
     return op;
 }
 
+/// The four fields every test here sets; the optional steps stay at their defaults (off).
+RenderRequest request(std::vector<Models::InputFile>     inputs,
+                      std::vector<Models::CanvasProfile> palette,
+                      std::vector<std::string>           projectIds,
+                      std::string                        outputDir)
+{
+    RenderRequest r;
+    r.inputs           = std::move(inputs);
+    r.outputProfile    = smallOutput();
+    r.canvasProfiles   = std::move(palette);
+    r.canvasProfileIds = std::move(projectIds);
+    r.outputDirectory  = std::move(outputDir);
+    return r;
+}
+
 /// Collects onInput results keyed by input path.
 struct InputCapture {
     std::unordered_map<std::string, InputResult> byPath;
@@ -168,9 +183,9 @@ TEST(ImplicitRenderTest, UnmatchedPageIsAppendedNotSkipped)
 
     InputCapture cap;
     Infrastructure::CancellationToken cancel;
-    const auto outcome = ProcessingPipeline::run(
-        {input(matched), input(unmatched)}, smallOutput(), palette, projectIds,
-        tmp.dir(), cancel, cap.callbacks());
+    const auto outcome = ProcessingPipeline::render(
+        request({input(matched), input(unmatched)}, palette, projectIds, tmp.dir()),
+        cancel, cap.callbacks());
 
     EXPECT_FALSE(outcome.failed);
     EXPECT_TRUE(outcome.skippedPages.empty()) << "the unmatched page must not be skipped";
@@ -206,9 +221,8 @@ TEST(ImplicitRenderTest, UnlinkedSameSizeProfileRendersLoudly)
 
     InputCapture cap;
     Infrastructure::CancellationToken cancel;
-    const auto outcome = ProcessingPipeline::run(
-        {input(page)}, smallOutput(), palette, projectIds,
-        tmp.dir(), cancel, cap.callbacks());
+    const auto outcome = ProcessingPipeline::render(
+        request({input(page)}, palette, projectIds, tmp.dir()), cancel, cap.callbacks());
 
     EXPECT_FALSE(outcome.failed);
     EXPECT_TRUE(outcome.skippedPages.empty());
@@ -228,9 +242,9 @@ TEST(ImplicitRenderTest, NoProfilesAppendsEveryPage)
 
     InputCapture cap;
     Infrastructure::CancellationToken cancel;
-    const auto outcome = ProcessingPipeline::run(
-        {input(a), input(b)}, smallOutput(), /*palette*/ {}, /*projectIds*/ {},
-        tmp.dir(), cancel, cap.callbacks());
+    const auto outcome = ProcessingPipeline::render(
+        request({input(a), input(b)}, /*palette*/ {}, /*projectIds*/ {}, tmp.dir()),
+        cancel, cap.callbacks());
 
     EXPECT_FALSE(outcome.failed);
     EXPECT_TRUE(outcome.skippedPages.empty());
@@ -250,9 +264,9 @@ TEST(ProcessingErrorTest, NoPagesLoadedSetsTypedError)
 
     InputCapture cap;
     Infrastructure::CancellationToken cancel;
-    const auto outcome = ProcessingPipeline::run(
-        {missing}, smallOutput(), /*palette*/ {}, /*projectIds*/ {},
-        tmp.dir(), cancel, cap.callbacks());
+    const auto outcome = ProcessingPipeline::render(
+        request({missing}, /*palette*/ {}, /*projectIds*/ {}, tmp.dir()),
+        cancel, cap.callbacks());
 
     EXPECT_TRUE(outcome.failed);
     ASSERT_TRUE(outcome.error.has_value());
@@ -271,9 +285,9 @@ TEST(ProcessingErrorTest, PerInputLoadFailureCarriesTypedCode)
 
     InputCapture cap;
     Infrastructure::CancellationToken cancel;
-    const auto outcome = ProcessingPipeline::run(
-        {input(good), input(bad)}, smallOutput(), /*palette*/ {}, /*projectIds*/ {},
-        tmp.dir(), cancel, cap.callbacks());
+    const auto outcome = ProcessingPipeline::render(
+        request({input(good), input(bad)}, /*palette*/ {}, /*projectIds*/ {}, tmp.dir()),
+        cancel, cap.callbacks());
 
     EXPECT_FALSE(outcome.failed) << "one good page keeps the run alive";
     EXPECT_TRUE(contains(outcome.skippedPages, bad));
@@ -301,10 +315,9 @@ TEST(ColourCorrectionPipelineTest, ExcludedInputIsNotGraded)
     cc.excludedInputUids = {"in-a"};
 
     Infrastructure::CancellationToken cancel;
-    const auto outcome = ProcessingPipeline::run(
-        {fa, fb}, smallOutput(), /*palette*/ {}, /*projectIds*/ {},
-        tmp.dir(), cancel, /*callbacks*/ {}, /*onlySlices*/ nullptr,
-        /*thumbnailCacheDir*/ {}, cc);
+    RenderRequest req = request({fa, fb}, /*palette*/ {}, /*projectIds*/ {}, tmp.dir());
+    req.colourCorrection = cc;
+    const auto outcome = ProcessingPipeline::render(req, cancel);
 
     ASSERT_FALSE(outcome.failed);
     ASSERT_EQ(outcome.records.size(), 2u);

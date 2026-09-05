@@ -19,9 +19,10 @@ work happens in.
 Baseline: **0.5.1 released; 0.6.0 in progress** (`CMakeLists.txt`). The next release bundles the additive
 profile-portability work once staged as 0.5.2 (never tagged — bundles, `WorkspaceEditor::importProfiles`,
 CLI `export/import-profiles`) with the new optional **processing steps** (colour correction + text/bubble
-overlays). It is a **MINOR** in the 0.x shifted scale — i.e. breaking — because `ProcessingPipeline::run()`
-and `ImageIO::load()` gained trailing parameters: source-compatible via their defaults, but the mangled
-symbols change, so a GUI built against 0.5.1 must be rebuilt (the same reason 0.5.0 bumped for `run()`).
+overlays), and the pipeline API reshaped around `RenderRequest`. It is a **MINOR** in the 0.x shifted
+scale — i.e. breaking — because `ProcessingPipeline::run()` became `render(RenderRequest, …)`, the
+page-domain pair was renamed, and `ImageIO::load()` gained a trailing parameter; a GUI built against
+0.5.1 must be rebuilt (the same reason 0.5.0 bumped for `run()`).
 The additive 0.5.2 work re-derives onto this baseline per the cascade rule. (Released tags: 0.4.0 → 0.4.1
 → 0.5.0 → 0.5.1.)
 
@@ -283,7 +284,8 @@ Both options could be implemented.
   - [x] **(G) CC-exclusion pipeline test** — integration test proving `excludedInputUids` leaves a page
     ungraded while its neighbours are graded (currently only manual/e2e coverage).
   - [x] **(I) Page-anchored overlays** — `StripOverlay.anchorInputUid` + `Models::resolveOverlayAnchors()`
-    (uid → strip-Y map, built by `run()` as it appends and by a consumer from `previewLayout()`, whose
+    (uid → strip-Y map, built by the render as it appends and by a consumer from
+    `layoutPagesFromHeaders()`, whose
     entries now carry `inputUid`). An absolute strip-Y silently drifts onto different artwork whenever
     anything above it changes height — inserting a page is the everyday case — so the anchor is the
     placement a GUI should always write; an empty anchor stays absolute. An overlay whose page is not in

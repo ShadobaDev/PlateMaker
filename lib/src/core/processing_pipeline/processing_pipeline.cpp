@@ -44,18 +44,10 @@ namespace {
 namespace Log = Platemaker::Infrastructure::Log;
 } // namespace
 
-ProcessingOutcome ProcessingPipeline::run(
-    const std::vector<Models::InputFile>&     inputs,
-    const Models::OutputProfile&              outProfile,
-    const std::vector<Models::CanvasProfile>& canvasProfiles,
-    const std::vector<std::string>&           canvasProfileIds,
-    const std::string&                        outputDir,
-    const Infrastructure::CancellationToken&  cancel,
-    const ProcessingCallbacks&                callbacks,
-    const std::unordered_set<std::string>*    onlySlices,
-    const std::string&                        thumbnailCacheDir,
-    const Models::ColourCorrection&           colourCorrection,
-    const std::vector<Models::StripOverlay>&  stripOverlays)
+ProcessingOutcome ProcessingPipeline::render(
+    const RenderRequest&                     request,
+    const Infrastructure::CancellationToken& cancel,
+    const ProcessingCallbacks&               callbacks)
 {
     using Platemaker::Models::ProcessingError;
     using Platemaker::Models::ProcessingErrorCategory;
@@ -66,21 +58,21 @@ ProcessingOutcome ProcessingPipeline::run(
     // Safety net for unforeseen faults. The pipeline handles expected failures inline (per-input
     // load, save, slicing) and returns them typed; this outer guard converts anything that still
     // escapes those blocks — an exception from setup / allocation / a dependency, or a non-std
-    // throw — into a typed Unexpected/Internal failure instead of unwinding out of run() and
+    // throw — into a typed Unexpected/Internal failure instead of unwinding out of render() and
     // terminating the caller's (worker) thread. It captures a message for a bug report; it is NOT
     // recovery, and it does NOT catch hardware faults such as a segfault or null dereference
     // (those are OS signals / SEH, not C++ exceptions, and need a separate crash handler).
     try {
 
-    CanvasProfileMatcher matcher(canvasProfiles, canvasProfileIds);
-    const PageRenderer   pages(matcher, /*hasProfiles=*/!canvasProfiles.empty(),
-                               outProfile.targetWidth);
+    CanvasProfileMatcher matcher(request.canvasProfiles, request.canvasProfileIds);
+    const PageRenderer   pages(matcher, /*hasProfiles=*/!request.canvasProfiles.empty(),
+                               request.outputProfile.targetWidth);
 
     // -----------------------------------------------------------------------
     // 1. Build the virtual strip (load → optional grade → optional crop → scale → append).
     // -----------------------------------------------------------------------
-    StripBuilder builder(pages, colourCorrection, callbacks);
-    if (!builder.appendAllPages(inputs, cancel, outcome))
+    StripBuilder builder(pages, request.colourCorrection, callbacks);
+    if (!builder.appendAllPages(request.inputs, cancel, outcome))
         return outcome; // cancelled mid-build
 
     if (builder.strip().totalHeight() == 0) {
@@ -94,7 +86,8 @@ ProcessingOutcome ProcessingPipeline::run(
 
     // The strip is assembled; the phase-1 → phase-2 boundary. Report how many slices it will
     // produce (all of them, before any partial filter) so a consumer can lay out output rows.
-    const int expectedTotal = expectedSliceCount(builder.strip().totalHeight(), outProfile);
+    const int expectedTotal =
+        expectedSliceCount(builder.strip().totalHeight(), request.outputProfile);
     if (callbacks.onSlicingStarted)
         callbacks.onSlicingStarted({expectedTotal});
 
@@ -105,13 +98,12 @@ ProcessingOutcome ProcessingPipeline::run(
     // happen inside the callback rather than over a collected list — that is what keeps only one
     // slice and ~two sources alive at a time.
     // -----------------------------------------------------------------------
-    SliceWriter writer(outProfile, outputDir, onlySlices, thumbnailCacheDir,
-                       stripOverlays, builder.pageTopByInputUid(), expectedTotal, callbacks);
+    SliceWriter writer(request, builder.pageTopByInputUid(), expectedTotal, callbacks);
     outcome.records.reserve(static_cast<std::size_t>(writer.plannedSliceCount()));
 
     try {
         builder.strip().sliceAll(
-            outProfile.sliceHeight, outProfile.lastSlicePolicy, cancel,
+            request.outputProfile.sliceHeight, request.outputProfile.lastSlicePolicy, cancel,
             [&](SliceResult&& slice) { return writer.writeSlice(std::move(slice), outcome); });
     } catch (const std::exception& e) {
         outcome.failed = true;
@@ -150,10 +142,10 @@ ProcessingOutcome ProcessingPipeline::run(
 }
 
 // ---------------------------------------------------------------------------
-// previewLayout
+// layoutPagesFromHeaders
 // ---------------------------------------------------------------------------
 
-std::vector<PagePreviewGeometry> ProcessingPipeline::previewLayout(
+std::vector<PagePreviewGeometry> ProcessingPipeline::layoutPagesFromHeaders(
     const std::vector<Models::InputFile>&     inputs,
     const Models::OutputProfile&              outProfile,
     const std::vector<Models::CanvasProfile>& canvasProfiles,
@@ -193,11 +185,11 @@ std::vector<PagePreviewGeometry> ProcessingPipeline::previewLayout(
             g.width           = scaled.buffer.width();
             g.height          = scaled.buffer.height();
         } catch (const std::exception& e) {
-            // A page run() would skip contributes nothing to the strip. Report it as such rather
+            // A page render() would skip contributes nothing to the strip. Report it as such rather
             // than failing the whole layout — one bad file must not cost the consumer the other
             // 99 pages.
             PLATEMAKER_LOG(Log::ProcessingPipeline,
-                    "previewLayout: " + file.filePath + " is not renderable (" + e.what() + ")");
+                    "layoutPagesFromHeaders: " + file.filePath + " is not renderable (" + e.what() + ")");
             g                = PagePreviewGeometry{};
             g.sourceFilePath = file.filePath;
             g.inputUid       = file.uid;
@@ -211,10 +203,10 @@ std::vector<PagePreviewGeometry> ProcessingPipeline::previewLayout(
 }
 
 // ---------------------------------------------------------------------------
-// previewPageRgba
+// decodePageToRgba
 // ---------------------------------------------------------------------------
 
-void ProcessingPipeline::previewPageRgba(
+void ProcessingPipeline::decodePageToRgba(
     const Models::InputFile&                  input,
     const Models::OutputProfile&              outProfile,
     const std::vector<Models::CanvasProfile>& canvasProfiles,
@@ -224,7 +216,7 @@ void ProcessingPipeline::previewPageRgba(
     int                                       height)
 {
     if (!rgba || width <= 0 || height <= 0)
-        throw std::runtime_error("ProcessingPipeline::previewPageRgba — invalid buffer or dimensions");
+        throw std::runtime_error("ProcessingPipeline::decodePageToRgba — invalid buffer or dimensions");
 
     // The library does not own the vips lifecycle, and a consumer without the vips headers cannot call
     // VIPS_INIT itself — it may reach here before any render has initialised vips. VIPS_INIT only does
@@ -241,10 +233,10 @@ void ProcessingPipeline::previewPageRgba(
 
     if (scaled.buffer.width() != width || scaled.buffer.height() != height) {
         throw std::runtime_error(
-            "ProcessingPipeline::previewPageRgba — '" + input.filePath + "' renders to " +
+            "ProcessingPipeline::decodePageToRgba — '" + input.filePath + "' renders to " +
             std::to_string(scaled.buffer.width()) + "x" + std::to_string(scaled.buffer.height()) +
             ", not the requested " + std::to_string(width) + "x" + std::to_string(height) +
-            " (stale layout — call previewLayout() again)");
+            " (stale layout — call layoutPagesFromHeaders() again)");
     }
 
     // Normalise to the one layout a consumer can rely on: 8-bit sRGB, four interleaved bands.
@@ -255,7 +247,7 @@ void ProcessingPipeline::previewPageRgba(
     if (vips_colourspace(scaled.buffer.get(), &srgb, VIPS_INTERPRETATION_sRGB, nullptr) != 0) {
         const std::string err = vips_error_buffer();
         vips_error_clear();
-        throw std::runtime_error("ProcessingPipeline::previewPageRgba — to sRGB: " + err);
+        throw std::runtime_error("ProcessingPipeline::decodePageToRgba — to sRGB: " + err);
     }
 
     VipsImage* out = srgb;
@@ -265,7 +257,7 @@ void ProcessingPipeline::previewPageRgba(
             const std::string err = vips_error_buffer();
             vips_error_clear();
             g_object_unref(srgb);
-            throw std::runtime_error("ProcessingPipeline::previewPageRgba — add alpha: " + err);
+            throw std::runtime_error("ProcessingPipeline::decodePageToRgba — add alpha: " + err);
         }
         g_object_unref(srgb);
         out = withAlpha;
@@ -276,7 +268,7 @@ void ProcessingPipeline::previewPageRgba(
                               + std::to_string(static_cast<int>(out->BandFmt));
         g_object_unref(out);
         throw std::runtime_error(
-            "ProcessingPipeline::previewPageRgba — expected 4-band 8-bit sRGB, got " + got);
+            "ProcessingPipeline::decodePageToRgba — expected 4-band 8-bit sRGB, got " + got);
     }
 
     const std::size_t nbytes = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u;
@@ -286,7 +278,7 @@ void ProcessingPipeline::previewPageRgba(
     if (!outData) {
         const std::string err = vips_error_buffer();
         vips_error_clear();
-        throw std::runtime_error("ProcessingPipeline::previewPageRgba — read pixels: " + err);
+        throw std::runtime_error("ProcessingPipeline::decodePageToRgba — read pixels: " + err);
     }
     std::memcpy(rgba, outData, std::min(outSize, nbytes));
     g_free(outData);

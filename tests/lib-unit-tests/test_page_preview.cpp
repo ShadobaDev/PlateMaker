@@ -1,9 +1,9 @@
 /**
  * \file
- * \brief Unit tests for the page-domain preview API (previewLayout / previewPageRgba).
+ * \brief Unit tests for the page-domain API (layoutPagesFromHeaders / decodePageToRgba).
  *
  * These exist to pin ONE property: **the preview cannot disagree with the render**. A consumer builds
- * its strip from previewLayout()'s heights and paints previewPageRgba()'s pixels; if either drifts from
+ * its strip from layoutPagesFromHeaders()'s heights and paints decodePageToRgba()'s pixels; if either drifts
  * what run() would produce, the drift is silent — both still "work", the numbers just stop agreeing,
  * and every page below the first disagreement sits at the wrong strip offset. So the assertions here
  * compare the preview against a *real render* of the same inputs rather than against constants.
@@ -118,7 +118,7 @@ std::pair<int, int> sizeOf(const std::string& path)
 } // namespace
 
 // ---------------------------------------------------------------------------
-// previewLayout
+// layoutPagesFromHeaders
 // ---------------------------------------------------------------------------
 
 /**
@@ -141,7 +141,7 @@ TEST(PagePreviewTest, LayoutHeightsMatchTheRenderedStrip)
 
     const std::vector<Models::InputFile> inputs{input(cropped), input(plain)};
 
-    const auto layout = ProcessingPipeline::previewLayout(inputs, op, palette, ids);
+    const auto layout = ProcessingPipeline::layoutPagesFromHeaders(inputs, op, palette, ids);
     ASSERT_EQ(layout.size(), 2u);
 
     EXPECT_TRUE(layout[0].readable);
@@ -159,7 +159,13 @@ TEST(PagePreviewTest, LayoutHeightsMatchTheRenderedStrip)
 
     // Now render for real and compare against the strip the pipeline actually built.
     Infrastructure::CancellationToken cancel;
-    const auto outcome = ProcessingPipeline::run(inputs, op, palette, ids, tmp.dir(), cancel);
+    RenderRequest req;
+    req.inputs           = inputs;
+    req.outputProfile    = op;
+    req.canvasProfiles   = palette;
+    req.canvasProfileIds = ids;
+    req.outputDirectory  = tmp.dir();
+    const auto outcome = ProcessingPipeline::render(req, cancel);
     ASSERT_FALSE(outcome.failed) << (outcome.error ? outcome.error->message : "");
 
     int renderedHeight = 0;
@@ -187,7 +193,7 @@ TEST(PagePreviewTest, LayoutFlagsPagesTheRenderWouldSkip)
     const Models::InputFile broken = input(tmp.file("nosuchfile.png"));
 
     const auto op = output(50, 25);
-    const auto layout = ProcessingPipeline::previewLayout(
+    const auto layout = ProcessingPipeline::layoutPagesFromHeaders(
         {input(good), missing, broken}, op, {}, {});
 
     ASSERT_EQ(layout.size(), 3u);
@@ -200,7 +206,7 @@ TEST(PagePreviewTest, LayoutFlagsPagesTheRenderWouldSkip)
 }
 
 // ---------------------------------------------------------------------------
-// previewPageRgba
+// decodePageToRgba
 // ---------------------------------------------------------------------------
 
 /// The preview's pixels are the page the render appends: same crop, same scale, same colour.
@@ -215,14 +221,14 @@ TEST(PagePreviewTest, PageRgbaMatchesTheRenderedPage)
     const std::vector<Models::CanvasProfile> palette{cp};
     const std::vector<std::string>           ids{cp.id};
 
-    const auto layout = ProcessingPipeline::previewLayout({input(page)}, output(80, 180), palette, ids);
+    const auto layout = ProcessingPipeline::layoutPagesFromHeaders({input(page)}, output(80, 180), palette, ids);
     ASSERT_EQ(layout.size(), 1u);
     ASSERT_TRUE(layout[0].readable);
     const int w = layout[0].width;
     const int h = layout[0].height;
 
     std::vector<unsigned char> rgba(static_cast<std::size_t>(w) * h * 4, 0);
-    ProcessingPipeline::previewPageRgba(input(page), output(80, 180), palette, ids,
+    ProcessingPipeline::decodePageToRgba(input(page), output(80, 180), palette, ids,
                                         rgba.data(), w, h);
 
     // A source without alpha comes back fully opaque, and the colour survives the round trip.
@@ -234,8 +240,13 @@ TEST(PagePreviewTest, PageRgbaMatchesTheRenderedPage)
 
     // The render of the same page produces one slice of exactly these dimensions.
     Infrastructure::CancellationToken cancel;
-    const auto outcome = ProcessingPipeline::run({input(page)}, output(80, 180), palette, ids,
-                                                 tmp.dir(), cancel);
+    RenderRequest req;
+    req.inputs           = {input(page)};
+    req.outputProfile    = output(80, 180);
+    req.canvasProfiles   = palette;
+    req.canvasProfileIds = ids;
+    req.outputDirectory  = tmp.dir();
+    const auto outcome = ProcessingPipeline::render(req, cancel);
     ASSERT_FALSE(outcome.failed) << (outcome.error ? outcome.error->message : "");
     ASSERT_EQ(outcome.records.size(), 1u);
     const auto rendered = sizeOf((fs::path(tmp.dir()) / outcome.records[0].fileName).string());
@@ -252,14 +263,14 @@ TEST(PagePreviewTest, PageRgbaIsTheUngradedBaselineTheRenderGrades)
     const std::string page = writeSolidPng(tmp, "a.png", 100, 200, 120, 120, 120);
 
     const auto op     = output(50, 100);
-    const auto layout = ProcessingPipeline::previewLayout({input(page)}, op, {}, {});
+    const auto layout = ProcessingPipeline::layoutPagesFromHeaders({input(page)}, op, {}, {});
     ASSERT_EQ(layout.size(), 1u);
     const int w = layout[0].width, h = layout[0].height;
 
     std::vector<unsigned char> rgba(static_cast<std::size_t>(w) * h * 4, 0);
-    ProcessingPipeline::previewPageRgba(input(page), op, {}, {}, rgba.data(), w, h);
+    ProcessingPipeline::decodePageToRgba(input(page), op, {}, {}, rgba.data(), w, h);
 
-    EXPECT_EQ(rgba[0], 120) << "previewPageRgba must return the page ungraded";
+    EXPECT_EQ(rgba[0], 120) << "decodePageToRgba must return the page ungraded";
     EXPECT_EQ(rgba[1], 120);
     EXPECT_EQ(rgba[2], 120);
 
@@ -269,8 +280,12 @@ TEST(PagePreviewTest, PageRgbaIsTheUngradedBaselineTheRenderGrades)
     cc.brightness = 60.0;
 
     Infrastructure::CancellationToken cancel;
-    const auto outcome = ProcessingPipeline::run({input(page)}, op, {}, {}, tmp.dir(), cancel,
-                                                 {}, nullptr, {}, cc);
+    RenderRequest req;
+    req.inputs           = {input(page)};
+    req.outputProfile    = op;
+    req.outputDirectory  = tmp.dir();
+    req.colourCorrection = cc;
+    const auto outcome = ProcessingPipeline::render(req, cancel);
     ASSERT_FALSE(outcome.failed) << (outcome.error ? outcome.error->message : "");
     ASSERT_FALSE(outcome.records.empty());
 
@@ -293,20 +308,20 @@ TEST(PagePreviewTest, PageRgbaRejectsBadArgs)
     const std::string page = writeSolidPng(tmp, "a.png", 100, 200, 10, 20, 30);
     const auto op = output(50, 100);
 
-    const auto layout = ProcessingPipeline::previewLayout({input(page)}, op, {}, {});
+    const auto layout = ProcessingPipeline::layoutPagesFromHeaders({input(page)}, op, {}, {});
     ASSERT_EQ(layout.size(), 1u);
     const int w = layout[0].width, h = layout[0].height;
     std::vector<unsigned char> rgba(static_cast<std::size_t>(w) * h * 4, 0);
 
-    EXPECT_THROW(ProcessingPipeline::previewPageRgba(input(page), op, {}, {}, nullptr, w, h),
+    EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(page), op, {}, {}, nullptr, w, h),
                  std::runtime_error);
-    EXPECT_THROW(ProcessingPipeline::previewPageRgba(input(page), op, {}, {}, rgba.data(), 0, h),
+    EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(page), op, {}, {}, rgba.data(), 0, h),
                  std::runtime_error);
     // A stale layout — the caller's dimensions no longer match the page.
-    EXPECT_THROW(ProcessingPipeline::previewPageRgba(input(page), op, {}, {}, rgba.data(), w, h + 1),
+    EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(page), op, {}, {}, rgba.data(), w, h + 1),
                  std::runtime_error);
     // An unreadable page.
-    EXPECT_THROW(ProcessingPipeline::previewPageRgba(input(tmp.file("nope.png")), op, {}, {},
+    EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(tmp.file("nope.png")), op, {}, {},
                                                      rgba.data(), w, h),
                  std::runtime_error);
 }

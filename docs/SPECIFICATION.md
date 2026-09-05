@@ -572,8 +572,8 @@ slice to build a thumbnail while a re-render overwrites it (which on Windows fai
   `path` after that signal sees the whole slice or nothing — never a partially-written frame.
 - **G2 — No hidden threads or lingering handles.** `ProcessingCallbacks` fire **synchronously on the
   caller's thread**; the pipeline spawns no threads and holds no output handle after `onSliceSaved`.
-- **G3 — (opt-in) Live previews without a re-read.** When `ProcessingPipeline::run(..., thumbnailCacheDir)`
-  is given a cache dir, the pipeline warms `ThumbnailCache` from the **in-RAM** slice — via
+- **G3 — (opt-in) Live previews without a re-read.** When `RenderRequest::thumbnailCacheDir`
+  is set, the pipeline warms `ThumbnailCache` from the **in-RAM** slice — via
   `ThumbnailCache::generate(outputPath, pixelBuffer)`, sharing the one shrink+write path with the
   file-reading `generate` — *before* `onSliceSaved`. A consumer's later `getOrGenerate(outputPath)` is
   then a cache hit that never opens the output. Empty dir → no thumbnails (CLI default).
@@ -620,7 +620,7 @@ strip.sliceAll(sliceHeight, lastSlicePolicy)
 Two optional, non-destructive steps hook into the pipeline at **two distinct seams**, in two different
 coordinate spaces (mirroring DaVinci Resolve's Color page vs Fusion). Both are **opt-in / default-off**,
 so a project that uses neither renders byte-identically to a build without them, and both are passed to
-`ProcessingPipeline::run()` as optional trailing parameters (`colourCorrection`, `stripOverlays`).
+the pipeline as `RenderRequest` fields (`colourCorrection`, `stripOverlays`).
 
 - **Page domain — colour correction.** Between `scale` and `strip.append`, for each input **not** in
   `colourCorrection.excludedInputUids`: `ImageIO::load(convertToSRGB = iccToSRGB)` then

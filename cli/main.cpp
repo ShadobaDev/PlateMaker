@@ -1586,18 +1586,20 @@ static int cmdProcess(const Opts& opts)
 
     const auto t0 = std::chrono::steady_clock::now();
 
-    const auto outcome = Platemaker::Core::ProcessingPipeline::run(
-        project.inputsInOrder(),   // strip is built in `order` sequence, not stored-vector order
-        outProfile,
-        effectiveProfiles,
-        project.canvasProfileIds(),
-        outputDir,
-        cancelToken,
-        callbacks,
-        /*onlySlices*/ partial ? &dirtySlices : nullptr,
-        /*thumbnailCacheDir*/ {},
-        project.colourCorrection,
-        project.getStripOverlays());
+    Platemaker::Core::RenderRequest request;
+    request.inputs           = project.inputsInOrder(); // `order` sequence, not stored-vector order
+    request.outputProfile    = outProfile;
+    request.canvasProfiles   = effectiveProfiles;
+    request.canvasProfileIds = project.canvasProfileIds();
+    request.outputDirectory  = outputDir;
+    request.colourCorrection = project.colourCorrection;
+    request.stripOverlays    = project.getStripOverlays();
+    if (partial)
+        request.onlySlices = dirtySlices;
+    // thumbnailCacheDir stays empty: the CLI has nothing to preview, so it pays nothing.
+
+    const auto outcome =
+        Platemaker::Core::ProcessingPipeline::render(request, cancelToken, callbacks);
 
     if (outcome.failed) {
         if (!jsonMode) dump.failure(outcome.error);

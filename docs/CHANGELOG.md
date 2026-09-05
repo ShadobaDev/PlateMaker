@@ -3,24 +3,31 @@
 ## [0.6.0] — Unreleased
 
 Adds two optional, non-destructive **render-time processing steps** — project-wide **colour correction**
-(page domain) and text/bubble **overlays** (strip domain) — behind a small typed-step framework.
-Breaking (a MINOR in the 0.x shifted scale) only because `ProcessingPipeline::run()` and
-`ImageIO::load()` gained trailing parameters: source-compatible via their defaults, but the mangled
-symbols change, so the GUI pins the version in lockstep (exactly as 0.5.0 did for `run()`). Output is
-**byte-identical for any project that uses neither step**, and older workspaces load unchanged (the new
-config is additive, guarded fields). Also carries the additive profile-portability work originally
-staged for 0.5.2 (never released), which re-derives onto this baseline per the cascade rule.
+(page domain) and text/bubble **overlays** (strip domain) — behind a small typed-step framework, and
+reshapes the pipeline's public API around a `RenderRequest`. Breaking (a MINOR in the 0.x shifted
+scale), so the GUI pins the version in lockstep (exactly as 0.5.0 did). Output is **byte-identical for
+any project that uses neither step**, and older workspaces load unchanged (the new config is additive,
+guarded fields). Also carries the additive profile-portability work originally staged for 0.5.2 (never
+released), which re-derives onto this baseline per the cascade rule.
 
 ### Changed
 
-- **`ProcessingPipeline::run()` gains two optional trailing parameters — `colourCorrection` and
-  `stripOverlays`.** Both default to empty/disabled, so existing source compiles unchanged and the
-  render is byte-identical when neither is used; the mangled symbol changes (ABI), which is what makes
-  this a minor bump.
-- **`ImageIO::load()` gains an optional trailing `convertToSRGB` (default `true`).** `true` keeps the
-  historical always-sRGB-on-load behaviour; `false` leaves the source colour space alone, which is what a
-  load standing in for the margin-less pipeline needs (that path scales straight from the file with no
-  colour transform). Defaulted (source-compatible); the mangled symbol changes.
+- **`ProcessingPipeline::run()` becomes `render(RenderRequest, cancel, callbacks)`.** The eleven
+  positional arguments — five of them optional and defaulted — are now named fields on a
+  `Core::RenderRequest`, so a call site no longer reads as a column of values whose meaning comes from
+  counting commas, and adding a future processing step will not extend the signature again. The
+  request holds everything **by value**, which is what makes handing it to a worker thread safe while
+  the caller keeps editing the workspace; `onlySlices` is correspondingly a
+  `std::optional<std::unordered_set<std::string>>` rather than a borrowed pointer.
+- **The page-domain entry points are renamed for how they differ.** `previewLayout()` →
+  `layoutPagesFromHeaders()`, `previewPageRgba()` → `decodePageToRgba()`. Both used to say "preview"
+  and neither said which one reads *headers* for *every* page and which *decodes* *one* — the only
+  thing worth knowing when choosing between them. Neither was ever approximate: the geometry is the
+  render's own, which the old name obscured.
+- **`ImageIO::load()` gains an optional trailing `convertToSRGB` (default `true`).**
+  `true` keeps the historical always-sRGB-on-load behaviour; `false` leaves the source colour space
+  alone, which is what a load standing in for the margin-less pipeline needs (that path scales straight
+  from the file with no colour transform). Defaulted (source-compatible); the mangled symbol changes.
 - **`ProjectItem::stripOverlays` is now a lib-owned inventory, not a public field.** It is private,
   read through `getStripOverlays()` (const + mutable, like `getInputImages()`); mutation goes through
   `addOverlay()` / `removeOverlay()`.

@@ -85,36 +85,30 @@ int expectedSliceCount(int stripHeight, const Models::OutputProfile& outProfile)
         ((remainder > 0 && outProfile.lastSlicePolicy != LastSlicePolicy::Crop) ? 1 : 0);
 }
 
-SliceWriter::SliceWriter(const Models::OutputProfile&                outProfile,
-                         const std::string&                          outputDir,
-                         const std::unordered_set<std::string>*      onlySlices,
-                         const std::string&                          thumbnailCacheDir,
-                         const std::vector<Models::StripOverlay>&    overlays,
+SliceWriter::SliceWriter(const RenderRequest&                        request,
                          const std::unordered_map<std::string, int>& pageTopByInputUid,
                          int                                         expectedTotal,
                          const ProcessingCallbacks&                  callbacks)
-    : m_outProfile(outProfile)
-    , m_outputDir(outputDir)
-    , m_onlySlices(onlySlices)
+    : m_request(request)
     , m_callbacks(callbacks)
-    , m_extension(formatExtension(outProfile.outputFormat))
+    , m_extension(formatExtension(request.outputProfile.outputFormat))
 {
     // Partial render: the progress denominator is the number of slices we will actually save, not
     // the full count. Slice names derive from the index alone, so this is resolved up front — no
     // need to build the slices first.
     m_plannedTotal = expectedTotal;
-    if (m_onlySlices) {
+    if (m_request.onlySlices) {
         m_plannedTotal = 0;
         for (int i = 0; i < expectedTotal; ++i)
-            if (m_onlySlices->count(sliceFileName(i))) ++m_plannedTotal;
+            if (m_request.onlySlices->count(sliceFileName(i))) ++m_plannedTotal;
     }
 
     // Optional (Arch C — see the "render output contract" in the specification): pre-warm a
     // thumbnail cache from each slice's in-RAM pixels, so a consumer never re-reads a
     // freshly-written output to preview it. A bad dir just disables previews for this run.
-    if (!thumbnailCacheDir.empty()) {
+    if (!m_request.thumbnailCacheDir.empty()) {
         try {
-            m_thumbnails.emplace(thumbnailCacheDir);
+            m_thumbnails.emplace(m_request.thumbnailCacheDir);
         } catch (const std::exception& e) {
             emitLog(m_callbacks.onLog, ProcessingLogLevel::Warning,
                     std::string("Thumbnail previews disabled: ") + e.what());
@@ -122,12 +116,12 @@ SliceWriter::SliceWriter(const Models::OutputProfile&                outProfile,
     }
 
     // Last, so the orphan warnings keep their historical position after the thumbnail one.
-    m_overlays = loadOverlaysForStrip(overlays, pageTopByInputUid, m_callbacks);
+    m_overlays = loadOverlaysForStrip(m_request.stripOverlays, pageTopByInputUid, m_callbacks);
 }
 
 std::string SliceWriter::sliceFileName(int index) const
 {
-    return "output_" + zeroPad(m_outProfile.startIndex + index, 3) + m_extension;
+    return "output_" + zeroPad(m_request.outputProfile.startIndex + index, 3) + m_extension;
 }
 
 bool SliceWriter::writeSlice(SliceResult&& slice, ProcessingOutcome& outcome)
@@ -135,13 +129,13 @@ bool SliceWriter::writeSlice(SliceResult&& slice, ProcessingOutcome& outcome)
     const std::string outName = sliceFileName(slice.index);
 
     // Skip clean slices when a partial-render filter is supplied.
-    if (m_onlySlices && m_onlySlices->count(outName) == 0) {
+    if (m_request.onlySlices && m_request.onlySlices->count(outName) == 0) {
         if (m_callbacks.onSliceSkipped)
             m_callbacks.onSliceSkipped({slice.index, outName});
         return true;
     }
 
-    const std::string outPath = m_outputDir + "/" + outName;
+    const std::string outPath = m_request.outputDirectory + "/" + outName;
 
     if (!compositeOverlays(slice, outName, outcome))
         return false;
@@ -192,7 +186,7 @@ bool SliceWriter::saveSlice(const SliceResult& slice, const std::string& outName
 {
     try {
         ImageIO imageIO;
-        imageIO.save(slice.image, outPath, m_outProfile);
+        imageIO.save(slice.image, outPath, m_request.outputProfile);
     } catch (const OutputLockedError& e) {
         outcome.failed = true;
         outcome.error  = ProcessingError{

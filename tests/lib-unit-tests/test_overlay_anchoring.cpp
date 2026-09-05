@@ -234,8 +234,13 @@ std::string render(const TempDir& tmp, const std::string& tag,
     }
 
     Infrastructure::CancellationToken cancel;
-    const auto outcome = ProcessingPipeline::run(
-        inputs, output(), {}, {}, outDir, cancel, cb, nullptr, {}, {}, overlays);
+    RenderRequest request;
+    request.inputs          = inputs;
+    request.outputProfile   = output();
+    request.outputDirectory = outDir;
+    request.stripOverlays   = overlays;
+
+    const auto outcome = ProcessingPipeline::render(request, cancel, cb);
 
     EXPECT_FALSE(outcome.failed) << (outcome.error ? outcome.error->message : "");
     return outDir;

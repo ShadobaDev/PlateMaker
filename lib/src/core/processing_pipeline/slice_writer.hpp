@@ -29,6 +29,7 @@
 
 #include <platemaker/core/processing_callbacks/processing_callbacks.hpp>
 #include <platemaker/core/processing_pipeline/processing_pipeline.hpp>
+#include <platemaker/core/processing_pipeline/render_request.hpp>
 #include <platemaker/core/scaled_strip/scaled_strip.hpp>
 #include <platemaker/core/strip_overlay_compositor/strip_overlay_compositor.hpp>
 #include <platemaker/infrastructure/thumbnail_cache/thumbnail_cache.hpp>
@@ -58,32 +59,23 @@ public:
     /**
      * \brief Binds to everything the whole phase shares.
      *
-     * \param outProfile        Output profile — format, numbering, encoder options.
-     * \param outputDir         Existing directory the slices are written into.
-     * \param onlySlices        Partial-render filter: when non-null, only slices whose file name
-     *                          is in the set are encoded, hashed, saved and recorded.  The strip
-     *                          is still assembled and sliced once either way.  Null → full render.
-     * \param thumbnailCacheDir When non-empty, each saved slice's preview is written into a cache
-     *                          rooted here, from the **in-RAM** slice with no re-read of the
-     *                          output.  A bad directory disables previews for this run, not the run.
-     * \param overlays          The project's overlay inventory. Page anchors are resolved here,
-     *                          against \p pageTopByInputUid, and the bitmaps decoded once; empty →
-     *                          no compositing, so output is byte-identical to a build without the
-     *                          step.  An overlay anchored to a page that did not load has nowhere
-     *                          to go: it is reported and dropped rather than allowed to land on
-     *                          whatever page took its place.
+     * Reads five fields off the request — \c outputProfile, \c outputDirectory, \c onlySlices,
+     * \c thumbnailCacheDir and \c stripOverlays — so it takes the request rather than five loose
+     * arguments whose order a caller could get wrong.
+     *
+     * The overlays' page anchors are resolved here, against \p pageTopByInputUid, and the bitmaps
+     * decoded once.  An overlay anchored to a page that did not load has nowhere to go: it is
+     * reported and dropped rather than allowed to land on whatever page took its place.
+     *
+     * \param request           The render request. Must outlive this writer.
      * \param pageTopByInputUid Strip layout from \c StripBuilder::pageTopByInputUid().
      * \param expectedTotal     Slice count from \c expectedSliceCount(), before the filter.
      * \param callbacks         Progress/log/slice sinks; any field may be null.
      */
-    SliceWriter(const Models::OutputProfile&                 outProfile,
-                const std::string&                           outputDir,
-                const std::unordered_set<std::string>*       onlySlices,
-                const std::string&                           thumbnailCacheDir,
-                const std::vector<Models::StripOverlay>&     overlays,
-                const std::unordered_map<std::string, int>&  pageTopByInputUid,
-                int                                          expectedTotal,
-                const ProcessingCallbacks&                   callbacks);
+    SliceWriter(const RenderRequest&                        request,
+                const std::unordered_map<std::string, int>& pageTopByInputUid,
+                int                                         expectedTotal,
+                const ProcessingCallbacks&                  callbacks);
 
     /**
      * \brief The output file name for slice \p index, e.g. "output_003.png".
@@ -118,10 +110,8 @@ private:
     void warmThumbnail(const SliceResult& slice, const std::string& outName,
                        const std::string& outPath);
 
-    const Models::OutputProfile&           m_outProfile;
-    const std::string&                     m_outputDir;
-    const std::unordered_set<std::string>* m_onlySlices;
-    const ProcessingCallbacks&             m_callbacks;
+    const RenderRequest&       m_request;
+    const ProcessingCallbacks& m_callbacks;
 
     std::string                m_extension;  //!< File extension for the profile's format.
     std::vector<LoadedOverlay> m_overlays;

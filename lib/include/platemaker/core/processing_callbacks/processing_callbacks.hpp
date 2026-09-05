@@ -1,7 +1,7 @@
 /**
  * \file lib/include/platemaker/core/processing_callbacks/processing_callbacks.hpp
  * \brief ProcessingCallbacks — the set of progress/event callbacks a caller may pass to
- *        ProcessingPipeline::run(), plus the small payload types each one reports.
+ *        ProcessingPipeline::render(), plus the small payload types each one reports.
  *
  * Split out of processing_pipeline.hpp so the pipeline header stays focused on the pipeline
  * itself. Every callback is an ordinary std::function; a null field means "don't report this".
@@ -94,7 +94,7 @@ struct SliceSkipped {
 };
 
 /**
- * \brief The callbacks a caller may pass to ProcessingPipeline::run().
+ * \brief The callbacks a caller may pass to ProcessingPipeline::render().
  *
  * Each field is optional — a null std::function is simply not called. The pipeline invokes them
  * synchronously on its own thread; consumers own any threading/marshalling.

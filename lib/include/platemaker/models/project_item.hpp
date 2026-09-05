@@ -382,7 +382,7 @@ public:
      * The strip is built in \c order sequence, which is *not* necessarily the stored vector
      * order — a reorder changes only the \c order field, never the physical \c m_input_images
      * layout (that is what keeps a reorder from churning the project structure).  Render callers
-     * pass this to \c ProcessingPipeline::run so the pipeline stays a pure "render the sequence I
+     * pass it as \c RenderRequest::inputs so the pipeline stays a pure "render the sequence I
      * am handed" component with no knowledge of \c order.
      */
     [[nodiscard]] std::vector<InputFile> inputsInOrder() const;
