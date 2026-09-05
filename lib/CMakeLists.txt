@@ -23,6 +23,10 @@ set(PLATEMAKER_SOURCES
     src/core/template_generator/template_generator.cpp
     src/core/canvas_profile_matcher/canvas_profile_matcher.cpp
     src/core/processing_pipeline/processing_pipeline.cpp
+    # Internal to the pipeline — headers live beside them under src/ and are not installed.
+    src/core/processing_pipeline/page_renderer.cpp
+    src/core/processing_pipeline/strip_builder.cpp
+    src/core/processing_pipeline/slice_writer.cpp
 
     # Infrastructure / IO
     src/infrastructure/file/file_meta_data.cpp
