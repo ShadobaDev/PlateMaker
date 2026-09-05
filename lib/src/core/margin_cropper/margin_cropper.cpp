@@ -49,7 +49,7 @@ PixelBuffer MarginCropper::crop(
     }
 
     VipsImage* out = nullptr;
-    if (vips_extract_area(source.get(), &out, x, y, w, h, nullptr) != 0) {
+    if (vips_extract_area(source.vipsImage(), &out, x, y, w, h, nullptr) != 0) {
         throw std::runtime_error(
             "MarginCropper::crop() — vips_extract_area failed: " +
             std::string(vips_error_buffer()));

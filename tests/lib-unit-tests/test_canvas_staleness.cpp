@@ -184,7 +184,7 @@ TEST(CanvasRenderFingerprintTest, ChangesWithCanvasSize)
 TEST(CanvasRenderFingerprintTest, IgnoresTemplateOnlyColours)
 {
     // visualColour / backgroundColour only reach the generated template PNG — they
-    // never touch a render. Folding them in (as TemplateGenerator::signature() must,
+    // never touch a render. Folding them in (as TemplateGenerator::canvasSignature() must,
     // for template identity) would force a full re-render of every chapter each time
     // the overlay colour is nudged.
     auto a = makeProfile("p1", 1600, 10240, 100);
@@ -262,13 +262,13 @@ TEST(CanvasConfigChangeTest, MarginEditInvalidatesTheAffectedPage)
     std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
     const auto project = makeRenderedProject(ws, "p1");
 
-    ASSERT_FALSE(project.detectCanvasConfigChange(ws).any())
+    ASSERT_FALSE(project.detectCanvasConfigChange(ws).anyChanged())
         << "nothing touched yet — must be quiet";
 
     ws[0].margins.top = 150;   // the artist edits the profile
 
     const auto change = project.detectCanvasConfigChange(ws);
-    EXPECT_TRUE(change.any());
+    EXPECT_TRUE(change.anyChanged());
     EXPECT_FALSE(change.listChanged) << "the list is the same; only content changed";
     EXPECT_EQ(change.changedInputs, (std::vector<std::string>{"page_000.png"}));
 }
@@ -282,7 +282,7 @@ TEST(CanvasConfigChangeTest, ColourEditDoesNotInvalidate)
     ws[0].visualColour     = RGBA{0, 255, 0, 200};
     ws[0].backgroundColour = RGBA{255, 255, 255, 255};
 
-    EXPECT_FALSE(project.detectCanvasConfigChange(ws).any())
+    EXPECT_FALSE(project.detectCanvasConfigChange(ws).anyChanged())
         << "template-only fields must never invalidate a render";
 }
 
@@ -294,7 +294,7 @@ TEST(CanvasConfigChangeTest, DeletingTheUsedProfileInvalidates)
     ws.clear();
 
     const auto change = project.detectCanvasConfigChange(ws);
-    EXPECT_TRUE(change.any());
+    EXPECT_TRUE(change.anyChanged());
     EXPECT_EQ(change.changedInputs, (std::vector<std::string>{"page_000.png"}));
 }
 
@@ -309,7 +309,7 @@ TEST(CanvasConfigChangeTest, AddingAProfileInvalidatesViaTheList)
     ws.push_back(makeProfile("p2", 800, 1280, 0));
 
     const auto change = project.detectCanvasConfigChange(ws);
-    EXPECT_TRUE(change.any());
+    EXPECT_TRUE(change.anyChanged());
     EXPECT_TRUE(change.listChanged);
 }
 
@@ -332,7 +332,7 @@ TEST(CanvasConfigChangeTest, ProjectWithNoProfilesStaysQuiet)
     const std::vector<CanvasProfile> ws;
     const auto project = makeRenderedProject(ws, "");
 
-    EXPECT_FALSE(project.detectCanvasConfigChange(ws).any());
+    EXPECT_FALSE(project.detectCanvasConfigChange(ws).anyChanged());
 }
 
 TEST(CanvasConfigChangeTest, AddingAProfileToAProjectThatHadNoneInvalidates)
@@ -345,7 +345,7 @@ TEST(CanvasConfigChangeTest, AddingAProfileToAProjectThatHadNoneInvalidates)
 
     ws.push_back(makeProfile("p1", 1600, 10240, 100));
 
-    EXPECT_TRUE(project.detectCanvasConfigChange(ws).any())
+    EXPECT_TRUE(project.detectCanvasConfigChange(ws).anyChanged())
         << "a project rendered without profiles must notice one appearing";
 }
 
@@ -359,7 +359,7 @@ TEST(CanvasConfigChangeTest, NeverRenderedProjectReportsNothing)
     inf.status   = FileStatus::Pending;
     p.getInputImages().push_back(std::move(inf));
 
-    EXPECT_FALSE(p.detectCanvasConfigChange(ws).any());
+    EXPECT_FALSE(p.detectCanvasConfigChange(ws).anyChanged());
 }
 
 TEST(CanvasConfigChangeTest, LegacyWorkspaceWithoutFingerprintsReRendersOnce)
@@ -388,15 +388,15 @@ TEST(CanvasConfigChangeTest, BaselineSurvivesAMove)
     const std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
 
     ProjectItem original = makeRenderedProject(ws, "p1");
-    ASSERT_FALSE(original.detectCanvasConfigChange(ws).any());
+    ASSERT_FALSE(original.detectCanvasConfigChange(ws).anyChanged());
 
     const ProjectItem moved = std::move(original);
-    EXPECT_FALSE(moved.detectCanvasConfigChange(ws).any())
+    EXPECT_FALSE(moved.detectCanvasConfigChange(ws).anyChanged())
         << "move construction dropped the canvas baseline";
 
     ProjectItem assigned;
     assigned = makeRenderedProject(ws, "p1");
-    EXPECT_FALSE(assigned.detectCanvasConfigChange(ws).any())
+    EXPECT_FALSE(assigned.detectCanvasConfigChange(ws).anyChanged())
         << "move assignment dropped the canvas baseline";
 }
 
@@ -416,12 +416,12 @@ TEST(CanvasConfigChangePreciseTest, AddingAProfileThatMatchesNoPageStaysQuiet)
     std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
     const auto project = makeSizedProject(ws, "p1", 1600, 10240);
 
-    ASSERT_FALSE(project.detectCanvasConfigChange(ws).any());
+    ASSERT_FALSE(project.detectCanvasConfigChange(ws).anyChanged());
 
     ws.push_back(makeProfile("p2", 800, 1280, 0));   // matches no page in this project
 
     const auto change = project.detectCanvasConfigChange(ws);
-    EXPECT_FALSE(change.any()) << "a profile that matches nothing must not invalidate the project";
+    EXPECT_FALSE(change.anyChanged()) << "a profile that matches nothing must not invalidate the project";
     EXPECT_FALSE(change.listChanged);
     EXPECT_TRUE(change.changedInputs.empty());
 }
@@ -436,7 +436,7 @@ TEST(CanvasConfigChangePreciseTest, AddingAProfileThatMatchesAPreviouslyUnmatche
     ws.push_back(makeProfile("p1", 1080, 1920, 40));
 
     const auto change = project.detectCanvasConfigChange(ws);
-    EXPECT_TRUE(change.any());
+    EXPECT_TRUE(change.anyChanged());
     EXPECT_FALSE(change.listChanged) << "precision, not the coarse list fallback";
     EXPECT_EQ(change.changedInputs, (std::vector<std::string>{"page_000.png"}));
 }
@@ -447,12 +447,12 @@ TEST(CanvasConfigChangePreciseTest, MarginEditFlagsTheAffectedPage)
     // to the matched profile is caught by the fingerprint half of the re-match.
     std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
     const auto project = makeSizedProject(ws, "p1", 1600, 10240);
-    ASSERT_FALSE(project.detectCanvasConfigChange(ws).any());
+    ASSERT_FALSE(project.detectCanvasConfigChange(ws).anyChanged());
 
     ws[0].margins.top = 150;
 
     const auto change = project.detectCanvasConfigChange(ws);
-    EXPECT_TRUE(change.any());
+    EXPECT_TRUE(change.anyChanged());
     EXPECT_FALSE(change.listChanged);
     EXPECT_EQ(change.changedInputs, (std::vector<std::string>{"page_000.png"}));
 }
@@ -466,11 +466,11 @@ TEST(CanvasConfigChangePreciseTest, UnlinkedWorkspaceProfileOfMatchingSizeIsIgno
     auto project = makeSizedProject(ws, "p1", 1600, 10240);
     project.addCanvasProfile(ws, "p1");                                  // explicit list = {p1}
     project.canvasProfileIdsAtRender = project.effectiveCanvasProfileIds(ws);
-    ASSERT_FALSE(project.detectCanvasConfigChange(ws).any());
+    ASSERT_FALSE(project.detectCanvasConfigChange(ws).anyChanged());
 
     ws.push_back(makeProfile("p2", 1600, 10240, 50));                    // same size, NOT linked
 
-    EXPECT_FALSE(project.detectCanvasConfigChange(ws).any())
+    EXPECT_FALSE(project.detectCanvasConfigChange(ws).anyChanged())
         << "an unlinked workspace-only profile never applies, so it cannot desync the project";
 }
 
@@ -484,20 +484,20 @@ TEST(CanvasConfigChangePreciseTest, DuplicateSizeResolvesByEffectiveOrder)
         makeProfile("p2", 1600, 10240, 50),
     };
     const auto project = makeSizedProject(ws, "p1", 1600, 10240);
-    ASSERT_FALSE(project.detectCanvasConfigChange(ws).any());
+    ASSERT_FALSE(project.detectCanvasConfigChange(ws).anyChanged());
 
     // p0 (same size) inserted at the FRONT → it now wins → the page is stale.
     std::vector<CanvasProfile> ahead{makeProfile("p0", 1600, 10240, 10)};
     ahead.insert(ahead.end(), ws.begin(), ws.end());
     const auto changedAhead = project.detectCanvasConfigChange(ahead);
-    EXPECT_TRUE(changedAhead.any());
+    EXPECT_TRUE(changedAhead.anyChanged());
     EXPECT_FALSE(changedAhead.listChanged);
     EXPECT_EQ(changedAhead.changedInputs, (std::vector<std::string>{"page_000.png"}));
 
     // p3 (same size) appended at the BACK → p1 still wins → quiet.
     std::vector<CanvasProfile> behind = ws;
     behind.push_back(makeProfile("p3", 1600, 10240, 10));
-    EXPECT_FALSE(project.detectCanvasConfigChange(behind).any());
+    EXPECT_FALSE(project.detectCanvasConfigChange(behind).anyChanged());
 }
 
 // ---------------------------------------------------------------------------

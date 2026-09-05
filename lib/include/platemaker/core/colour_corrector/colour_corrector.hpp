@@ -9,7 +9,7 @@
  * can be project-wide yet still allow per-page exclusions.
  *
  * ICC → sRGB is deliberately **not** done here: it is a colour-normalisation concern handled at load
- * (\c ImageIO::load(path, convertToSRGB)).  ColourCorrector owns only the creative scalars, so a page
+ * (\c ImageIO::decode(path, convertToSRGB)).  ColourCorrector owns only the creative scalars, so a page
  * loaded straight (no ICC) and one converted to sRGB both receive the identical grade.
  *
  * Stateless and thread-safe, like \c Scaler / \c MarginCropper — construct once, call \c apply() freely.
@@ -55,7 +55,7 @@ public:
      * \return The graded buffer (or \p buffer unchanged for a neutral grade).
      * \throws std::runtime_error if \p buffer is invalid or a libvips operation fails.
      */
-    [[nodiscard]] PixelBuffer apply(PixelBuffer buffer, const Models::ColourCorrection& cc) const;
+    [[nodiscard]] PixelBuffer applyToBuffer(PixelBuffer buffer, const Models::ColourCorrection& cc) const;
 
     /**
      * \brief Grades an interleaved 8-bit RGBA buffer in place, reusing \c apply().

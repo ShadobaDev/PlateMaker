@@ -4,7 +4,7 @@
  *
  * The strip may reach save as 4-band RGBA whenever any source carried transparency (ScaledStrip
  * promotes to the widest band layout so mixed RGB/RGBA inputs join cleanly). JPEG cannot store an
- * alpha channel, so ImageIO::save flattens it over white for that format only — the one place
+ * alpha channel, so ImageIO::encode flattens it over white for that format only — the one place
  * dropping alpha is unavoidable. PNG/WebP keep the alpha, so RGBA sources survive intact.
  *
  * VIPS is initialised once for the whole test binary by test_scaled_strip.cpp's global environment.
@@ -68,7 +68,7 @@ TEST(ImageIoSaveTest, JpegFlattensAlphaToThreeBands)
 
     ImageIO    io;
     const auto prof = profileFor(Models::OutputFormat::JPEG);
-    ASSERT_NO_THROW(io.save(rgbaImage(64, 64), path, prof));
+    ASSERT_NO_THROW(io.encode(rgbaImage(64, 64), path, prof));
     EXPECT_EQ(savedBands(path), 3) << "JPEG cannot carry alpha — output must be flattened to RGB";
 
     fs::remove_all(dir);
@@ -83,7 +83,7 @@ TEST(ImageIoSaveTest, PngPreservesAlpha)
 
     ImageIO    io;
     const auto prof = profileFor(Models::OutputFormat::PNG);
-    ASSERT_NO_THROW(io.save(rgbaImage(64, 64), path, prof));
+    ASSERT_NO_THROW(io.encode(rgbaImage(64, 64), path, prof));
     EXPECT_EQ(savedBands(path), 4) << "PNG must preserve the RGBA alpha channel";
 
     fs::remove_all(dir);

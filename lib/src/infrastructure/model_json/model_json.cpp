@@ -15,6 +15,7 @@
 
 #include <stdexcept>
 #include <vector>
+#include <platemaker/models/output_presets.hpp>
 
 namespace Platemaker::Models {
 
@@ -175,16 +176,18 @@ void from_json(const nlohmann::json& j, CurvePoint& v) {
 }
 
 // --- ColourCurves ---
+// The JSON keys stay "r"/"g"/"b" although the members are now red/green/blue: the field names are a
+// C++ readability fix, and renaming the keys would make every existing workspace lose its curves.
 void to_json(nlohmann::json& j, const ColourCurves& v) {
     j = nlohmann::json{
-        {"master", v.master}, {"r", v.r}, {"g", v.g}, {"b", v.b}
+        {"master", v.master}, {"r", v.red}, {"g", v.green}, {"b", v.blue}
     };
 }
 void from_json(const nlohmann::json& j, ColourCurves& v) {
     if (j.contains("master")) j.at("master").get_to(v.master);
-    if (j.contains("r"))      j.at("r").get_to(v.r);
-    if (j.contains("g"))      j.at("g").get_to(v.g);
-    if (j.contains("b"))      j.at("b").get_to(v.b);
+    if (j.contains("r"))      j.at("r").get_to(v.red);
+    if (j.contains("g"))      j.at("g").get_to(v.green);
+    if (j.contains("b"))      j.at("b").get_to(v.blue);
 }
 
 // --- ColourCorrection ---
@@ -277,13 +280,13 @@ void from_json(const nlohmann::json& j, InputFile& v) {
 void to_json(nlohmann::json& j, const SourceSegment& v) {
     j = nlohmann::json{
         {"sourceFilePath", v.sourceFilePath},
-        {"srcY", v.srcY},
+        {"srcY", v.sourceY},   // key kept: renaming it would orphan every stored provenance record
         {"height", v.height}
     };
 }
 void from_json(const nlohmann::json& j, SourceSegment& v) {
     j.at("sourceFilePath").get_to(v.sourceFilePath);
-    j.at("srcY").get_to(v.srcY);
+    j.at("srcY").get_to(v.sourceY);
     j.at("height").get_to(v.height);
 }
 

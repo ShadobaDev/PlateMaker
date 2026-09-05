@@ -29,7 +29,7 @@ namespace Platemaker::Models {
  * workspace folder stays portable.  An empty \c path means "no template generated
  * yet".
  *
- * \c fingerprint is a canvas-only signature (see TemplateGenerator::signature())
+ * \c fingerprint is a canvas-only signature (see TemplateGenerator::canvasSignature())
  * captured at generation time.  Comparing it against the current profile's
  * signature tells the GUI whether the template is still up to date — the output
  * profile is deliberately not part of a template's identity.
@@ -136,11 +136,11 @@ public:
  * \warning Deliberately **excludes** \c visualColour and \c backgroundColour.  Those
  *          only affect the generated template PNG, never a render — folding them in
  *          would force a full re-render every time the overlay colour is nudged.
- *          This is why \c TemplateGenerator::signature() (which does include them,
+ *          This is why \c TemplateGenerator::canvasSignature() (which does include them,
  *          correctly, for template identity) must not be reused here.
  *
  * \note Format matches the house convention (\c outputProfileSignature,
- *       \c TemplateGenerator::signature): a deterministic, tagged, human-inspectable
+ *       \c TemplateGenerator::canvasSignature): a deterministic, tagged, human-inspectable
  *       string rather than a hash — it stays readable in the workspace JSON and is
  *       shorter than a hex digest.
  *
@@ -158,7 +158,7 @@ public:
  *
  * Canvas matching is exact equality on the full \c canvasSize — an image belongs to a
  * profile only when its pixel dimensions are the profile's canvas dimensions.  This is
- * the single definition of that rule, shared by \c CanvasProfileMatcher::resolve() (the
+ * the single definition of that rule, shared by \c CanvasProfileMatcher::resolveForSize() (the
  * render-time resolver) and \c ProjectItem::detectCanvasConfigChange() (the offline
  * staleness re-match), so the two can never drift apart.
  *

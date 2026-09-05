@@ -31,7 +31,7 @@ namespace {
     const std::string err = vips_error_buffer();
     vips_error_clear();
     if (img) g_object_unref(img);
-    throw std::runtime_error("StripOverlayCompositor::apply — " + what + ": " + err);
+    throw std::runtime_error("StripOverlayCompositor::composite — " + what + ": " + err);
 }
 
 //! True when the overlay's strip-Y span [y, y+h) overlaps the slice's [top, top+height).
@@ -56,7 +56,7 @@ VipsBlendMode toVipsBlend(Models::BlendMode b)
 
 } // namespace
 
-std::vector<LoadedOverlay> StripOverlayCompositor::load(
+std::vector<LoadedOverlay> StripOverlayCompositor::decodeBitmaps(
     const std::vector<Models::StripOverlay>& overlays) const
 {
     std::vector<LoadedOverlay> out;
@@ -107,15 +107,15 @@ std::vector<LoadedOverlay> StripOverlayCompositor::load(
     return out;
 }
 
-PixelBuffer StripOverlayCompositor::apply(
+PixelBuffer StripOverlayCompositor::composite(
     PixelBuffer slice, int stripTopY, const std::vector<LoadedOverlay>& overlays) const
 {
     if (!slice.isValid())
-        throw std::runtime_error("StripOverlayCompositor::apply — slice is invalid (null VipsImage)");
+        throw std::runtime_error("StripOverlayCompositor::composite — slice is invalid (null VipsImage)");
     if (overlays.empty())
         return slice;
 
-    VipsImage* const base   = slice.get();
+    VipsImage* const base   = slice.vipsImage();
     const int        sliceW = base->Xsize;
     const int        sliceH = base->Ysize;
 
@@ -146,7 +146,7 @@ PixelBuffer StripOverlayCompositor::apply(
         double bg[4] = {0.0, 0.0, 0.0, 0.0};
         VipsArrayDouble* bgArr = vips_array_double_new(bg, 4);
         VipsImage* layer = nullptr;
-        const int erc = vips_embed(ov.bitmap.get(), &layer, ex, ey, sliceW, sliceH,
+        const int erc = vips_embed(ov.bitmap.vipsImage(), &layer, ex, ey, sliceW, sliceH,
                                    "extend", VIPS_EXTEND_BACKGROUND, "background", bgArr, nullptr);
         vips_area_unref(VIPS_AREA(bgArr));
         if (erc != 0)

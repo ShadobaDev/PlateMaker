@@ -8,7 +8,7 @@
  *   vips_thumbnail() opens files in SEQUENTIAL access mode for efficiency.
  *   This means the libvips pipeline can only read pixels top-to-bottom, once.
  *   When ScaledStrip::buildSlice() later calls vips_extract_area() on a scaled
- *   image, and then ImageIO::save() calls vips_pngsave() on that extract, the
+ *   image, and then ImageIO::encode() calls vips_pngsave() on that extract, the
  *   PNG encoder uses an internal tiled write path that may read rows out of
  *   order — triggering "vipspng: out of order read" errors on the second and
  *   later slices.  Additionally, calling vips_thumbnail() three times in
@@ -136,7 +136,7 @@ ScaledImage Scaler::scale(PixelBuffer buffer, std::string sourceFilePath, int ta
 
     // Use vips_resize() for buffer-based scaling: explicit scale factor,
     // predictable aspect-ratio semantics, no auto-orientation ambiguity.
-    // The caller (ImageIO::load + MarginCropper) already holds a
+    // The caller (ImageIO::decode + MarginCropper) already holds a
     // VIPS_ACCESS_RANDOM-backed buffer, so the resize result is random-access.
     if (buffer.width() == 0) {
         throw std::runtime_error(
@@ -148,7 +148,7 @@ ScaledImage Scaler::scale(PixelBuffer buffer, std::string sourceFilePath, int ta
                           static_cast<double>(srcW);
 
     VipsImage* out = nullptr;
-    if (vips_resize(buffer.get(), &out, hscale, nullptr) != 0) {
+    if (vips_resize(buffer.vipsImage(), &out, hscale, nullptr) != 0) {
         throw std::runtime_error(
             "Scaler::scale() — vips_resize failed for '" + sourceFilePath +
             "': " + vips_error_buffer());

@@ -28,6 +28,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <platemaker/models/output_presets.hpp>
 
 namespace Platemaker::Infrastructure {
 

@@ -3,14 +3,14 @@
  * \brief Reproduces (and pins the fix for) the output-file read/write race behind the render's
  *        "unable to open for write" failures.
  *
- * The GUI writes each slice with ImageIO::save() on the render worker thread, then — via the
+ * The GUI writes each slice with ImageIO::encode() on the render worker thread, then — via the
  * onSliceSaved callback — reads that same file back on a QtConcurrent thread to build its thumbnail
  * (ThumbnailCache::generate → vips_thumbnail). These two lib calls therefore touch the same path from
  * two threads. On Windows a reader holding the file makes an *in-place* open-for-write fail. These
  * tests drive exactly those two lib primitives concurrently, with no GUI and no antivirus in the mix:
  *
  *   - InPlaceWrite…      raw vips_jpegsave straight to the path (the pre-fix behaviour) → races.
- *   - OutputLocked…      ImageIO::save (temp + rename) reports a typed OutputLockedError, immediately,
+ *   - OutputLocked…      ImageIO::encode (temp + rename) reports a typed OutputLockedError, immediately,
  *                        when the destination is held open (Windows-only behaviour; the lib never polls).
  *
  * VIPS is initialised once for the whole test binary by test_scaled_strip.cpp's global environment.
@@ -131,11 +131,11 @@ TEST(ImageIoConcurrencyTest, InPlaceWriteRacesAConcurrentThumbnailReader)
               << (failures ? ("\n  first error: " + firstError) : std::string("")) << "\n";
 
     // Timing-dependent, so not asserted — but on Windows this reliably reports failures > 0, which is
-    // the race the atomic ImageIO::save (next test) removes.
+    // the race the atomic ImageIO::encode (next test) removes.
     SUCCEED();
 }
 
-// The contract (G1 + G4): ImageIO::save() encodes to a temp sibling and renames it over the
+// The contract (G1 + G4): ImageIO::encode() encodes to a temp sibling and renames it over the
 // destination. If another process holds the destination so the rename cannot complete, save() throws a
 // typed OutputLockedError **immediately** — the lib does not poll — and leaves the existing file intact
 // with no temp litter. The consumer owns any retry policy. (Holding a file to deny replacement is
@@ -149,7 +149,7 @@ TEST(ImageIoConcurrencyTest, SaveReportsOutputLockedWhenDestinationHeld)
 
     ImageIO    io;
     const auto prof = jpegProfile();
-    io.save(blackImage(800, 1280), path, prof); // seed
+    io.encode(blackImage(800, 1280), path, prof); // seed
     const auto seededMtime = fs::last_write_time(path);
 
     // Hold the destination open with FILE_SHARE_READ only — denies write/delete, exactly like an open
@@ -159,7 +159,7 @@ TEST(ImageIoConcurrencyTest, SaveReportsOutputLockedWhenDestinationHeld)
                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     ASSERT_NE(h, INVALID_HANDLE_VALUE);
 
-    EXPECT_THROW(io.save(blackImage(800, 1280), path, prof), OutputLockedError);
+    EXPECT_THROW(io.encode(blackImage(800, 1280), path, prof), OutputLockedError);
 
     // Original untouched (whole-or-nothing), and no temp left behind.
     EXPECT_EQ(fs::last_write_time(path), seededMtime);

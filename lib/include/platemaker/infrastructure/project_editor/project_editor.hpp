@@ -7,7 +7,7 @@
  * input add / remove / rescan (currently \c ProjectItem::mergeFileScan) as those migrate here.
  *
  * The strip is built in \c InputFile::order sequence, not in the stored-vector order.  Reordering
- * therefore only rewrites the \c order field — the physical \c m_input_images layout is never touched,
+ * therefore only rewrites the \c order field — the physical \c m_inputImages layout is never touched,
  * so a reorder does not churn the project structure.  \c ProjectItem::detectInputCompositionChange()
  * (compared in \c sanitize()) is what turns a reorder into stale outputs.
  *

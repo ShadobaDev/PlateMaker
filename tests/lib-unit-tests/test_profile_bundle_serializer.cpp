@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <platemaker/models/output_presets.hpp>
 
 namespace Platemaker {
 

@@ -25,18 +25,18 @@ namespace Platemaker::Infrastructure {
 // load
 // ---------------------------------------------------------------------------
 
-Core::PixelBuffer ImageIO::load(const std::string& filePath, bool convertToSRGB) const
+Core::PixelBuffer ImageIO::decode(const std::string& filePath, bool convertToSRGB) const
 {
     // VIPS_ACCESS_RANDOM allows any downstream operation (e.g. crop, extract)
     // to access arbitrary rows without a second file read.  For the standard
-    // pipeline Scaler::scale() loads via vips_thumbnail() directly; ImageIO::load
+    // pipeline Scaler::scale() loads via vips_thumbnail() directly; ImageIO::decode
     // is used for the margin-aware pipeline where MarginCropper needs random access.
     VipsImage* image = vips_image_new_from_file(filePath.c_str(),
         "access", VIPS_ACCESS_RANDOM,
         nullptr);
     if (!image) {
         throw std::runtime_error(
-            "ImageIO::load() — cannot load '" + filePath + "': " +
+            "ImageIO::decode() — cannot load '" + filePath + "': " +
             vips_error_buffer());
     }
 
@@ -47,7 +47,7 @@ Core::PixelBuffer ImageIO::load(const std::string& filePath, bool convertToSRGB)
     if (vips_autorot(image, &upright, nullptr) != 0) {
         g_object_unref(image);
         throw std::runtime_error(
-            "ImageIO::load() — vips_autorot failed for '" + filePath + "': " +
+            "ImageIO::decode() — vips_autorot failed for '" + filePath + "': " +
             vips_error_buffer());
     }
     g_object_unref(image);
@@ -79,13 +79,13 @@ Core::PixelBuffer ImageIO::load(const std::string& filePath, bool convertToSRGB)
 // save
 // ---------------------------------------------------------------------------
 
-void ImageIO::save(
+void ImageIO::encode(
     const Core::PixelBuffer&     buffer,
     const std::string&           outputPath,
     const Models::OutputProfile& profile) const
 {
     if (!buffer.isValid()) {
-        throw std::runtime_error("ImageIO::save() — pixel buffer is empty");
+        throw std::runtime_error("ImageIO::encode() — pixel buffer is empty");
     }
 
     namespace fs = std::filesystem;
@@ -110,7 +110,7 @@ void ImageIO::save(
 
         // --- PNG (lossless) ---
         case Models::OutputFormat::PNG:
-            result = vips_pngsave(buffer.get(), tmpPath.c_str(),
+            result = vips_pngsave(buffer.vipsImage(), tmpPath.c_str(),
                 "compression", profile.pngOptions.compression,
                 "interlace",   profile.pngOptions.interlaced ? 1 : 0,
                 "keep",        VIPS_FOREIGN_KEEP_ICC, // rendered slice: drop source EXIF/XMP/IPTC, keep colour
@@ -136,7 +136,7 @@ void ImageIO::save(
             // dictated by the format, not our assembly. White matches the PadWhite/EXTEND_WHITE tail
             // convention; for the promoted, fully-opaque regions the composite is pixel-identical
             // regardless of background, so only genuinely-transparent pixels are affected.
-            VipsImage* encodeSrc = buffer.get();
+            VipsImage* encodeSrc = buffer.vipsImage();
             VipsImage* flattened = nullptr; // owned only if we flatten
             if (vips_image_hasalpha(encodeSrc)) {
                 double bg[3] = { 255.0, 255.0, 255.0 };
@@ -148,7 +148,7 @@ void ImageIO::save(
                     std::error_code rmEc;
                     fs::remove(utf8ToPath(tmpPath), rmEc);
                     throw std::runtime_error(
-                        "ImageIO::save() — failed to flatten alpha for JPEG '" + outputPath +
+                        "ImageIO::encode() — failed to flatten alpha for JPEG '" + outputPath +
                         "': " + err);
                 }
                 encodeSrc = flattened;
@@ -168,7 +168,7 @@ void ImageIO::save(
 
         // --- WebP ---
         case Models::OutputFormat::WebP:
-            result = vips_webpsave(buffer.get(), tmpPath.c_str(),
+            result = vips_webpsave(buffer.vipsImage(), tmpPath.c_str(),
                 "Q",        profile.webpOptions.quality,
                 "lossless", profile.webpOptions.lossless ? 1 : 0,
                 "effort",   profile.webpOptions.effort,
@@ -182,7 +182,7 @@ void ImageIO::save(
         std::error_code rmEc;
         fs::remove(utf8ToPath(tmpPath), rmEc); // don't leave a partial temp behind
         throw std::runtime_error(
-            "ImageIO::save() — failed to write '" + outputPath + "': " + err);
+            "ImageIO::encode() — failed to write '" + outputPath + "': " + err);
     }
 
     // Publish: rename the temp over the destination. std::filesystem::rename replaces an existing target
@@ -196,7 +196,7 @@ void ImageIO::save(
         std::error_code rmEc;
         fs::remove(utf8ToPath(tmpPath), rmEc);
         throw OutputLockedError(
-            "ImageIO::save() — could not replace '" + outputPath +
+            "ImageIO::encode() — could not replace '" + outputPath +
             "' (is it open in another program?): " + ec.message());
     }
 }

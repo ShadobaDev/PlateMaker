@@ -87,6 +87,7 @@
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/project_item.hpp>
 #include <platemaker/models/workspace.hpp>
+#include <platemaker/models/output_presets.hpp>
 #include <platemaker/version.hpp>
 #include <platemaker/ident.hpp> // PLATEMAKER_IDENT_STRING (build-tree-only version marker)
 
@@ -1466,13 +1467,13 @@ static int cmdProcess(const Opts& opts)
     const bool procSigMismatch = project.processingSignature != curProcSig;
 
     const bool configChanged =
-        hasOutputs && (sigMismatch || formatMismatch || canvasChange.any() || inputOrderChanged
+        hasOutputs && (sigMismatch || formatMismatch || canvasChange.anyChanged() || inputOrderChanged
                        || procSigMismatch);
 
     if (!jsonMode && procSigMismatch)
         std::cerr << "Colour correction / overlays changed since the last render — re-rendering.\n";
 
-    if (!jsonMode && canvasChange.any()) {
+    if (!jsonMode && canvasChange.anyChanged()) {
         if (canvasChange.listChanged)
             std::cerr << "Canvas profiles changed since the last render "
                          "(added / removed / reordered) — re-rendering.\n";

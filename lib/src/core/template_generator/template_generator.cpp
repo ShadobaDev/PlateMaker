@@ -208,7 +208,7 @@ void TemplateGenerator::generate(
 // signature — canvas-only template identity
 // ---------------------------------------------------------------------------
 
-std::string TemplateGenerator::signature(const Models::CanvasProfile& cp)
+std::string TemplateGenerator::canvasSignature(const Models::CanvasProfile& cp)
 {
     // Deterministic, human-inspectable concatenation of the fields that define
     // the rendered template. Field tags guard against ambiguous concatenations.

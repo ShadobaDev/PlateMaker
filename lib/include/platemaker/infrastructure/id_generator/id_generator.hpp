@@ -30,6 +30,7 @@
 
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/output_profile.hpp>
+#include <platemaker/models/output_presets.hpp>
 
 namespace Platemaker::Infrastructure {
 

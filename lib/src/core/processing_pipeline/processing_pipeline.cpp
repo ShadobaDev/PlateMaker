@@ -244,7 +244,7 @@ void ProcessingPipeline::decodePageToRgba(
     // definition in libvips) and passes any alpha through untouched; vips_addalpha then makes a
     // 1- or 3-band page opaque-4-band. Both are no-ops for a page that already is 8-bit sRGB RGBA.
     VipsImage* srgb = nullptr;
-    if (vips_colourspace(scaled.buffer.get(), &srgb, VIPS_INTERPRETATION_sRGB, nullptr) != 0) {
+    if (vips_colourspace(scaled.buffer.vipsImage(), &srgb, VIPS_INTERPRETATION_sRGB, nullptr) != 0) {
         const std::string err = vips_error_buffer();
         vips_error_clear();
         throw std::runtime_error("ProcessingPipeline::decodePageToRgba — to sRGB: " + err);

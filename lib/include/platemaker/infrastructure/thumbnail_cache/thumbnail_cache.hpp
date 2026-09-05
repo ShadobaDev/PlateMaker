@@ -87,7 +87,7 @@ public:
      * \return Absolute path to the written thumbnail PNG.
      * \throws std::runtime_error if generation or the atomic write fails.
      */
-    std::string generate(const std::string& sourceFilePath, const Core::PixelBuffer& image);
+    std::string generateFromImage(const std::string& sourceFilePath, const Core::PixelBuffer& image);
 
     /**
      * \brief Returns the expected thumbnail path without generating it.
@@ -119,7 +119,7 @@ private:
      *
      * \throws std::runtime_error if generation fails.
      */
-    std::string generate(const std::string& sourceFilePath);
+    std::string generateByDecoding(const std::string& sourceFilePath);
 };
 
 } // namespace Platemaker::Infrastructure

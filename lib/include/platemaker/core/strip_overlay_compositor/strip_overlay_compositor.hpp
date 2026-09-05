@@ -43,7 +43,7 @@ namespace Platemaker::Core {
 /**
  * \brief One decoded overlay ready to composite: its RGBA bitmap plus its strip-coordinate placement.
  *
- * Produced by \c StripOverlayCompositor::load().  The bitmap is decoded once and reused (by reference)
+ * Produced by \c StripOverlayCompositor::decodeBitmaps().  The bitmap is decoded once and reused (by reference)
  * across every slice it intersects, so a tall overlay is not re-read per slice.
  */
 struct PLATEMAKER_EXPORT LoadedOverlay {
@@ -73,7 +73,7 @@ public:
      * \param overlays The overlay definitions, already resolved to absolute strip coordinates.
      * \return The successfully decoded overlays with their placement; empty when none are usable.
      */
-    [[nodiscard]] std::vector<LoadedOverlay> load(const std::vector<Models::StripOverlay>& overlays) const;
+    [[nodiscard]] std::vector<LoadedOverlay> decodeBitmaps(const std::vector<Models::StripOverlay>& overlays) const;
 
     /**
      * \brief Composites every loaded overlay intersecting this slice onto \p slice.
@@ -90,7 +90,7 @@ public:
      * \return The slice with intersecting overlays composited (RGBA when any was applied).
      * \throws std::runtime_error if \p slice is invalid or a libvips operation fails.
      */
-    [[nodiscard]] PixelBuffer apply(
+    [[nodiscard]] PixelBuffer composite(
         PixelBuffer slice, int stripTopY, const std::vector<LoadedOverlay>& overlays) const;
 };
 

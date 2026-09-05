@@ -103,7 +103,7 @@ public:
      *
      * \return A non-owning pointer to the VipsImage, or \c nullptr if empty.
      */
-    [[nodiscard]] VipsImage* get() const noexcept;
+    [[nodiscard]] VipsImage* vipsImage() const noexcept;
 
     /**
      * \brief Returns \c true if this PixelBuffer holds a valid image.

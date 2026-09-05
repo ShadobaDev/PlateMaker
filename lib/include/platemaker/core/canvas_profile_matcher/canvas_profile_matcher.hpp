@@ -28,7 +28,7 @@
 namespace Platemaker::Core {
 
 /**
- * \brief Result of a single \c CanvasProfileMatcher::resolve() call.
+ * \brief Result of a single \c CanvasProfileMatcher::resolveForSize() call.
  */
 struct ProfileMatchResult {
     enum class Status {
@@ -90,7 +90,7 @@ public:
      * \param h  Image height in pixels.
      * \return   \c ProfileMatchResult describing the outcome.
      */
-    [[nodiscard]] ProfileMatchResult resolve(int w, int h) const;
+    [[nodiscard]] ProfileMatchResult resolveForSize(int width, int height) const;
 
 private:
     std::vector<const Models::CanvasProfile*> m_projectProfiles;       ///< subA

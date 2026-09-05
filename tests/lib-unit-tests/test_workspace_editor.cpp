@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <string>
+#include <platemaker/models/output_presets.hpp>
 
 namespace Platemaker {
 

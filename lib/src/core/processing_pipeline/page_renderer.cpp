@@ -83,7 +83,7 @@ PagePlan PageRenderer::planFromHeader(const std::string& filePath) const
     if (plan.geo.width <= 0 || plan.geo.height <= 0)
         throw std::runtime_error("cannot determine image dimensions");
 
-    const ProfileMatchResult result = m_matcher.resolve(plan.geo.width, plan.geo.height);
+    const ProfileMatchResult result = m_matcher.resolveForSize(plan.geo.width, plan.geo.height);
     if (result.status == ProfileMatchResult::Status::Matched) {
         plan.profile = result.profile;
     } else if (result.status == ProfileMatchResult::Status::FoundInWorkspaceOnly) {
@@ -124,9 +124,9 @@ ScaledImage PageRenderer::scaledPage(const PagePlan&                 plan,
     if (doMarginCrop) {
         // The margin path has always normalised to sRGB on load (a no-op for a file with no embedded
         // profile, which is the common case) — keep it, graded or not.
-        auto buf = imageIO.load(filePath, /*convertToSRGB=*/true);
+        auto buf = imageIO.decode(filePath, /*convertToSRGB=*/true);
         if (grade)
-            buf = colourCorrector.apply(std::move(buf), *grade);
+            buf = colourCorrector.applyToBuffer(std::move(buf), *grade);
         auto cropped = cropper.crop(buf, plan.profile->margins);
         return scaler.scale(std::move(cropped), filePath, m_targetWidth);
     }
@@ -134,8 +134,8 @@ ScaledImage PageRenderer::scaledPage(const PagePlan&                 plan,
         // Load explicitly so the grade can sit between load and scale. `false` because the un-graded
         // version of this path goes straight through Scaler, which does not transform — same pixels in,
         // whether or not a grade follows.
-        auto buf = imageIO.load(filePath, /*convertToSRGB=*/false);
-        buf = colourCorrector.apply(std::move(buf), *grade);
+        auto buf = imageIO.decode(filePath, /*convertToSRGB=*/false);
+        buf = colourCorrector.applyToBuffer(std::move(buf), *grade);
         return scaler.scale(std::move(buf), filePath, m_targetWidth);
     }
     return scaler.scale(filePath, m_targetWidth);

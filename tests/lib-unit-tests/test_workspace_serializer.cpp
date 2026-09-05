@@ -281,7 +281,7 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     proj.colourCorrection.contrast          = 1.2;
     proj.colourCorrection.saturation        = 0.8;
     proj.colourCorrection.curves.master     = {{0.0, 0.0}, {0.5, 0.8}, {1.0, 1.0}};
-    proj.colourCorrection.curves.r          = {{0.0, 0.0}, {1.0, 0.5}};
+    proj.colourCorrection.curves.red          = {{0.0, 0.0}, {1.0, 0.5}};
     proj.colourCorrection.excludedInputUids = {"file-001", "file-009"};
     Models::StripOverlay ovl;
     ovl.uid            = "ovl-1";
@@ -309,9 +309,9 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     ASSERT_EQ(p.colourCorrection.curves.master.size(), 3u);
     EXPECT_DOUBLE_EQ(p.colourCorrection.curves.master[1].x, 0.5);
     EXPECT_DOUBLE_EQ(p.colourCorrection.curves.master[1].y, 0.8);
-    ASSERT_EQ(p.colourCorrection.curves.r.size(), 2u);
-    EXPECT_DOUBLE_EQ(p.colourCorrection.curves.r[1].y, 0.5);
-    EXPECT_TRUE(p.colourCorrection.curves.g.empty());
+    ASSERT_EQ(p.colourCorrection.curves.red.size(), 2u);
+    EXPECT_DOUBLE_EQ(p.colourCorrection.curves.red[1].y, 0.5);
+    EXPECT_TRUE(p.colourCorrection.curves.green.empty());
     EXPECT_EQ(p.colourCorrection.excludedInputUids,
               (std::vector<std::string>{"file-001", "file-009"}));
     ASSERT_EQ(p.getStripOverlays().size(), 1u);

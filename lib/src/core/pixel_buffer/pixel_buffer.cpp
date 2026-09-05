@@ -63,7 +63,7 @@ PixelBuffer& PixelBuffer::operator=(PixelBuffer&& other) noexcept
 // Accessors
 // ---------------------------------------------------------------------------
 
-VipsImage* PixelBuffer::get() const noexcept { return m_image; }
+VipsImage* PixelBuffer::vipsImage() const noexcept { return m_image; }
 
 bool PixelBuffer::isValid() const noexcept { return m_image != nullptr; }
 

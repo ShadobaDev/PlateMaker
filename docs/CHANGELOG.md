@@ -31,6 +31,36 @@ released), which re-derives onto this baseline per the cascade rule.
 - **`ProjectItem::stripOverlays` is now a lib-owned inventory, not a public field.** It is private,
   read through `getStripOverlays()` (const + mutable, like `getInputImages()`); mutation goes through
   `addOverlay()` / `removeOverlay()`.
+- **Headers hold one significant type each.** Five headers were describing more than one thing, and
+  the largest made you scroll past 200 lines of data types to reach the class they belonged to.
+  `project_item.hpp` (755 lines) sheds its seven structs into `project_files.hpp` (the tracked
+  inputs/outputs), `processing_results.hpp` (what a render reports back) and `project_reports.hpp`
+  (what the staleness and re-scan queries answer with); `processing_steps.hpp` splits into
+  `colour_correction.hpp` and `strip_overlay.hpp`, keeping only the framework that enumerates both —
+  the two features shared nothing but the word "step"; `output_profile.hpp` sheds its ~160-line preset
+  catalogue into `output_presets.hpp`; `OutputLockedError` and `WorkspaceRepairReport` get their own
+  headers, the latter because `WorkspaceEditor` returns it too and living in the serializer's header
+  made that look like borrowing. Each original still includes its offspring, so existing includes keep
+  working — **except** code naming a preset symbol, which now needs
+  `#include <platemaker/models/output_presets.hpp>`.
+- **Names that did not say what they do.** The library had four `load()`s, three `save()`s, two
+  unrelated `apply()`s and a public/private `generate()` overload pair, so a call site's verb told you
+  nothing without chasing the receiver's type. Renamed: `ImageIO::load` / `save` →
+  `decode` / `encode` (a pixel codec, now distinct from the JSON serializers, which keep `load`/`save`
+  and are thereby unambiguous); `ColourCorrector::apply` → `applyToBuffer` (pairs with the existing
+  `applyToRgba`); `StripOverlayCompositor::load` / `apply` → `decodeBitmaps` / `composite`;
+  `CanvasProfileMatcher::resolve(w, h)` → `resolveForSize(width, height)`;
+  `TemplateGenerator::signature` → `canvasSignature`; `ThumbnailCache::generate` →
+  `generateFromImage` / `generateByDecoding` — the overload pair had the same name for opposite
+  sources; `PixelBuffer::get` → `vipsImage`; `CanvasConfigChange::any` → `anyChanged` and
+  `WorkspaceRepairReport::any` → `anyRepairs` ("any *what*"). Members: `LoadedOverlay::w` / `h` →
+  `width` / `height` (the rest of the library spells them out), `ColourCurves::r` / `g` / `b` →
+  `red` / `green` / `blue` (beside a `master` that was already spelled out, and easy to read as
+  `RGBA`'s components), `SourceSegment::srcY` → `sourceY`, and `ProjectItem`'s snake_case
+  `m_input_images` / `m_output_images` / `m_output_directory`, which sat beside camelCase siblings in
+  the same class.
+  **The on-disk format is untouched:** the JSON keys stay `"r"`, `"g"`, `"b"` and `"srcY"`, since
+  renaming those would make every existing workspace lose its curves and provenance records.
 
 ### Added
 

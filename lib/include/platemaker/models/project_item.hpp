@@ -52,6 +52,9 @@
 #include "platemaker/models/canvas_profile.hpp"
 #include "platemaker/models/processing_error.hpp"
 #include "platemaker/models/processing_steps.hpp"
+#include "platemaker/models/project_files.hpp"
+#include "platemaker/models/processing_results.hpp"
+#include "platemaker/models/project_reports.hpp"
 
 // Forward declarations only (no include, so Models stays independent of Infrastructure). The
 // project's profile-link fields are private; WorkspaceEditor is the sole runtime mutation authority
@@ -60,191 +63,6 @@ namespace Platemaker::Infrastructure { class WorkspaceEditor; class WorkspaceSer
 
 namespace Platemaker::Models {
 
-// ---------------------------------------------------------------------------
-// Enumerations
-// ---------------------------------------------------------------------------
-
-/**
- * \enum FileStatus
- * \brief Lifecycle status of a file tracked by a \c ProjectItem.
- */
-enum class FileStatus {
-    Pending,        //!< New file, not yet processed.
-    Processed,      //!< File processed and its hash matches the stored hash.
-    Modified,       //!< File exists on disk but its content has changed since last processing.
-    Missing,        //!< File was registered but cannot be found on disk.
-    Desynchronized, //!< Output is out-of-sync with the current input set.
-    Done,           //!< Output slice is up-to-date with the current input set and workspace config.
-    Skipped,        //!< Input the last render could not include: the file is missing or failed to
-                    //!< load. A size mismatch is NOT a skip — an unmatched page is rendered without
-                    //!< margins and ends up Processed with an empty canvasProfileId. Sticky across
-                    //!< sanitize() while the file is unchanged. Distinct from Missing, which is a
-                    //!< pre-render disk check, and from Pending, which was never rendered.
-    Error           //!< Input was rendered, but its content hash could not be computed afterwards
-                    //!< (locked file / denied permission / offline drive). The output exists; the
-                    //!< verification baseline does not. Sticky across sanitize() like Skipped and it
-                    //!< does NOT force a re-render — otherwise the project would silently reprocess
-                    //!< everything on every run forever. Recovers to Processed once the file hashes.
-};
-
-// ---------------------------------------------------------------------------
-// Project data types
-// ---------------------------------------------------------------------------
-
-/**
- * \brief Describes the contribution of one source file to a single output slice.
- *
- * One \c SourceSegment is stored per source image that contributed pixels to a
- * \c SliceResult or \c OutputFile.  This provenance information drives
- * incremental processing.
- */
-struct SourceSegment {
-    std::string sourceFilePath; //!< Absolute path of the scaled source image.
-    int         srcY   = 0;     //!< Y offset within the scaled source where this segment starts.
-    int         height = 0;     //!< Number of pixels taken from this source for this slice.
-};
-
-/**
- * \brief An input image file tracked by a \c ProjectItem.
- */
-struct InputFile {
-    std::string uid;                     //!< Local unique id for this entry (e.g. "file-<hex>"). Not an RFC 4122 UUID.
-    std::string filePath;                //!< Absolute path on disk.
-    std::string sha256;                  //!< SHA-256 hex digest from the last processing run.
-    int         order        = 0;        //!< 0-based position in the virtual strip.
-    std::string thumbnailPath;           //!< Path inside `.platemaker-cache/` (not persisted by convention).
-    FileStatus  status       = FileStatus::Pending; //!< Current lifecycle status.
-    std::string lastProcessed;           //!< ISO 8601 timestamp of the last processing run.
-    std::vector<std::string> contributesTo; //!< Output file names produced from this input.
-
-    /**
-     * \brief Id of the canvas profile applied to this page at the last render.
-     *
-     * Empty means no profile matched (the page was skipped) or the project has no
-     * canvas profiles at all.  Not needed for staleness detection — \c canvasFingerprint
-     * already catches a profile swap — but kept so the UI can say *which* profile was
-     * used instead of showing an opaque fingerprint.
-     */
-    std::string canvasProfileId;
-
-    /**
-     * \brief \c canvasRenderFingerprint() of the profile applied at the last render.
-     *
-     * The record of what was actually applied to *this* page, exactly like \c sha256
-     * records its content.  Compared against the current profile on the next run: a
-     * mismatch means this page's output is stale even though its file never changed.
-     * Empty when no profile was applied.
-     */
-    std::string canvasFingerprint;
-
-    /**
-     * \brief Display dimensions of this page at the last render, in pixels (0 = unknown).
-     *
-     * Recorded in the same coordinate space canvas matching uses — post-autorot display W×H,
-     * exactly the values the pipeline fed to \c CanvasProfileMatcher::resolve().  Canvas profiles
-     * match purely by W×H, so storing them is what lets \c detectCanvasConfigChange() answer
-     * *offline* "which profile would this page match now?" instead of blanket-invalidating the whole
-     * project whenever the effective profile list changes.  Both zero means the page has not been
-     * rendered since dimensions were tracked (legacy record) — the caller may backfill from the file
-     * header, and staleness detection falls back to the coarse list comparison until it does.
-     */
-    int width  = 0;
-    int height = 0;
-};
-
-/**
- * \brief An output slice file produced by a \c ProjectItem processing run.
- */
-struct OutputFile {
-    std::string uid;      //!< Local unique id for this entry (e.g. "out-3"). Not an RFC 4122 UUID.
-    std::string fileName; //!< Filename only (e.g. "output_001.png").
-    std::string sha256;   //!< SHA-256 hex digest of the generated file.
-    std::vector<SourceSegment> sourceMap; //!< Input contributions for this slice.
-    FileStatus  status = FileStatus::Done; //!< Current lifecycle status.
-};
-
-// ---------------------------------------------------------------------------
-// ProcessingSliceRecord
-// ---------------------------------------------------------------------------
-
-/**
- * \brief A processed slice descriptor passed to \c ProjectItem::applyProcessingResults().
- *
- * This is the Models-layer representation of one output slice — it carries
- * the same provenance data as \c Core::SliceResult but contains no pixel
- * buffer, keeping \c ProjectItem free from any Core or image-processing
- * dependency.
- *
- * The calling layer (CLI / GUI) is responsible for constructing these records
- * from \c Core::SliceResult objects after saving the pixel data to disk.
- */
-struct ProcessingSliceRecord {
-    std::string                fileName;     //!< Output filename, e.g. "output_001.png".
-    std::string                outputSha256; //!< SHA-256 of the saved output file (may be empty).
-    std::vector<SourceSegment> sourceMap;    //!< Provenance: one entry per contributing source file.
-};
-
-// ---------------------------------------------------------------------------
-// AppliedCanvasProfile
-// ---------------------------------------------------------------------------
-
-/**
- * \brief Which canvas profile a processing run actually applied to one input.
- *
- * Editing a profile leaves both the input file and the output file byte-identical, so
- * no hash can notice that a page went stale.  This is the trace that makes it
- * detectable: the pipeline reports what it applied, \c applyProcessingResults() stores
- * it on the \c InputFile, and \c detectCanvasConfigChange() compares it next time.
- *
- * Lives in Models — like \c ProcessingSliceRecord — so \c ProjectItem can consume it
- * without depending on Core.
- */
-struct AppliedCanvasProfile {
-    std::string sourceFilePath; //!< Input this refers to.
-    std::string profileId;      //!< Profile that matched ("" = none matched / project has no profiles).
-    std::string fingerprint;    //!< canvasRenderFingerprint() of it ("" when profileId is empty).
-    int         width  = 0;     //!< Display width the run resolved against (0 = not recorded).
-    int         height = 0;     //!< Display height the run resolved against (0 = not recorded).
-};
-
-// ---------------------------------------------------------------------------
-// ScanMergeResult
-// ---------------------------------------------------------------------------
-
-/**
- * \brief Canvas-profile staleness detected by \c ProjectItem::detectCanvasConfigChange().
- *
- * A page's output depends on the canvas profile applied to it (margins are cropped
- * away before scaling), but editing a profile touches neither the input files nor the
- * output files — so hashes alone can never notice it.  This is what notices.
- */
-struct CanvasConfigChange {
-    /// The effective profile list itself changed (added / removed / reordered).
-    /// Coarse by nature: it can flip which profile a page matches, or make a
-    /// previously-skipped page match, so it degrades to a full re-render.
-    bool listChanged = false;
-
-    /// Paths of inputs whose applied profile changed content (e.g. margins edited).
-    /// Precise: only these pages — and whatever the layout shift below them touches —
-    /// actually need redrawing.
-    std::vector<std::string> changedInputs;
-
-    /// True when anything at all is stale.
-    [[nodiscard]] bool any() const noexcept { return listChanged || !changedInputs.empty(); }
-};
-
-/**
- * \brief Result returned by \c ProjectItem::mergeFileScan().
- *
- * Summarises the changes detected when a new directory scan is merged into
- * the existing input file list.
- */
-struct ScanMergeResult {
-    std::vector<std::string> added;              //!< Absolute paths of newly added files.
-    std::vector<std::string> renamed;            //!< Absolute paths of renamed files (same content).
-    std::vector<std::string> removed;            //!< Absolute paths of files no longer present.
-    bool outputsInvalidated = false;             //!< True when outputs require a full reprocess.
-};
 
 // ---------------------------------------------------------------------------
 // ProjectItem class
@@ -380,7 +198,7 @@ public:
      * \brief Returns a copy of the input files sorted ascending by \c InputFile::order.
      *
      * The strip is built in \c order sequence, which is *not* necessarily the stored vector
-     * order — a reorder changes only the \c order field, never the physical \c m_input_images
+     * order — a reorder changes only the \c order field, never the physical \c m_inputImages
      * layout (that is what keeps a reorder from churning the project structure).  Render callers
      * pass it as \c RenderRequest::inputs so the pipeline stays a pure "render the sequence I
      * am handed" component with no knowledge of \c order.
@@ -557,7 +375,7 @@ public:
      * - \c Processed — file exists and its SHA-256 matches.
      * - \c Pending   — file exists but has never been hashed (empty sha256).
      *
-     * For each \c OutputFile (relative to \c m_output_directory):
+     * For each \c OutputFile (relative to \c m_outputDirectory):
      * - \c Missing   — slice file no longer exists on disk.
      * - \c Modified  — slice exists but its SHA-256 differs from the stored hash.
      * - \c Done      — slice exists and (if hashed) matches.
@@ -580,7 +398,7 @@ public:
 
     /**
      * \brief Rebuilds the non-serialised runtime lookup tables from the
-     *        current \c m_input_images and \c m_output_images data.
+     *        current \c m_inputImages and \c m_outputImages data.
      *
      * Must be called:
      *  - After every deserialisation (e.g. in \c WorkspaceSerializer::load()).
@@ -667,7 +485,7 @@ public:
     /**
      * \brief Merges a new directory scan into the current input file list.
      *
-     * Replaces \c m_input_images with a new ordered list derived from
+     * Replaces \c m_inputImages with a new ordered list derived from
      * \p newFilePaths while maximally preserving existing incremental-
      * processing data:
      *
@@ -723,10 +541,10 @@ private:
     /// \c inputOrderAtRender and compared by \c detectInputCompositionChange().
     [[nodiscard]] std::vector<std::string> orderedInputUids() const;
 
-    std::vector<InputFile>    m_input_images;     //!< Ordered input image list.
-    std::vector<OutputFile>   m_output_images;    //!< Output slice list from last run.
+    std::vector<InputFile>    m_inputImages;     //!< Ordered input image list.
+    std::vector<OutputFile>   m_outputImages;    //!< Output slice list from last run.
     std::vector<StripOverlay> m_stripOverlays;    //!< Overlay inventory (see getStripOverlays() / addOverlay()).
-    std::string               m_output_directory; //!< Absolute path for output slices.
+    std::string               m_outputDirectory; //!< Absolute path for output slices.
 
     bool m_isUpToDate = false; //!< Updated by sanitize() / applyProcessingResults().
 

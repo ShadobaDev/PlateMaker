@@ -48,12 +48,12 @@ CanvasProfileMatcher::CanvasProfileMatcher(
     }
 }
 
-ProfileMatchResult CanvasProfileMatcher::resolve(int w, int h) const
+ProfileMatchResult CanvasProfileMatcher::resolveForSize(int width, int height) const
 {
     // Step 1: search project-linked profiles (subA).
     // Conflict guard guarantees at most one match here, so the first hit is final.
     for (const auto* cp : m_projectProfiles) {
-        if (Models::canvasSizeMatches(*cp, w, h))
+        if (Models::canvasSizeMatches(*cp, width, height))
             return {ProfileMatchResult::Status::Matched, cp, {}};
     }
 
@@ -61,7 +61,7 @@ ProfileMatchResult CanvasProfileMatcher::resolve(int w, int h) const
     // Collect all matches so the caller can present them to the user.
     std::vector<const Models::CanvasProfile*> candidates;
     for (const auto* cp : m_workspaceOnlyProfiles) {
-        if (Models::canvasSizeMatches(*cp, w, h))
+        if (Models::canvasSizeMatches(*cp, width, height))
             candidates.push_back(cp);
     }
 

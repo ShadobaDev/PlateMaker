@@ -80,7 +80,7 @@ std::uint8_t toByte(double v01)
 
 } // namespace
 
-PixelBuffer ColourCorrector::apply(PixelBuffer buffer, const Models::ColourCorrection& cc) const
+PixelBuffer ColourCorrector::applyToBuffer(PixelBuffer buffer, const Models::ColourCorrection& cc) const
 {
     // A neutral grade touches no pixels — enabling the step with default scalars and no curves is a
     // true no-op. (ICC → sRGB is handled at load, not here; see the class doc.)
@@ -92,7 +92,7 @@ PixelBuffer ColourCorrector::apply(PixelBuffer buffer, const Models::ColourCorre
     if (!buffer.isValid())
         throw std::runtime_error("ColourCorrector::apply — source buffer is invalid (null VipsImage)");
 
-    VipsImage* const     in          = buffer.get(); // owned by `buffer`; never unref'd here
+    VipsImage* const     in          = buffer.vipsImage(); // owned by `buffer`; never unref'd here
     const int            bands       = in->Bands;
     const bool           hasAlpha    = vips_image_hasalpha(in) != 0;
     const int            colourBands = hasAlpha ? bands - 1 : bands;
@@ -115,7 +115,7 @@ PixelBuffer ColourCorrector::apply(PixelBuffer buffer, const Models::ColourCorre
     // Tone curves (8-bit, 3-band colour only): map each channel through channelCurve(masterCurve(v)) via
     // a 256-entry LUT. Applied first, on the raw uchar values, before the float scalar maths below.
     if (Models::hasAnyCurve(cc.curves) && fmt == VIPS_FORMAT_UCHAR && colourBands == 3) {
-        auto mCurve = cc.curves.master, rCurve = cc.curves.r, gCurve = cc.curves.g, bCurve = cc.curves.b;
+        auto mCurve = cc.curves.master, rCurve = cc.curves.red, gCurve = cc.curves.green, bCurve = cc.curves.blue;
         const auto byX = [](const Models::CurvePoint& a, const Models::CurvePoint& b) { return a.x < b.x; };
         std::sort(mCurve.begin(), mCurve.end(), byX);
         std::sort(rCurve.begin(), rCurve.end(), byX);
@@ -241,8 +241,8 @@ void ColourCorrector::applyToRgba(unsigned char* rgba, int width, int height,
     g_object_unref(mem);
 
     // Grade through the shared engine (takes ownership of srgb), then read the result back into rgba.
-    PixelBuffer graded = apply(PixelBuffer{srgb}, cc);
-    VipsImage*  out    = graded.get();
+    PixelBuffer graded = applyToBuffer(PixelBuffer{srgb}, cc);
+    VipsImage*  out    = graded.vipsImage();
     if (!out || out->Xsize != width || out->Ysize != height
         || out->Bands != 4 || out->BandFmt != VIPS_FORMAT_UCHAR)
         throw std::runtime_error("ColourCorrector::applyToRgba — unexpected graded image layout");

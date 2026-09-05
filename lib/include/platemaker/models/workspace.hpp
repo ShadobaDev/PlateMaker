@@ -24,6 +24,7 @@
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/project_item.hpp>
+#include <platemaker/models/output_presets.hpp>
 
 // Forward declaration only — no include, so the model layer keeps its independence from
 // Infrastructure (see id_generator.hpp for why that boundary is deliberate). WorkspaceEditor

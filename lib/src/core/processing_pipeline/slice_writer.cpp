@@ -72,7 +72,7 @@ std::vector<LoadedOverlay> loadOverlaysForStrip(
                 "Skipping overlay " + uid + ": the page it is anchored to is not in this render.");
 
     StripOverlayCompositor compositor;
-    return compositor.load(placed);
+    return compositor.decodeBitmaps(placed);
 }
 
 } // namespace
@@ -169,7 +169,7 @@ bool SliceWriter::compositeOverlays(SliceResult& slice, const std::string& outNa
 
     try {
         StripOverlayCompositor compositor;
-        slice.image = compositor.apply(std::move(slice.image), slice.stripTopY, m_overlays);
+        slice.image = compositor.composite(std::move(slice.image), slice.stripTopY, m_overlays);
     } catch (const std::exception& e) {
         outcome.failed = true;
         outcome.error  = ProcessingError{
@@ -186,7 +186,7 @@ bool SliceWriter::saveSlice(const SliceResult& slice, const std::string& outName
 {
     try {
         ImageIO imageIO;
-        imageIO.save(slice.image, outPath, m_request.outputProfile);
+        imageIO.encode(slice.image, outPath, m_request.outputProfile);
     } catch (const OutputLockedError& e) {
         outcome.failed = true;
         outcome.error  = ProcessingError{
@@ -215,7 +215,7 @@ void SliceWriter::warmThumbnail(const SliceResult& slice, const std::string& out
         return;
 
     try {
-        m_thumbnails->generate(outPath, slice.image);
+        m_thumbnails->generateFromImage(outPath, slice.image);
     } catch (const std::exception& e) {
         emitLog(m_callbacks.onLog, ProcessingLogLevel::Warning,
                 "Thumbnail preview for '" + outName + "' skipped: " + e.what());

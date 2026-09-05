@@ -38,7 +38,7 @@ TEST(PixelBufferTest, DefaultConstructorCreatesInvalidBuffer)
 {
     PixelBuffer buf;
     EXPECT_FALSE(buf.isValid());
-    EXPECT_EQ(buf.get(),    nullptr);
+    EXPECT_EQ(buf.vipsImage(),    nullptr);
     EXPECT_EQ(buf.width(),  0);
     EXPECT_EQ(buf.height(), 0);
 }
@@ -55,15 +55,15 @@ TEST(PixelBufferTest, MoveConstructorTransfersOwnership)
     ASSERT_EQ(vips_black(&img, 4, 2, nullptr), 0) << vips_error_buffer();
     PixelBuffer src{img};                       // takes ownership
     ASSERT_TRUE(src.isValid());
-    VipsImage* const raw = src.get();
+    VipsImage* const raw = src.vipsImage();
 
     PixelBuffer moved{std::move(src)};
     EXPECT_TRUE(moved.isValid());
-    EXPECT_EQ(moved.get(), raw) << "move must transfer the same VipsImage, not copy it";
+    EXPECT_EQ(moved.vipsImage(), raw) << "move must transfer the same VipsImage, not copy it";
     EXPECT_EQ(moved.width(),  4);
     EXPECT_EQ(moved.height(), 2);
     EXPECT_FALSE(src.isValid()) << "moved-from buffer must be left empty";  // NOLINT(bugprone-use-after-move)
-    EXPECT_EQ(src.get(), nullptr);
+    EXPECT_EQ(src.vipsImage(), nullptr);
 }
 
 TEST(PixelBufferTest, MoveAssignmentTransfersOwnership)
@@ -71,18 +71,18 @@ TEST(PixelBufferTest, MoveAssignmentTransfersOwnership)
     VipsImage* img = nullptr;
     ASSERT_EQ(vips_black(&img, 6, 3, nullptr), 0) << vips_error_buffer();
     PixelBuffer src{img};
-    VipsImage* const raw = src.get();
+    VipsImage* const raw = src.vipsImage();
 
     PixelBuffer dst;                            // starts empty
     ASSERT_FALSE(dst.isValid());
     dst = std::move(src);
 
     EXPECT_TRUE(dst.isValid());
-    EXPECT_EQ(dst.get(), raw) << "move-assignment must transfer the same VipsImage";
+    EXPECT_EQ(dst.vipsImage(), raw) << "move-assignment must transfer the same VipsImage";
     EXPECT_EQ(dst.width(),  6);
     EXPECT_EQ(dst.height(), 3);
     EXPECT_FALSE(src.isValid()) << "moved-from buffer must be left empty";  // NOLINT(bugprone-use-after-move)
-    EXPECT_EQ(src.get(), nullptr);
+    EXPECT_EQ(src.vipsImage(), nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ TEST(ScalerTest, AutorotatesOrientation6ToPortrait)
     EXPECT_GT(scaled.buffer.height(), scaled.buffer.width())
         << "Orientation 6 must render portrait; got "
         << scaled.buffer.width() << "x" << scaled.buffer.height();
-    EXPECT_EQ(vips_image_get_typeof(scaled.buffer.get(), VIPS_META_ORIENTATION), 0)
+    EXPECT_EQ(vips_image_get_typeof(scaled.buffer.vipsImage(), VIPS_META_ORIENTATION), 0)
         << "autorot should strip the orientation tag";
 
     fs::remove_all(dir);

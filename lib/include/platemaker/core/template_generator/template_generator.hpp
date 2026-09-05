@@ -83,7 +83,7 @@ public:
      * \param canvasProfile The profile whose template identity is hashed.
      * \return A stable, comparable signature string.
      */
-    [[nodiscard]] static std::string signature(
+    [[nodiscard]] static std::string canvasSignature(
         const Models::CanvasProfile& canvasProfile);
 };
 

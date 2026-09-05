@@ -51,7 +51,7 @@ TEST(CanvasProfileMatcherTest, EmptyProjectIdsFirstProfileMatches)
 
     CanvasProfileMatcher matcher(profiles); // no projectProfileIds
 
-    const auto r = matcher.resolve(1600, 10240);
+    const auto r = matcher.resolveForSize(1600, 10240);
     EXPECT_EQ(r.status, ProfileMatchResult::Status::Matched);
     ASSERT_NE(r.profile, nullptr);
     EXPECT_EQ(r.profile->id, "cp-1");
@@ -66,7 +66,7 @@ TEST(CanvasProfileMatcherTest, EmptyProjectIdsSecondProfileMatches)
 
     CanvasProfileMatcher matcher(profiles);
 
-    const auto r = matcher.resolve(1600, 5120);
+    const auto r = matcher.resolveForSize(1600, 5120);
     EXPECT_EQ(r.status, ProfileMatchResult::Status::Matched);
     ASSERT_NE(r.profile, nullptr);
     EXPECT_EQ(r.profile->id, "cp-2");
@@ -80,7 +80,7 @@ TEST(CanvasProfileMatcherTest, EmptyProjectIdsNoMatchReturnsNotFoundAnywhere)
 
     CanvasProfileMatcher matcher(profiles);
 
-    const auto r = matcher.resolve(800, 1280);
+    const auto r = matcher.resolveForSize(800, 1280);
     EXPECT_EQ(r.status, ProfileMatchResult::Status::NotFoundAnywhere);
     EXPECT_EQ(r.profile, nullptr);
     EXPECT_TRUE(r.workspaceCandidates.empty());
@@ -90,7 +90,7 @@ TEST(CanvasProfileMatcherTest, EmptyWorkspaceReturnsNotFoundAnywhere)
 {
     CanvasProfileMatcher matcher({});
 
-    const auto r = matcher.resolve(1600, 10240);
+    const auto r = matcher.resolveForSize(1600, 10240);
     EXPECT_EQ(r.status, ProfileMatchResult::Status::NotFoundAnywhere);
     EXPECT_EQ(r.profile, nullptr);
 }
@@ -108,7 +108,7 @@ TEST(CanvasProfileMatcherTest, MatchedFromProjectList)
 
     CanvasProfileMatcher matcher(profiles, {"cp-1"});
 
-    const auto r = matcher.resolve(1600, 10240);
+    const auto r = matcher.resolveForSize(1600, 10240);
     EXPECT_EQ(r.status, ProfileMatchResult::Status::Matched);
     ASSERT_NE(r.profile, nullptr);
     EXPECT_EQ(r.profile->id, "cp-1");
@@ -125,7 +125,7 @@ TEST(CanvasProfileMatcherTest, FoundInWorkspaceOnlyWhenNotLinkedToProject)
     // Project only links cp-1; cp-2 is in workspace but not in project list.
     CanvasProfileMatcher matcher(profiles, {"cp-1"});
 
-    const auto r = matcher.resolve(1600, 5120);
+    const auto r = matcher.resolveForSize(1600, 5120);
     EXPECT_EQ(r.status, ProfileMatchResult::Status::FoundInWorkspaceOnly);
     EXPECT_EQ(r.profile, nullptr);
     ASSERT_EQ(r.workspaceCandidates.size(), 1u);
@@ -140,7 +140,7 @@ TEST(CanvasProfileMatcherTest, NotFoundAnywhereWithProjectList)
 
     CanvasProfileMatcher matcher(profiles, {"cp-1"});
 
-    const auto r = matcher.resolve(800, 1280); // dimensions not in any profile
+    const auto r = matcher.resolveForSize(800, 1280); // dimensions not in any profile
     EXPECT_EQ(r.status, ProfileMatchResult::Status::NotFoundAnywhere);
     EXPECT_EQ(r.profile, nullptr);
     EXPECT_TRUE(r.workspaceCandidates.empty());
@@ -163,7 +163,7 @@ TEST(CanvasProfileMatcherTest, ProjectListPriorityOrderFirstEntryWins)
     // cp-b is listed first in projectProfileIds → it has higher priority.
     CanvasProfileMatcher matcher(profiles, {"cp-b", "cp-a"});
 
-    const auto r = matcher.resolve(1600, 10240);
+    const auto r = matcher.resolveForSize(1600, 10240);
     EXPECT_EQ(r.status, ProfileMatchResult::Status::Matched);
     ASSERT_NE(r.profile, nullptr);
     EXPECT_EQ(r.profile->id, "cp-b");
@@ -179,7 +179,7 @@ TEST(CanvasProfileMatcherTest, ProjectListPriorityOrderSecondEntryWinsWhenFirstM
     // Both are project-linked; cp-1 is first but doesn't match 5120 height.
     CanvasProfileMatcher matcher(profiles, {"cp-1", "cp-2"});
 
-    const auto r = matcher.resolve(1600, 5120);
+    const auto r = matcher.resolveForSize(1600, 5120);
     EXPECT_EQ(r.status, ProfileMatchResult::Status::Matched);
     ASSERT_NE(r.profile, nullptr);
     EXPECT_EQ(r.profile->id, "cp-2");
@@ -197,7 +197,7 @@ TEST(CanvasProfileMatcherTest, WidthMatchButHeightMismatchIsNotFound)
 
     CanvasProfileMatcher matcher(profiles);
 
-    const auto r = matcher.resolve(1600, 9999); // wrong height
+    const auto r = matcher.resolveForSize(1600, 9999); // wrong height
     EXPECT_EQ(r.status, ProfileMatchResult::Status::NotFoundAnywhere);
 }
 
@@ -209,7 +209,7 @@ TEST(CanvasProfileMatcherTest, HeightMatchButWidthMismatchIsNotFound)
 
     CanvasProfileMatcher matcher(profiles);
 
-    const auto r = matcher.resolve(800, 10240); // wrong width
+    const auto r = matcher.resolveForSize(800, 10240); // wrong width
     EXPECT_EQ(r.status, ProfileMatchResult::Status::NotFoundAnywhere);
 }
 
@@ -224,7 +224,7 @@ TEST(CanvasProfileMatcherTest, MultipleWorkspaceOnlyCandidatesAllReturned)
     // Project only links cp-1; cp-2 and cp-3 are workspace-only.
     CanvasProfileMatcher matcher(profiles, {"cp-1"});
 
-    const auto r = matcher.resolve(1600, 10240);
+    const auto r = matcher.resolveForSize(1600, 10240);
     EXPECT_EQ(r.status, ProfileMatchResult::Status::FoundInWorkspaceOnly);
     ASSERT_EQ(r.workspaceCandidates.size(), 2u);
 }
@@ -239,7 +239,7 @@ TEST(CanvasProfileMatcherTest, UnknownIdInProjectListIsIgnored)
     CanvasProfileMatcher matcher(profiles, {"cp-nonexistent"});
 
     // cp-1 is not linked to the project → FoundInWorkspaceOnly.
-    const auto r = matcher.resolve(1600, 10240);
+    const auto r = matcher.resolveForSize(1600, 10240);
     EXPECT_EQ(r.status, ProfileMatchResult::Status::FoundInWorkspaceOnly);
     ASSERT_EQ(r.workspaceCandidates.size(), 1u);
     EXPECT_EQ(r.workspaceCandidates[0]->id, "cp-1");

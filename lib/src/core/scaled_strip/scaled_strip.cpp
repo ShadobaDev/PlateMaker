@@ -155,7 +155,7 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
         const int localSrcY = overlapStart - entry.startY;
 
         VipsImage* part = nullptr;
-        if (vips_extract_area(entry.image.buffer.get(), &part,
+        if (vips_extract_area(entry.image.buffer.vipsImage(), &part,
                 0, localSrcY, m_width, overlapH, nullptr) != 0)
         {
             for (VipsImage* p : parts) g_object_unref(p);
@@ -168,7 +168,7 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
         // Record provenance for incremental processing.
         Models::SourceSegment seg;
         seg.sourceFilePath = entry.image.sourceFilePath;
-        seg.srcY           = localSrcY;
+        seg.sourceY           = localSrcY;
         seg.height         = overlapH;
         result.sourceMap.push_back(std::move(seg));
 
@@ -226,7 +226,7 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
                 + std::to_string(result.image.height())
                 + " parts=" + std::to_string(result.sourceMap.size());
         for (const auto& seg : result.sourceMap)
-            s += "; " + seg.sourceFilePath + " srcY=" + std::to_string(seg.srcY)
+            s += "; " + seg.sourceFilePath + " srcY=" + std::to_string(seg.sourceY)
                  + " h=" + std::to_string(seg.height);
         return s;
     }());
@@ -289,7 +289,7 @@ void ScaledStrip::normalizeBandCounts()
         int firstBands = -1;
         bool uniform   = true;
         for (const auto& entry : m_entries) {
-            if (VipsImage* cur = entry.image.buffer.get()) {
+            if (VipsImage* cur = entry.image.buffer.vipsImage()) {
                 const int b = vips_image_get_bands(cur);
                 if (firstBands < 0)        firstBands = b;
                 else if (b != firstBands)  { uniform = false; break; }
@@ -302,7 +302,7 @@ void ScaledStrip::normalizeBandCounts()
     // (luma is replicated across the three bands); already-RGB/RGBA pixels are left untouched. After
     // this every entry is 3-band (RGB) or 4-band (RGBA).
     for (auto& entry : m_entries) {
-        VipsImage* cur = entry.image.buffer.get();
+        VipsImage* cur = entry.image.buffer.vipsImage();
         if (!cur) continue;
         const VipsInterpretation interp = cur->Type;
         if (interp == VIPS_INTERPRETATION_sRGB || interp == VIPS_INTERPRETATION_RGB) continue;
@@ -320,11 +320,11 @@ void ScaledStrip::normalizeBandCounts()
     // channel. If no source carries alpha, maxBands stays 3 and nothing is touched.
     int maxBands = 0;
     for (const auto& entry : m_entries) {
-        if (VipsImage* cur = entry.image.buffer.get())
+        if (VipsImage* cur = entry.image.buffer.vipsImage())
             maxBands = std::max(maxBands, vips_image_get_bands(cur));
     }
     for (auto& entry : m_entries) {
-        VipsImage* cur = entry.image.buffer.get();
+        VipsImage* cur = entry.image.buffer.vipsImage();
         if (!cur || vips_image_get_bands(cur) >= maxBands) continue;
 
         VipsImage* withAlpha = nullptr;
@@ -414,7 +414,7 @@ void ScaledStrip::sliceAll(
                 // vips_embed places the image at (0,0) and fills the remainder with
                 // the VIPS_EXTEND_WHITE strategy (solid white).
                 VipsImage* padded = nullptr;
-                if (vips_embed(tailSlice.image.get(), &padded,
+                if (vips_embed(tailSlice.image.vipsImage(), &padded,
                         0, 0, m_width, sliceHeight,
                         "extend", VIPS_EXTEND_WHITE,
                         nullptr) != 0)

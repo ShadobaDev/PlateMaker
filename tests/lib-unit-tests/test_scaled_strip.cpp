@@ -337,7 +337,7 @@ TEST(ScaledStripTest, SliceAllNormalisesMixedRgbAndRgbaStrip)
     EXPECT_NO_THROW(
         strip.sliceAll(150, Models::LastSlicePolicy::KeepAsIs, cancel,
             [&](SliceResult&& s) {
-                EXPECT_EQ(vips_image_get_bands(s.image.get()), 4)
+                EXPECT_EQ(vips_image_get_bands(s.image.vipsImage()), 4)
                     << "mixed strip must be promoted to RGBA (slice " << s.index << ")";
                 ++seen;
                 return true;
@@ -356,7 +356,7 @@ TEST(ScaledStripTest, SliceAllLeavesUniformRgbStripThreeBand)
     int seen = 0;
     strip.sliceAll(150, Models::LastSlicePolicy::KeepAsIs, cancel,
         [&](SliceResult&& s) {
-            EXPECT_EQ(vips_image_get_bands(s.image.get()), 3)
+            EXPECT_EQ(vips_image_get_bands(s.image.vipsImage()), 3)
                 << "uniform RGB strip must remain 3-band";
             ++seen;
             return true;
@@ -383,7 +383,7 @@ TEST(ScaledStripTest, MixedBandStripStillReleasesSourcesTheCursorHasPassed)
     strip.sliceAll(100, Models::LastSlicePolicy::KeepAsIs, cancel,
         [&](SliceResult&& slice) {
             EXPECT_EQ(slice.index, seen);
-            EXPECT_EQ(vips_image_get_bands(slice.image.get()), 4)
+            EXPECT_EQ(vips_image_get_bands(slice.image.vipsImage()), 4)
                 << "mixed strip must be promoted to RGBA (slice " << seen << ")";
 
             switch (seen) {

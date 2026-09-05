@@ -158,7 +158,7 @@ std::string ThumbnailCache::getOrGenerate(const std::string& sourceFilePath)
     if (isCached(sourceFilePath) && thumbnailIsFresh(sourceFilePath, thumb)) {
         return thumb;
     }
-    return generate(sourceFilePath);
+    return generateByDecoding(sourceFilePath);
 }
 
 // ---------------------------------------------------------------------------
@@ -175,14 +175,14 @@ namespace {
 
 // Consume an already-shrunk thumbnail image (takes ownership) and write it to destPath **atomically**:
 // pngsave to a temp sibling, then rename over destPath. Atomicity keeps a concurrent reader from ever
-// seeing a partially-written thumbnail — the same guarantee ImageIO::save gives outputs.
+// seeing a partially-written thumbnail — the same guarantee ImageIO::encode gives outputs.
 void writeThumbnail(const std::string& destPath, VipsImage* shrunk)
 {
     namespace fs = std::filesystem;
     Core::PixelBuffer buf{shrunk}; // takes ownership; frees on scope exit
 
     const std::string tmpPath = destPath + ".pmtmp";
-    if (vips_pngsave(buf.get(), tmpPath.c_str(), nullptr) != 0) {
+    if (vips_pngsave(buf.vipsImage(), tmpPath.c_str(), nullptr) != 0) {
         const std::string err = vips_error_buffer();
         std::error_code rmEc; fs::remove(utf8ToPath(tmpPath), rmEc);
         throw std::runtime_error(
@@ -199,7 +199,7 @@ void writeThumbnail(const std::string& destPath, VipsImage* shrunk)
 
 } // anonymous namespace
 
-std::string ThumbnailCache::generate(const std::string& sourceFilePath)
+std::string ThumbnailCache::generateByDecoding(const std::string& sourceFilePath)
 {
     const std::string destPath = thumbnailPath(sourceFilePath);
 
@@ -209,23 +209,23 @@ std::string ThumbnailCache::generate(const std::string& sourceFilePath)
             nullptr) != 0)
     {
         throw std::runtime_error(
-            "ThumbnailCache::generate() — vips_thumbnail failed for '" +
+            "ThumbnailCache::generateByDecoding() — vips_thumbnail failed for '" +
             sourceFilePath + "': " + vips_error_buffer());
     }
     writeThumbnail(destPath, out);
     return destPath;
 }
 
-std::string ThumbnailCache::generate(const std::string& sourceFilePath, const Core::PixelBuffer& image)
+std::string ThumbnailCache::generateFromImage(const std::string& sourceFilePath, const Core::PixelBuffer& image)
 {
     if (!image.isValid()) {
         throw std::runtime_error(
-            "ThumbnailCache::generate() — in-RAM source image is empty for '" + sourceFilePath + "'");
+            "ThumbnailCache::generateFromImage() — in-RAM source image is empty for '" + sourceFilePath + "'");
     }
     const std::string destPath = thumbnailPath(sourceFilePath);
 
     VipsImage* out = nullptr;
-    if (vips_thumbnail_image(image.get(), &out, 200,
+    if (vips_thumbnail_image(image.vipsImage(), &out, 200,
             "size",      VIPS_SIZE_DOWN,
             nullptr) != 0)
     {

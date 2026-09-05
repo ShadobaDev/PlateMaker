@@ -25,6 +25,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <platemaker/models/output_presets.hpp>
 
 namespace Platemaker {
 
@@ -180,7 +181,7 @@ TEST(OutputPresetLoadTest, NoPresetIsAddedToAnEmptyWorkspace)
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
 
     EXPECT_TRUE(loaded.outputProfiles().empty());
-    EXPECT_FALSE(report.any());
+    EXPECT_FALSE(report.anyRepairs());
 }
 
 TEST(OutputPresetLoadTest, AUserProfileIsKeptAndNoPresetAppended)

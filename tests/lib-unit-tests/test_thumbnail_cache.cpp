@@ -158,7 +158,7 @@ TEST(ThumbnailCacheTest, GenerateFromInRamImageWritesThumbnailUnderTheSourceDige
     // sourceFilePath is only the cache key; the pixels come from the in-RAM image, so the file need not
     // exist on disk. A landscape 400x200 source shrinks to a 200x100 preview (fits the 200px box).
     const std::string src   = tmp.file("output_001.jpg");
-    const std::string thumb = cache.generate(src, blackBuffer(400, 200));
+    const std::string thumb = cache.generateFromImage(src, blackBuffer(400, 200));
 
     ASSERT_TRUE(fs::exists(thumb));
     EXPECT_EQ(thumb, cache.thumbnailPath(src)) << "filed under the source path's digest";
@@ -178,7 +178,7 @@ TEST(ThumbnailCacheTest, WarmedInRamThumbnailIsServedWithoutReadingTheSource)
     // source LANDSCAPE (400x200) but warming from a PORTRAIT in-RAM image (200x400): a cache hit returns
     // the portrait thumbnail, whereas a re-read of the source would return a landscape one.
     const std::string src = writePng(tmp.file("output_001.png"), 400, 200);
-    cache.generate(src, blackBuffer(200, 400));  // warm from RAM (portrait)
+    cache.generateFromImage(src, blackBuffer(200, 400));  // warm from RAM (portrait)
     // Make the source strictly older than the warmed thumbnail so the freshness check is a hit.
     fs::last_write_time(src, fs::last_write_time(cache.thumbnailPath(src)) - std::chrono::seconds(2));
 

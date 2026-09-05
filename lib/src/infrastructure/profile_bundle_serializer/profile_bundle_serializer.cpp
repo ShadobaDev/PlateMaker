@@ -28,6 +28,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <platemaker/models/output_presets.hpp>
 
 namespace Platemaker::Infrastructure {
 

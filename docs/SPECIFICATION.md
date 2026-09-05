@@ -235,7 +235,7 @@ struct SliceResult {
 - Input: pixel buffer + `ColourCorrection` config
 - Output: graded pixel buffer (brightness/contrast/saturation + per-channel tone curves)
 - Point operation, applied per input page **before** scale/append; a neutral config returns the buffer
-  unchanged. ICC→sRGB is done at load (`ImageIO::load(convertToSRGB)`), gated by `iccToSRGB`, so this
+  unchanged. ICC→sRGB is done at load (`ImageIO::decode(convertToSRGB)`), gated by `iccToSRGB`, so this
   step owns only the creative grade. Alpha is split off and re-attached untouched. Pure libvips
   (`vips_maplut` for curves, `vips_linear`, luminance recomb for saturation), no Qt.
 
@@ -410,7 +410,7 @@ progressive   : bool  // default false
 Format and its encoding options belong to the **`OutputProfile`** (the reusable,
 per-project-selected output config referenced by `ProjectItem.outputProfileId`) —
 not a separate per-project field. `OutputProfile` carries one option struct per
-format; `ImageIO::save()` applies the one matching `outputFormat`.
+format; `ImageIO::encode()` applies the one matching `outputFormat`.
 
 ### `PngOptions`
 ```
@@ -567,14 +567,14 @@ slice to build a thumbnail while a re-render overwrites it (which on Windows fai
 `unable to open for write`). The split:
 
 **The library guarantees**
-- **G1 — Atomic publish.** `ImageIO::save()` encodes to a temp sibling and renames it over the
+- **G1 — Atomic publish.** `ImageIO::encode()` encodes to a temp sibling and renames it over the
   destination, so `onSliceSaved(path)` fires only once the file is complete and closed. A reader opening
   `path` after that signal sees the whole slice or nothing — never a partially-written frame.
 - **G2 — No hidden threads or lingering handles.** `ProcessingCallbacks` fire **synchronously on the
   caller's thread**; the pipeline spawns no threads and holds no output handle after `onSliceSaved`.
 - **G3 — (opt-in) Live previews without a re-read.** When `RenderRequest::thumbnailCacheDir`
   is set, the pipeline warms `ThumbnailCache` from the **in-RAM** slice — via
-  `ThumbnailCache::generate(outputPath, pixelBuffer)`, sharing the one shrink+write path with the
+  `ThumbnailCache::generateFromImage(outputPath, pixelBuffer)`, sharing the one shrink+write path with the
   file-reading `generate` — *before* `onSliceSaved`. A consumer's later `getOrGenerate(outputPath)` is
   then a cache hit that never opens the output. Empty dir → no thumbnails (CLI default).
 - **G4 — Locked destination → typed error, no poll.** If another process holds the destination so the
@@ -623,12 +623,12 @@ so a project that uses neither renders byte-identically to a build without them,
 the pipeline as `RenderRequest` fields (`colourCorrection`, `stripOverlays`).
 
 - **Page domain — colour correction.** Between `scale` and `strip.append`, for each input **not** in
-  `colourCorrection.excludedInputUids`: `ImageIO::load(convertToSRGB = iccToSRGB)` then
-  `ColourCorrector::apply(buffer, cc)`. The CC-off path is exactly the historical load/scale, untouched.
+  `colourCorrection.excludedInputUids`: `ImageIO::decode(convertToSRGB = iccToSRGB)` then
+  `ColourCorrector::applyToBuffer(buffer, cc)`. The CC-off path is exactly the historical load/scale, untouched.
   Being point operations, per-page grading equals grading the whole strip, so the grade is project-wide
   while exclusions and per-source ICC still work.
 - **Strip domain — text/bubble overlays.** Inside the slice loop, before each slice is saved:
-  `StripOverlayCompositor::apply(slice.image, slice.stripTopY, overlays)`. Overlays are positioned in
+  `StripOverlayCompositor::composite(slice.image, slice.stripTopY, overlays)`. Overlays are positioned in
   strip coordinates; the compositor draws each onto every slice its box intersects (clipped by libvips),
   so an overlay straddling a cut appears on **both** adjacent slices. A slice no overlay intersects is
   returned unchanged.
@@ -648,11 +648,11 @@ contribution, with no change to the existing steps.
 ### Orientation & output metadata
 
 Both pipelines **normalise to display orientation on load**: `Scaler::scale(filePath)` (standard) and
-`ImageIO::load()` (margin‑aware) apply `vips_autorot`, which rotates a camera JPEG's pixels per its EXIF
+`ImageIO::decode()` (margin‑aware) apply `vips_autorot`, which rotates a camera JPEG's pixels per its EXIF
 `Orientation` tag and drops the tag. It is **idempotent** for the untagged / `Orientation 1` case, so
 Procreate‑style exports (the main workflow) are unaffected; only rotated photos change. So matching sees
 the same size the render produces, `headerGeometry()` reports **display** dimensions (width/height
-transposed for the 90°/270° tags 5–8). On save, `ImageIO::save()` strips source EXIF/XMP/IPTC (keeping the
+transposed for the 90°/270° tags 5–8). On save, `ImageIO::encode()` strips source EXIF/XMP/IPTC (keeping the
 ICC colour profile), so a rendered slice never carries the source's orientation, camera fields, GPS or
 embedded thumbnail — a viewer shows it exactly as built. A genuinely portrait page needs no special
 handling: once autorotated it simply scales to `targetWidth` and contributes its taller height to the
@@ -668,7 +668,7 @@ non-RGB colourspace (grayscale, CMYK) is converted to sRGB (lossless for graysca
 untouched), then any entry short of the strip's widest band count gains a fully-opaque alpha channel. The
 user's pixels are therefore never composited onto a background during assembly, and a uniform strip is left
 exactly as-is. Alpha is dropped only at **save**, and only for **JPEG**, which cannot represent it
-(`ImageIO::save()` flattens over white); PNG and WebP preserve the alpha end-to-end.
+(`ImageIO::encode()` flattens over white); PNG and WebP preserve the alpha end-to-end.
 
 ### Template generation pipeline
 ```
@@ -812,7 +812,7 @@ even when the new profile matches no page in the project.
 Because matching is purely by canvas **W×H** (§7.5.1), the question "which profile would this page match
 now?" is answerable offline *only if the page's dimensions are known*. Each `InputFile` therefore records
 the display **`width`/`height`** the render resolved against — the same post-autorot dimensions the pipeline
-fed to `CanvasProfileMatcher::resolve()`, captured via `AppliedCanvasProfile` and stored by
+fed to `CanvasProfileMatcher::resolveForSize()`, captured via `AppliedCanvasProfile` and stored by
 `applyProcessingResults()` (serialised additively; `0` = unknown).
 
 `detectCanvasConfigChange()` then, for each input with known dimensions, resolves the profile it would
@@ -1163,7 +1163,7 @@ Cache: `.platemaker-cache/` sibling to `.platemaker.json` (auto-created, safe to
 
 | Library | Version | Licence | Purpose |
 |---|---|---|---|
-| libvips | ≥ 8.15 | LGPL v2.1 | Image loading, scaling (Lanczos3), saving. 8.15 floor: `ImageIO::save` uses `VIPS_FOREIGN_KEEP_ICC`. Windows bundles 8.18; Linux uses system libvips (Ubuntu 24.04+). |
+| libvips | ≥ 8.15 | LGPL v2.1 | Image loading, scaling (Lanczos3), saving. 8.15 floor: `ImageIO::encode` uses `VIPS_FOREIGN_KEEP_ICC`. Windows bundles 8.18; Linux uses system libvips (Ubuntu 24.04+). |
 | nlohmann/json | 3.x | MIT | Workspace JSON serialisation |
 | CMake | 3.21+ | BSD | Build system |
 | vcpkg | latest | MIT | Package management |

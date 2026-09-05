@@ -48,7 +48,7 @@ std::vector<double> pixel(const PixelBuffer& b, int x, int y)
 {
     double* v = nullptr;
     int     n = 0;
-    EXPECT_EQ(vips_getpoint(b.get(), &v, &n, x, y, nullptr), 0) << vips_error_buffer();
+    EXPECT_EQ(vips_getpoint(b.vipsImage(), &v, &n, x, y, nullptr), 0) << vips_error_buffer();
     std::vector<double> out(v, v + n);
     g_free(v);
     return out;
@@ -73,7 +73,7 @@ TEST(StripOverlayCompositorTest, NonIntersectingSliceIsUntouched)
 {
     StripOverlayCompositor comp;
     auto ovs = redOverlay(W, /*y*/ 1000, /*h*/ 40);      // far below this slice
-    auto out = comp.apply(makeSolid(W, 100, {255, 255, 255}), /*stripTopY*/ 0, ovs);
+    auto out = comp.composite(makeSolid(W, 100, {255, 255, 255}), /*stripTopY*/ 0, ovs);
 
     const auto p = pixel(out, 5, 50);
     ASSERT_EQ(p.size(), 3u);                             // unchanged → still RGB, no alpha added
@@ -86,7 +86,7 @@ TEST(StripOverlayCompositorTest, OpaqueOverlayReplacesWithinItsBox)
 {
     StripOverlayCompositor comp;
     auto ovs = redOverlay(W, /*y*/ 20, /*h*/ 40);        // covers rows 20..59
-    auto out = comp.apply(makeSolid(W, 100, {255, 255, 255}), /*stripTopY*/ 0, ovs);
+    auto out = comp.composite(makeSolid(W, 100, {255, 255, 255}), /*stripTopY*/ 0, ovs);
 
     const auto inside  = pixel(out, 5, 40);              // under the overlay
     const auto outside = pixel(out, 5, 5);               // above the overlay
@@ -106,13 +106,13 @@ TEST(StripOverlayCompositorTest, OverlayStraddlingACutLandsOnBothSlices)
     auto ovs = redOverlay(W, /*y*/ 80, /*h*/ 40);
 
     // Slice 0 (strip 0..99): the overlay's top half shows in rows 80..99.
-    auto s0 = comp.apply(makeSolid(W, 100, {255, 255, 255}), /*stripTopY*/ 0, ovs);
+    auto s0 = comp.composite(makeSolid(W, 100, {255, 255, 255}), /*stripTopY*/ 0, ovs);
     EXPECT_NEAR(pixel(s0, 5, 90)[0], 255.0, 1.0); // red present
     EXPECT_NEAR(pixel(s0, 5, 90)[1], 0.0,   1.0);
     EXPECT_NEAR(pixel(s0, 5, 50)[1], 255.0, 1.0); // above the overlay → still white (green≈255)
 
     // Slice 1 (strip 100..199): the overlay's bottom half shows in rows 0..19 (clipped from the top).
-    auto s1 = comp.apply(makeSolid(W, 100, {255, 255, 255}), /*stripTopY*/ 100, ovs);
+    auto s1 = comp.composite(makeSolid(W, 100, {255, 255, 255}), /*stripTopY*/ 100, ovs);
     EXPECT_NEAR(pixel(s1, 5, 10)[0], 255.0, 1.0); // red present
     EXPECT_NEAR(pixel(s1, 5, 10)[1], 0.0,   1.0);
     EXPECT_NEAR(pixel(s1, 5, 50)[1], 255.0, 1.0); // below the overlay → still white
@@ -133,8 +133,8 @@ TEST(StripOverlayCompositorTest, BlendModeChangesTheResult)
 
     auto over = make(Models::BlendMode::Over);
     auto mult = make(Models::BlendMode::Multiply);
-    const auto pOver = pixel(comp.apply(makeSolid(W, 100, {128, 128, 128}), 0, over), 5, 50);
-    const auto pMult = pixel(comp.apply(makeSolid(W, 100, {128, 128, 128}), 0, mult), 5, 50);
+    const auto pOver = pixel(comp.composite(makeSolid(W, 100, {128, 128, 128}), 0, over), 5, 50);
+    const auto pMult = pixel(comp.composite(makeSolid(W, 100, {128, 128, 128}), 0, mult), 5, 50);
 
     EXPECT_NEAR(pOver[0], 128.0, 1.0);            // opaque source-over → the overlay grey
     EXPECT_NEAR(pMult[0], 128.0 * 128.0 / 255.0, 2.0); // multiply darkens (≈64)

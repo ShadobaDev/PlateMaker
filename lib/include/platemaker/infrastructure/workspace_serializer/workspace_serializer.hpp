@@ -20,47 +20,10 @@
 #include "platemaker/platemaker_export.h"
 
 #include <platemaker/models/workspace.hpp>
+#include <platemaker/models/workspace_repair_report.hpp>
 
 namespace Platemaker::Infrastructure {
 
-/**
- * \struct WorkspaceRepairReport
- * \brief What load() had to repair in a workspace file to make it self-consistent.
- *
- * Reports **identifier collisions only** — two or more profiles saved with the same \c id.
- * A workspace like that is not corrupt, but it is ambiguous: every lookup by that id
- * resolves to whichever profile comes first, so the other one is unreachable (it cannot be
- * assigned to a project, and anything already referencing the id may in fact have meant it).
- *
- * The repair keeps the **first** profile's id and mints a fresh one for each later duplicate,
- * so existing project references keep resolving and nothing is lost.
- *
- * \note Minting an id for a profile that simply had none is **not** reported.  That case is
- *       unambiguous — there are no two candidates to confuse — and reporting it would raise a
- *       warning on every pre-id workspace for no reason.
- *
- * \note Deliberately carries no list of affected projects.  Canvas profiles belong to the
- *       workspace rather than to a project, so such a list would have to name every project
- *       that ever touched the colliding id, and would still only be a *suspicion*.  Whether a
- *       project is genuinely stale is settled precisely by ProjectItem::sanitize(), which
- *       compares the canvas fingerprint recorded at render time.
- */
-struct PLATEMAKER_EXPORT WorkspaceRepairReport {
-    //! One profile that had to give up its colliding identifier.
-    struct ReassignedProfile {
-        std::string name;   //!< Profile name, for a message the user can act on.
-        std::string oldId;  //!< The identifier it shared with an earlier profile.
-        std::string newId;  //!< The freshly minted, unique identifier.
-    };
-
-    std::vector<ReassignedProfile> canvasProfiles; //!< Canvas profiles given a new id.
-    std::vector<ReassignedProfile> outputProfiles; //!< Output profiles given a new id.
-
-    //! \return true if anything at all was repaired.
-    [[nodiscard]] bool any() const {
-        return !canvasProfiles.empty() || !outputProfiles.empty();
-    }
-};
 
 /**
  * \class WorkspaceSerializer

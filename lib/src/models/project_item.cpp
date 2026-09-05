@@ -46,10 +46,10 @@ ProjectItem::ProjectItem(ProjectItem&& other) noexcept
     , colourCorrection(std::move(other.colourCorrection))
     , m_canvasProfileIds(std::move(other.m_canvasProfileIds))
     , m_outputProfileId(std::move(other.m_outputProfileId))
-    , m_input_images(std::move(other.m_input_images))
-    , m_output_images(std::move(other.m_output_images))
+    , m_inputImages(std::move(other.m_inputImages))
+    , m_outputImages(std::move(other.m_outputImages))
     , m_stripOverlays(std::move(other.m_stripOverlays))
-    , m_output_directory(std::move(other.m_output_directory))
+    , m_outputDirectory(std::move(other.m_outputDirectory))
     , m_isUpToDate(other.m_isUpToDate)
     , m_inputToOutputLookup(std::move(other.m_inputToOutputLookup))
     , m_sha256Index(std::move(other.m_sha256Index))
@@ -68,10 +68,10 @@ ProjectItem& ProjectItem::operator=(ProjectItem&& other) noexcept
         colourCorrection      = std::move(other.colourCorrection);
         m_canvasProfileIds    = std::move(other.m_canvasProfileIds);
         m_outputProfileId     = std::move(other.m_outputProfileId);
-        m_input_images        = std::move(other.m_input_images);
-        m_output_images       = std::move(other.m_output_images);
+        m_inputImages        = std::move(other.m_inputImages);
+        m_outputImages       = std::move(other.m_outputImages);
         m_stripOverlays       = std::move(other.m_stripOverlays);
-        m_output_directory    = std::move(other.m_output_directory);
+        m_outputDirectory    = std::move(other.m_outputDirectory);
         m_isUpToDate          = other.m_isUpToDate;
         m_inputToOutputLookup = std::move(other.m_inputToOutputLookup);
         m_sha256Index         = std::move(other.m_sha256Index);
@@ -85,17 +85,17 @@ ProjectItem& ProjectItem::operator=(ProjectItem&& other) noexcept
 
 std::vector<InputFile>& ProjectItem::getInputImages() noexcept
 {
-    return m_input_images;
+    return m_inputImages;
 }
 
 const std::vector<InputFile>& ProjectItem::getInputImages() const noexcept
 {
-    return m_input_images;
+    return m_inputImages;
 }
 
 std::vector<InputFile> ProjectItem::inputsInOrder() const
 {
-    std::vector<InputFile> ordered = m_input_images;
+    std::vector<InputFile> ordered = m_inputImages;
     std::stable_sort(ordered.begin(), ordered.end(),
                      [](const InputFile& a, const InputFile& b) { return a.order < b.order; });
     return ordered;
@@ -104,8 +104,8 @@ std::vector<InputFile> ProjectItem::inputsInOrder() const
 std::vector<std::string> ProjectItem::orderedInputUids() const
 {
     std::vector<const InputFile*> ptrs;
-    ptrs.reserve(m_input_images.size());
-    for (const auto& f : m_input_images)
+    ptrs.reserve(m_inputImages.size());
+    for (const auto& f : m_inputImages)
         ptrs.push_back(&f);
     std::stable_sort(ptrs.begin(), ptrs.end(),
                      [](const InputFile* a, const InputFile* b) { return a->order < b->order; });
@@ -119,22 +119,22 @@ std::vector<std::string> ProjectItem::orderedInputUids() const
 
 std::vector<OutputFile>& ProjectItem::getOutputImages() noexcept
 {
-    return m_output_images;
+    return m_outputImages;
 }
 
 const std::vector<OutputFile>& ProjectItem::getOutputImages() const noexcept
 {
-    return m_output_images;
+    return m_outputImages;
 }
 
 std::string& ProjectItem::getOutputDirectory() noexcept
 {
-    return m_output_directory;
+    return m_outputDirectory;
 }
 
 const std::string& ProjectItem::getOutputDirectory() const noexcept
 {
-    return m_output_directory;
+    return m_outputDirectory;
 }
 
 // ---------------------------------------------------------------------------
@@ -225,7 +225,7 @@ bool ProjectItem::sanitize(const std::vector<CanvasProfile>& workspaceProfiles)
 
     m_isUpToDate = true;
 
-    for (auto& file : m_input_images) {
+    for (auto& file : m_inputImages) {
         // utf8ToPath() rather than the bare string: on MSVC a narrow path is read in the ANSI
         // code page, so a non-ASCII path would report as Missing even though the file is there.
         if (!fs::exists(Infrastructure::utf8ToPath(file.filePath))) {
@@ -289,8 +289,8 @@ bool ProjectItem::sanitize(const std::vector<CanvasProfile>& workspaceProfiles)
 
     // Validate output slices against disk: a deleted or externally-edited
     // output makes the project out-of-date even when every input is unchanged.
-    for (auto& out : m_output_images) {
-        const std::string path = m_output_directory + "/" + out.fileName;
+    for (auto& out : m_outputImages) {
+        const std::string path = m_outputDirectory + "/" + out.fileName;
 
         if (!fs::exists(Infrastructure::utf8ToPath(path))) {
             out.status   = FileStatus::Missing;
@@ -327,27 +327,27 @@ bool ProjectItem::sanitize(const std::vector<CanvasProfile>& workspaceProfiles)
     };
 
     const auto canvasChange = detectCanvasConfigChange(workspaceProfiles);
-    if (canvasChange.any()) {
+    if (canvasChange.anyChanged()) {
         m_isUpToDate = false;
 
         if (canvasChange.listChanged) {
             // The effective profile list itself changed (or, for a workspace written
             // before fingerprints existed, there is no baseline at all). Which page got
             // which profile can no longer be attributed, so everything is suspect.
-            for (auto& inf : m_input_images)
+            for (auto& inf : m_inputImages)
                 markDesynchronized(inf.status, FileStatus::Processed);
-            for (auto& out : m_output_images)
+            for (auto& out : m_outputImages)
                 markDesynchronized(out.status, FileStatus::Done);
         } else {
             // Precise: only the pages whose applied profile changed, plus the slices
             // they fed (provenance already records that mapping).
             for (const auto& path : canvasChange.changedInputs) {
-                for (auto& inf : m_input_images)
+                for (auto& inf : m_inputImages)
                     if (inf.filePath == path)
                         markDesynchronized(inf.status, FileStatus::Processed);
 
                 for (const auto& outName : outputsForInput(path))
-                    for (auto& out : m_output_images)
+                    for (auto& out : m_outputImages)
                         if (out.fileName == outName)
                             markDesynchronized(out.status, FileStatus::Done);
             }
@@ -361,7 +361,7 @@ bool ProjectItem::sanitize(const std::vector<CanvasProfile>& workspaceProfiles)
     // detectInputCompositionChange().
     if (detectInputCompositionChange()) {
         m_isUpToDate = false;
-        for (auto& out : m_output_images)
+        for (auto& out : m_outputImages)
             markDesynchronized(out.status, FileStatus::Done);
     }
 
@@ -375,7 +375,7 @@ bool ProjectItem::sanitize(const std::vector<CanvasProfile>& workspaceProfiles)
 std::vector<std::string> ProjectItem::dirtyOutputNames() const
 {
     std::vector<std::string> names;
-    for (const auto& out : m_output_images)
+    for (const auto& out : m_outputImages)
         if (out.status != FileStatus::Done)
             names.push_back(out.fileName);
     return names;
@@ -388,12 +388,12 @@ bool ProjectItem::inputsAllProcessed() const noexcept
     // decision (otherwise a project with one permanently-skipped page could never take the partial path).
     // Error counts as settled too: the page was rendered but is unverifiable (locked / offline); it must
     // not force a full re-render, or the silent loop this status exists to break would return.
-    for (const auto& inf : m_input_images)
+    for (const auto& inf : m_inputImages)
         if (inf.status != FileStatus::Processed &&
             inf.status != FileStatus::Skipped   &&
             inf.status != FileStatus::Error)
             return false;
-    return !m_input_images.empty();
+    return !m_inputImages.empty();
 }
 
 // ---------------------------------------------------------------------------
@@ -437,7 +437,7 @@ CanvasConfigChange ProjectItem::detectCanvasConfigChange(
     // canvasProfileIdsAtRender being empty: a project rendered with no canvas
     // profiles at all legitimately has an empty list, and adding a profile to it
     // later must still register as a change.
-    if (m_output_images.empty())
+    if (m_outputImages.empty())
         return change;
 
     // The project's effective/assigned profile list, in the order the matcher applies it. This
@@ -462,10 +462,10 @@ CanvasConfigChange ProjectItem::detectCanvasConfigChange(
     // Per-page re-match. For each input, decide whether the profile it would render with *now*
     // differs from the one recorded at the last render.
     bool anyUnknownDims = false;
-    for (const auto& inf : m_input_images) {
+    for (const auto& inf : m_inputImages) {
         if (inf.width > 0 && inf.height > 0) {
             // Dimensions known → resolve precisely: the first effective profile of this W×H, identical
-            // to what CanvasProfileMatcher::resolve() returns as Matched (the conflict guard makes it
+            // to what CanvasProfileMatcher::resolveForSize() returns as Matched (the conflict guard makes it
             // final for a linked list; for accept-all the first in effective order wins, as the matcher
             // does). A page is stale only if its applied profile changed — a different id (including
             // "" ⇄ id: a newly-added profile now matches a page that had none, or a removed/reordered
@@ -511,7 +511,7 @@ CanvasConfigChange ProjectItem::detectCanvasConfigChange(
 bool ProjectItem::detectInputCompositionChange() const
 {
     // No outputs → nothing to invalidate; Pending inputs already force a full run.
-    if (m_output_images.empty())
+    if (m_outputImages.empty())
         return false;
 
     // No baseline (a project rendered before this axis existed) → don't guess here; load()
@@ -531,7 +531,7 @@ void ProjectItem::rebuildLookupTables()
     m_inputToOutputLookup.clear();
     m_sha256Index.clear();
 
-    for (const auto& inf : m_input_images) {
+    for (const auto& inf : m_inputImages) {
         // Map filePath → [output file names it contributed to].
         m_inputToOutputLookup[inf.filePath] = inf.contributesTo;
 
@@ -571,7 +571,7 @@ std::vector<ProcessingError> ProjectItem::applyProcessingResults(
         skippedInputPaths.begin(), skippedInputPaths.end());
 
     // Update each InputFile: hash, status, timestamp, contributesTo, canvas baseline.
-    for (auto& inf : m_input_images) {
+    for (auto& inf : m_inputImages) {
         // A skipped page was not rendered, so it must not claim to be Processed (that is the
         // "skipped pages silently go green" bug). Mark it Skipped and leave its hash/timestamp
         // untouched — nothing was produced for it, and it contributes to no output.
@@ -631,8 +631,8 @@ std::vector<ProcessingError> ProjectItem::applyProcessingResults(
     }
 
     // Rebuild OutputFile list from records.
-    m_output_images.clear();
-    m_output_images.reserve(records.size());
+    m_outputImages.clear();
+    m_outputImages.reserve(records.size());
     for (std::size_t i = 0; i < records.size(); ++i) {
         OutputFile outf;
         // Positional but stable and unique within this wholesale rebuild — output_00N always maps to
@@ -643,10 +643,10 @@ std::vector<ProcessingError> ProjectItem::applyProcessingResults(
         outf.sha256    = records[i].outputSha256;
         outf.sourceMap = records[i].sourceMap;
         outf.status    = FileStatus::Done;
-        m_output_images.push_back(std::move(outf));
+        m_outputImages.push_back(std::move(outf));
     }
 
-    m_output_directory = outputDirectory;
+    m_outputDirectory = outputDirectory;
     m_isUpToDate       = true;
 
     // Baseline for detectCanvasConfigChange(): the profile list this render used.
@@ -675,7 +675,7 @@ void ProjectItem::applyPartialResults(
     // we just refresh the hash and clear the dirty status of the rewritten
     // outputs. (Unlike applyProcessingResults, which rebuilds everything.)
     for (const auto& rec : records) {
-        for (auto& out : m_output_images) {
+        for (auto& out : m_outputImages) {
             if (out.fileName == rec.fileName) {
                 out.sha256    = rec.outputSha256;
                 out.sourceMap = rec.sourceMap;
@@ -687,7 +687,7 @@ void ProjectItem::applyPartialResults(
 
     // Up-to-date only if no output remains dirty (and inputs were already clean).
     m_isUpToDate = true;
-    for (const auto& out : m_output_images) {
+    for (const auto& out : m_outputImages) {
         if (out.status != FileStatus::Done) {
             m_isUpToDate = false;
             break;
@@ -708,18 +708,18 @@ ScanMergeResult ProjectItem::mergeFileScan(
     // Build lookup maps from the existing input list.
     // -------------------------------------------------------------------
 
-    // path → index in m_input_images (for path-based matching).
+    // path → index in m_inputImages (for path-based matching).
     std::unordered_map<std::string, std::size_t> pathToOldIdx;
-    pathToOldIdx.reserve(m_input_images.size());
-    for (std::size_t i = 0; i < m_input_images.size(); ++i)
-        pathToOldIdx[m_input_images[i].filePath] = i;
+    pathToOldIdx.reserve(m_inputImages.size());
+    for (std::size_t i = 0; i < m_inputImages.size(); ++i)
+        pathToOldIdx[m_inputImages[i].filePath] = i;
 
-    // sha256 → index in m_input_images (for rename detection).
+    // sha256 → index in m_inputImages (for rename detection).
     // Only populate for files that have been processed (non-empty sha256).
     std::unordered_map<std::string, std::size_t> sha256ToOldIdx;
-    sha256ToOldIdx.reserve(m_input_images.size());
-    for (std::size_t i = 0; i < m_input_images.size(); ++i) {
-        const auto& inf = m_input_images[i];
+    sha256ToOldIdx.reserve(m_inputImages.size());
+    for (std::size_t i = 0; i < m_inputImages.size(); ++i) {
+        const auto& inf = m_inputImages[i];
         if (!inf.sha256.empty())
             sha256ToOldIdx[inf.sha256] = i;
     }
@@ -745,7 +745,7 @@ ScanMergeResult ProjectItem::mergeFileScan(
         // --- Case 1: same path exists in old list ---
         const auto pathIt = pathToOldIdx.find(newPath);
         if (pathIt != pathToOldIdx.end()) {
-            InputFile inf = m_input_images[pathIt->second];
+            InputFile inf = m_inputImages[pathIt->second];
             if (inf.order != newOrder) structuralChange = true;
             inf.order = newOrder;
             consumedOldIndices.insert(pathIt->second);
@@ -773,7 +773,7 @@ ScanMergeResult ProjectItem::mergeFileScan(
         if (isRename) {
             // Same content, new path → rename.
             const std::size_t oldIdx = sha256It->second;
-            InputFile inf = m_input_images[oldIdx];
+            InputFile inf = m_inputImages[oldIdx];
             result.renamed.push_back(newPath);
             inf.filePath = newPath; // update path, keep everything else
             // If the strip position changed, that's a structural change.
@@ -799,9 +799,9 @@ ScanMergeResult ProjectItem::mergeFileScan(
     // -------------------------------------------------------------------
     // Detect removed files (old indices not consumed and path not in newPaths).
     // -------------------------------------------------------------------
-    for (std::size_t i = 0; i < m_input_images.size(); ++i) {
+    for (std::size_t i = 0; i < m_inputImages.size(); ++i) {
         if (consumedOldIndices.count(i) == 0) {
-            result.removed.push_back(m_input_images[i].filePath);
+            result.removed.push_back(m_inputImages[i].filePath);
             structuralChange = true;
         }
     }
@@ -810,13 +810,13 @@ ScanMergeResult ProjectItem::mergeFileScan(
     // Apply structural change consequences.
     // -------------------------------------------------------------------
     if (structuralChange) {
-        for (auto& outf : m_output_images)
+        for (auto& outf : m_outputImages)
             outf.status = FileStatus::Desynchronized;
         result.outputsInvalidated = true;
     }
 
     // Replace the old input list with the new one.
-    m_input_images = std::move(newList);
+    m_inputImages = std::move(newList);
     m_isUpToDate   = false; // always requires at least a sanitize() pass
 
     ensureUniqueFileUids();  // mint uids for the brand-new files (left empty above)
@@ -878,8 +878,8 @@ void ProjectItem::ensureUniqueFileUids()
         }
     };
 
-    repair(m_input_images,  "file");
-    repair(m_output_images, "out");
+    repair(m_inputImages,  "file");
+    repair(m_outputImages, "out");
 }
 
 } // namespace Platemaker::Models

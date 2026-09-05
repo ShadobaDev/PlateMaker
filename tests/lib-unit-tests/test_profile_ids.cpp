@@ -201,7 +201,7 @@ TEST(WorkspaceIdRepairTest, FirstProfileKeepsTheIdAndTheDuplicateGetsANewOne)
     EXPECT_EQ(report.canvasProfiles[0].name,  "Webtoon-2s");
     EXPECT_EQ(report.canvasProfiles[0].oldId, "cp-collide");
     EXPECT_EQ(report.canvasProfiles[0].newId, loaded.canvasProfiles()[1].id);
-    EXPECT_TRUE(report.any());
+    EXPECT_TRUE(report.anyRepairs());
 }
 
 TEST(WorkspaceIdRepairTest, ProjectReferenceStillResolvesToTheFirstProfile)
@@ -240,7 +240,7 @@ TEST(WorkspaceIdRepairTest, CleanWorkspaceIsReportedAsCleanAndUntouched)
     Infrastructure::WorkspaceRepairReport report;
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path(), report);
 
-    EXPECT_FALSE(report.any());
+    EXPECT_FALSE(report.anyRepairs());
     EXPECT_EQ(loaded.canvasProfiles()[0].id, "cp-aaa");
     EXPECT_EQ(loaded.canvasProfiles()[1].id, "cp-bbb");
 }
@@ -293,7 +293,7 @@ TEST(WorkspaceIdMigrationTest, MissingIdIsMintedAndLegacyReferencesAreRelinked)
     EXPECT_EQ(loaded.projectItems[0].outputProfileId(), loaded.outputProfiles()[0].id);
 
     // Minting is unambiguous bookkeeping, not a collision — nothing to tell the user about.
-    EXPECT_FALSE(report.any());
+    EXPECT_FALSE(report.anyRepairs());
 }
 
 // (The former "legacy profile the user edited is not promoted to a preset" case is gone with the

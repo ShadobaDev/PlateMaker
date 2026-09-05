@@ -56,7 +56,7 @@ std::vector<double> pixel(const PixelBuffer& buf)
 {
     double* v = nullptr;
     int     n = 0;
-    EXPECT_EQ(vips_getpoint(buf.get(), &v, &n, 0, 0, nullptr), 0)
+    EXPECT_EQ(vips_getpoint(buf.vipsImage(), &v, &n, 0, 0, nullptr), 0)
         << "vips_getpoint failed: " << vips_error_buffer();
     std::vector<double> out(v, v + n);
     g_free(v);
@@ -75,7 +75,7 @@ Models::ColourCorrection neutral()
 TEST(ColourCorrectorTest, NeutralGradeLeavesPixelsUnchanged)
 {
     ColourCorrector cc;
-    const auto out = cc.apply(makeSolid({128, 64, 200}), neutral());
+    const auto out = cc.applyToBuffer(makeSolid({128, 64, 200}), neutral());
     const auto p   = pixel(out);
     ASSERT_EQ(p.size(), 3u);
     EXPECT_DOUBLE_EQ(p[0], 128.0);
@@ -89,7 +89,7 @@ TEST(ColourCorrectorTest, BrightnessLiftsUniformly)
     g.brightness = 0.2; // +0.2 * 255 ≈ +51
 
     ColourCorrector cc;
-    const auto p = pixel(cc.apply(makeSolid({128, 128, 128}), g));
+    const auto p = pixel(cc.applyToBuffer(makeSolid({128, 128, 128}), g));
     ASSERT_EQ(p.size(), 3u);
     EXPECT_NEAR(p[0], 179.0, 1.0);
     EXPECT_NEAR(p[1], 179.0, 1.0);
@@ -103,11 +103,11 @@ TEST(ColourCorrectorTest, ContrastPivotsAroundMidGreyAndClips)
 
     ColourCorrector cc;
     // Mid-grey is the pivot → stays ~mid.
-    EXPECT_NEAR(pixel(cc.apply(makeSolid({128, 128, 128}), g))[0], 128.0, 1.0);
+    EXPECT_NEAR(pixel(cc.applyToBuffer(makeSolid({128, 128, 128}), g))[0], 128.0, 1.0);
     // A bright value is pushed past the ceiling and clips at 255 (not wrapped).
-    EXPECT_DOUBLE_EQ(pixel(cc.apply(makeSolid({220, 220, 220}), g))[0], 255.0);
+    EXPECT_DOUBLE_EQ(pixel(cc.applyToBuffer(makeSolid({220, 220, 220}), g))[0], 255.0);
     // A dark value is pushed below the floor and clips at 0.
-    EXPECT_DOUBLE_EQ(pixel(cc.apply(makeSolid({40, 40, 40}), g))[0], 0.0);
+    EXPECT_DOUBLE_EQ(pixel(cc.applyToBuffer(makeSolid({40, 40, 40}), g))[0], 0.0);
 }
 
 TEST(ColourCorrectorTest, SaturationZeroProducesLuminanceGrey)
@@ -116,7 +116,7 @@ TEST(ColourCorrectorTest, SaturationZeroProducesLuminanceGrey)
     g.saturation = 0.0;
 
     ColourCorrector cc;
-    const auto p = pixel(cc.apply(makeSolid({255, 0, 0}), g)); // pure red
+    const auto p = pixel(cc.applyToBuffer(makeSolid({255, 0, 0}), g)); // pure red
     ASSERT_EQ(p.size(), 3u);
     const double lum = 0.2126 * 255.0; // ≈ 54.2
     EXPECT_NEAR(p[0], lum, 1.0);
@@ -132,7 +132,7 @@ TEST(ColourCorrectorTest, AlphaIsPreservedThroughGrade)
     g.saturation = 0.0;
 
     ColourCorrector cc;
-    const auto p = pixel(cc.apply(makeSolid({255, 0, 0, 200}), g)); // RGBA, opaque-ish red
+    const auto p = pixel(cc.applyToBuffer(makeSolid({255, 0, 0, 200}), g)); // RGBA, opaque-ish red
     ASSERT_EQ(p.size(), 4u);
     const double lum = 0.2126 * 255.0;
     EXPECT_NEAR(p[0], lum, 1.0);
@@ -147,7 +147,7 @@ TEST(ColourCorrectorTest, IdentityCurveIsNoOp)
     g.curves.master = {{0.0, 0.0}, {1.0, 1.0}}; // identity line
 
     ColourCorrector cc;
-    const auto p = pixel(cc.apply(makeSolid({100, 150, 200}), g));
+    const auto p = pixel(cc.applyToBuffer(makeSolid({100, 150, 200}), g));
     ASSERT_EQ(p.size(), 3u);
     EXPECT_DOUBLE_EQ(p[0], 100.0);
     EXPECT_DOUBLE_EQ(p[1], 150.0);
@@ -160,7 +160,7 @@ TEST(ColourCorrectorTest, MasterCurveMapsAllChannels)
     g.curves.master = {{0.0, 0.0}, {0.5, 0.8}, {1.0, 1.0}}; // lift mid-tones
 
     ColourCorrector cc;
-    const auto p = pixel(cc.apply(makeSolid({128, 128, 128}), g)); // t≈0.5 → ≈0.8 → ≈204
+    const auto p = pixel(cc.applyToBuffer(makeSolid({128, 128, 128}), g)); // t≈0.5 → ≈0.8 → ≈204
     ASSERT_EQ(p.size(), 3u);
     EXPECT_NEAR(p[0], 204.0, 3.0);
     EXPECT_NEAR(p[1], 204.0, 3.0);
@@ -170,10 +170,10 @@ TEST(ColourCorrectorTest, MasterCurveMapsAllChannels)
 TEST(ColourCorrectorTest, PerChannelCurveOnlyAffectsItsChannel)
 {
     Models::ColourCorrection g = neutral();
-    g.curves.r = {{0.0, 0.0}, {1.0, 0.5}}; // halve red; green/blue identity
+    g.curves.red = {{0.0, 0.0}, {1.0, 0.5}}; // halve red; green/blue identity
 
     ColourCorrector cc;
-    const auto p = pixel(cc.apply(makeSolid({128, 128, 128}), g));
+    const auto p = pixel(cc.applyToBuffer(makeSolid({128, 128, 128}), g));
     ASSERT_EQ(p.size(), 3u);
     EXPECT_NEAR(p[0], 64.0,  2.0); // red halved
     EXPECT_NEAR(p[1], 128.0, 1.0); // green untouched
