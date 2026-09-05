@@ -305,6 +305,128 @@ Both options could be implemented.
 
 ---
 
+## MINOR — pipeline readability and the specification split
+
+Nothing here changes behaviour. The library works; it reads harder than it should, and the
+specification has outgrown one file. Both are legibility debts, and the goal is a public API and
+a specification that hold up to outside reading.
+
+Breaking, so a MINOR in the 0.x scale — but **free**, because 0.6.0 is unreleased and already
+breaking (`ProcessingPipeline::run()` and `ImageIO::load()` changed their mangled symbols this
+cycle, and the GUI already pins in lockstep). Restructuring the same entry point again inside the
+same unreleased version costs no additional rebuild.
+
+### The rules being applied
+
+Written down in full, including the ones the code already satisfies, so an inspection has a fixed
+list to check against rather than a moving target:
+
+1. Classes are short and focused — a handful of methods, one significant class per file.
+2. Method and public-member names say unambiguously what they do.
+3. `run()` is split into named process segments, with helper classes where a segment carries too
+   much state to live as locals.
+4. A production render has explicit, readable steps.
+5. The specification is split into navigable documents with diagrams, not one long file.
+
+**Rule 1 applies to behaviour classes, not aggregates** — see `docs/CODING_STYLE.md`. An entity
+that models a workspace or a project legitimately has an accessor per thing it holds; counting
+those as responsibilities is a category error.
+
+### Measured findings
+
+`ProcessingPipeline::run()` — **324 lines, 11 parameters**, one outer `try` plus five inner
+try/catch blocks (eight catch arms), two lambdas, nesting depth five, six collaborators
+constructed inline. It holds seven distinct phases separated by comment banners rather than by
+function boundaries; the two largest are the strip-building loop (85 lines) and the `onSlice`
+sink (73 lines).
+
+**The page domain is a real component with no file.** `HeaderGeometry`, `PagePlan`, `planPage()`
+and `renderPage()` live in an anonymous namespace inside the .cpp. All three public entry points
+route through them — which is exactly what stops the preview drifting from the render — yet the
+concept is invisible from outside that one translation unit.
+
+**`previewLayout()` / `previewPageRgba()` do not separate themselves.** Both say "preview";
+neither says *reads headers only, every page* versus *decodes pixels, one page*.
+
+**Files holding more than one significant type:** `project_item.hpp` (a class plus seven structs
+and an enum), `output_profile.hpp` (five types plus a ~190-line preset catalogue plus seven free
+functions), `processing_steps.hpp` (two unrelated features, with 29- and 35-line functions
+implemented in a header), `image_io.hpp` (`+OutputLockedError`), `workspace_serializer.hpp`
+(`+WorkspaceRepairReport`, which `WorkspaceEditor` also returns).
+
+**Names that do not say what they do:** four different `load()`s, three `save()`s, two unrelated
+`apply()`s, a public/private `generate()` overload pair, plus `signature()`, `any()`,
+`snapshotMeta()`, `installLoaded()` and `resolve(int w, int h)`. Members: `x/y/w/h` on
+`LoadedOverlay` where the library elsewhere spells `width`/`height`; `r/g/b` on `ColourCurves`
+(per-channel *curves*, colliding mentally with `RGBA::r/g/b`); `srcY` beside `sourceFilePath`;
+and `m_input_images` / `m_output_images` / `m_output_directory` in snake_case beside camelCase
+siblings in the same class.
+
+### Planned work
+
+- **Split `run()` into named phases** behind internal helpers in the pipeline's own directory:
+  `PageRenderer` (the page domain, lifted out of the anonymous namespace), `StripBuilder`
+  (phase 1, owning the strip and the uid → strip-Y map) and `SliceWriter` (composite, encode,
+  hash, record, report). `run()` drops to roughly 40 lines.
+- **Collapse the 11 parameters into a `RenderRequest`**, and rename `run()` → `render()`.
+- **Rename the preview pair** to `layoutPagesFromHeaders()` and `decodePageToRgba()`, so the two
+  differ by *headers vs decode* and *all pages vs one* in the name rather than in the doc comment.
+  Dropping "preview" is also more honest — `previewLayout()`'s dimensions *are* the render's.
+- **One significant type per file**, and the naming pass, scoped first to the types the GUI does
+  not reference at all.
+- **Move `ProjectItem`'s heavy operations to `ProjectEditor`** — see below.
+- **Split the specification** into `docs/specification/`, with draw.io diagrams, published to this
+  repo's wiki.
+
+**No state machine.** The idea was considered and rejected: the flow is a single forward sequence
+with early exits, so a dispatch table and a state enum would only restate what three sequential
+calls already say.
+
+### `WorkspaceEditor` — deliberately left alone
+
+It has 16 public methods, over the rule. **It is not being changed**, and the rule is not being
+applied here.
+
+It is not an unstructured bag: the header is already sectioned into *Canvas profile palette* (4),
+*Output profile palette* (3), *Cross-workspace import* (1), *Projects* (2), *Project ↔ profile
+links* (3), *Load path* (1) and *Snapshot / restore* (2) — three to four methods per entity
+family, which is the rule's spirit at the level it actually means. Its four private statics are
+labelled "one copy of the rules, shared by the ops above and `installLoaded`": they exist
+*specifically* to avoid duplication, and splitting the class into three editors would either
+duplicate them or force an awkward shared base. It would also cost 33 GUI call sites. Splitting
+this would make the code worse.
+
+### `ProjectItem` — exempt as an aggregate; move the operations instead
+
+27 public declarations, over the rule. The count is **not** the defect: the accessors are the
+entity's shape — inputs, outputs, output directory, overlays, profile links.
+
+The defect is that four heavy operations live on the entity rather than in its editor —
+**485 of `project_item.cpp`'s 885 lines, 55 % of the file**:
+
+| Method | Lines | Why it is not entity behaviour |
+|---|---|---|
+| `sanitize()` | 153 | re-stats files on disk, re-hashes, recomputes statuses — driven by external state |
+| `mergeFileScan()` | 129 | reconciles a disk scan against the tracked list |
+| `applyProcessingResults()` | 122 | ingests render output |
+| `applyPartialResults()` | 32 | ingests partial render output |
+
+`ProjectEditor` already declares itself their destination, in its own file header: *"it is the
+natural home for input add / remove / rescan (currently `ProjectItem::mergeFileScan`) as those
+migrate here."* The migration finishes something the project already decided and then stalled —
+`ProjectEditor` is 116 lines with four methods. Afterwards `project_item.cpp` is roughly 450 lines.
+
+Deliberately **not** moved: `rebuildLookupTables()` / `ensureUniqueFileUids()`, which are invariant
+restorers called from `ProjectEditor`, `WorkspaceEditor` and `WorkspaceSerializer` — moving them
+would relocate the problem rather than solve it. Open question: `detectCanvasConfigChange()`
+(81 lines) is `sanitize()`'s analysis engine but also a legitimate `const` question to ask an
+entity, and it has two direct GUI callers.
+
+Even after the migration `ProjectItem` keeps ~23 public declarations, and that is the intended
+outcome. Chasing it below ten would mean shattering a coherent entity.
+
+---
+
 ## MAJOR — next: 1.0.0
 
 The stability commitment, or a change that strands the user (e.g. a workspace format older
