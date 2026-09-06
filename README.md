@@ -6,7 +6,9 @@ Platemaker handles both ends of the comic-art workflow: generating canvas templa
 
 This repository contains **`libplatemaker`** (the core processing library) and the **`platemaker`** CLI binary. The Qt GUI lives in a separate repository and links against `libplatemaker` as a shared library.
 
-For full requirements, data models, pipeline details, and the development roadmap see **[docs/SPECIFICATION.md](docs/SPECIFICATION.md)**.
+For requirements, data models, pipeline details and the roadmap see the **[specification wiki](https://github.com/ShadobaDev/PlateMaker/wiki)** — checked out here as a
+submodule at `docs/specification/`, so `git clone --recurse-submodules` brings it with the code.
+[docs/SPECIFICATION.md](docs/SPECIFICATION.md) maps the old section numbers to their new pages.
 
 ---
 
@@ -30,7 +32,8 @@ platemaker/
 │   ├── lib-unit-tests/      # GoogleTest C++ unit tests for libplatemaker
 │   └── cli-tests/           # pytest-based Python integration tests for the CLI
 └── docs/
-    ├── SPECIFICATION.md
+    ├── SPECIFICATION.md          # index: old section numbers -> wiki pages
+    ├── specification/            # submodule: the specification wiki
     ├── CHEATSHEET.md
     ├── CODING_STYLE.md
     └── TODO.md
