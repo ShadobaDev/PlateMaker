@@ -151,7 +151,7 @@ const std::vector<StripOverlay>& ProjectItem::getStripOverlays() const noexcept
     return m_stripOverlays;
 }
 
-std::string ProjectItem::addOverlay(const std::string& bitmapPath, int x, int y, BlendMode blend,
+std::string ProjectItem::addOverlay(const std::string& assetPath, int x, int y, BlendMode blend,
                                     const std::string& anchorInputUid)
 {
     std::vector<std::string> taken;
@@ -171,18 +171,18 @@ std::string ProjectItem::addOverlay(const std::string& bitmapPath, int x, int y,
     // registered with an empty sha (no dedup, and a later silent content change won't be caught until
     // it is re-added) — the same tolerance applyProcessingResults() gives an unhashable input.
     try {
-        ov.sha256 = Infrastructure::FileMetaData::computeFileSha256(bitmapPath);
+        ov.sha256 = Infrastructure::FileMetaData::computeFileSha256(assetPath);
     } catch (const std::exception&) {
         ov.sha256.clear();
     }
 
-    // Dedup by content: if an existing overlay references a bitmap with the same hash, reuse that stored
+    // Dedup by content: if an existing overlay references an asset with the same hash, reuse that stored
     // path so identical content is kept once (the consumer can drop its duplicate file).
-    ov.bitmapPath = bitmapPath;
+    ov.assetPath = assetPath;
     if (!ov.sha256.empty()) {
         for (const auto& e : m_stripOverlays) {
-            if (e.sha256 == ov.sha256 && !e.bitmapPath.empty()) {
-                ov.bitmapPath = e.bitmapPath;
+            if (e.sha256 == ov.sha256 && !e.assetPath.empty()) {
+                ov.assetPath = e.assetPath;
                 break;
             }
         }

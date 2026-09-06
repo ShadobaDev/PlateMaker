@@ -8,18 +8,24 @@
  * whose vertical span it intersects, offset into that slice's local space.  libvips clips a layer that
  * extends past a slice edge, so a straddling overlay lands correctly on both adjacent slices.
  *
- * The library is deliberately format-agnostic: it composites a pre-rendered RGBA bitmap supplied by the
- * consumer.  Whether that bitmap came from raster art, an SVG, or laid-out rich text is the consumer's
- * concern — the lib never grows a text engine.
+ * The library is deliberately format-agnostic: it composites an image asset supplied by the consumer,
+ * **raster or vector**.  libvips dispatches on content, so a PNG loads through its own loader and an SVG
+ * through librsvg, and neither this class nor its caller has to know which arrived.  What the asset
+ * *depicts* — a balloon, laid-out lettering, an effect — stays entirely the consumer's concern; the lib
+ * never grows a text engine, and an SVG changes nothing about that: it arrives as resolved geometry.
+ *
+ * Vector assets are why \c rasterizeOverlays() takes a scale.  A raster overlay authored for an 800 px
+ * target is simply wrong at 1600 px and can only be resampled; a vector one re-renders sharp.  That is
+ * the whole reason the scale is threaded through here rather than being the consumer's problem.
  *
  * Both entry points take overlays in **absolute strip coordinates**. A project stores them anchored to
  * a page instead (\c Models::StripOverlay::anchorInputUid), so the caller runs
  * \c Models::resolveOverlayAnchors() over the finished layout first; that keeps this class a placement
  * consumer with no opinion about how a chapter is laid out.
  *
- * Usage: call \c load() once (after the strip is built, before slicing) to decode the overlay bitmaps,
- * then \c apply() per slice inside the pipeline's slice loop.  Stateless and thread-safe like the other
- * Core steps; the decoded bitmaps live in the returned \c LoadedOverlay vector, not in the compositor.
+ * Usage: call \c rasterizeOverlays() once (after the strip is built, before slicing), then \c composite()
+ * per slice inside the pipeline's slice loop.  Stateless and thread-safe like the other Core steps; the
+ * rasterised bitmaps live in the returned \c LoadedOverlay vector, not in the compositor.
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
  *
@@ -32,6 +38,7 @@
 #ifndef PLATEMAKER_CORE_STRIP_OVERLAY_COMPOSITOR_HPP
 #define PLATEMAKER_CORE_STRIP_OVERLAY_COMPOSITOR_HPP
 
+#include <string>
 #include <vector>
 
 #include "platemaker/platemaker_export.h"
@@ -43,11 +50,12 @@ namespace Platemaker::Core {
 /**
  * \brief One decoded overlay ready to composite: its RGBA bitmap plus its strip-coordinate placement.
  *
- * Produced by \c StripOverlayCompositor::decodeBitmaps().  The bitmap is decoded once and reused (by reference)
- * across every slice it intersects, so a tall overlay is not re-read per slice.
+ * Produced by \c StripOverlayCompositor::rasterizeOverlays().  The bitmap is produced once and reused (by
+ * reference) across every slice it intersects, so a tall overlay is not re-read — or, for a vector asset,
+ * not re-rendered — per slice.
  */
 struct PLATEMAKER_EXPORT LoadedOverlay {
-    PixelBuffer bitmap;   //!< Decoded RGBA layer (promoted to 4-band on load).
+    PixelBuffer bitmap;   //!< Rasterised RGBA layer (promoted to 4-band on load).
     int x = 0;            //!< Top-left X in strip coordinates.
     int y = 0;            //!< Top-left Y in strip coordinates.
     int w = 0;            //!< Bitmap width in pixels.
@@ -57,23 +65,42 @@ struct PLATEMAKER_EXPORT LoadedOverlay {
 
 /**
  * \class StripOverlayCompositor
- * \brief Decodes overlay bitmaps and composites the ones intersecting a slice onto it.
+ * \brief Rasterises overlay assets and composites the ones intersecting a slice onto it.
  */
 class PLATEMAKER_EXPORT StripOverlayCompositor {
 public:
     StripOverlayCompositor() = default;
 
     /**
-     * \brief Decodes the enabled overlays' bitmaps once, in \p overlays order.
+     * \brief Rasterises one overlay asset — raster or vector — to an RGBA buffer.
      *
-     * A disabled overlay, one with an empty path, or one whose bitmap fails to decode is skipped
-     * (logged, non-fatal — a broken bubble must not abort a whole chapter render).  Each decoded
-     * bitmap is promoted to RGBA so compositing has a consistent band layout.
+     * Exposed publicly because a consumer previewing a chapter needs *the render's own* rasteriser, not
+     * an approximation of it: a GUI that draws bubbles with its own vector engine and then renders them
+     * through this one has two implementations to keep in step, and an SVG filter its engine cannot draw
+     * (Qt SVG, for one, implements no \c feTurbulence) would appear only in the committed output.  Going
+     * through here means what the author approves on screen is what the render bakes.
      *
-     * \param overlays The overlay definitions, already resolved to absolute strip coordinates.
-     * \return The successfully decoded overlays with their placement; empty when none are usable.
+     * \param assetPath Absolute path to a PNG, SVG, or anything else libvips can load.
+     * \param scale     Render scale; for a vector asset this is resolution, for a raster one a resample.
+     * \return The RGBA buffer, or an invalid \c PixelBuffer if the asset could not be loaded.
      */
-    [[nodiscard]] std::vector<LoadedOverlay> decodeBitmaps(const std::vector<Models::StripOverlay>& overlays) const;
+    [[nodiscard]] PixelBuffer rasterizeOverlay(const std::string& assetPath, double scale = 1.0) const;
+
+    /**
+     * \brief Rasterises the enabled overlays' assets once each, in \p overlays order.
+     *
+     * A disabled overlay, one with an empty path, or one that fails to load is skipped (logged,
+     * non-fatal — a broken bubble must not abort a whole chapter render).  Each result is promoted to
+     * RGBA so compositing has a consistent band layout.
+     *
+     * \param overlays The overlay definitions, already resolved to absolute strip coordinates **at this
+     *                 same scale** — pass the scale to \c Models::resolveOverlayAnchors() too, or the
+     *                 artwork will be the right size in the wrong place.
+     * \param scale    Ratio of the render's target width to the overlays' authored width.
+     * \return The successfully rasterised overlays with their placement; empty when none are usable.
+     */
+    [[nodiscard]] std::vector<LoadedOverlay> rasterizeOverlays(
+        const std::vector<Models::StripOverlay>& overlays, double scale = 1.0) const;
 
     /**
      * \brief Composites every loaded overlay intersecting this slice onto \p slice.
@@ -86,7 +113,7 @@ public:
      *
      * \param slice     The output slice pixels (ownership transferred in).  Must be valid.
      * \param stripTopY The slice's top Y in strip coordinates (\c SliceResult::stripTopY).
-     * \param overlays  The decoded overlays from \c load().
+     * \param overlays  The rasterised overlays from \c rasterizeOverlays().
      * \return The slice with intersecting overlays composited (RGBA when any was applied).
      * \throws std::runtime_error if \p slice is invalid or a libvips operation fails.
      */

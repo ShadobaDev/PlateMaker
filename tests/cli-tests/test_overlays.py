@@ -105,7 +105,7 @@ def _set_overlay(workspace: pathlib.Path, *, anchor_to: str | None, y: int) -> N
 
     project["stripOverlays"] = [{
         "uid":            "ovl-caption",
-        "bitmapPath":     str(BUBBLE.resolve()),
+        "assetPath":      str(BUBBLE.resolve()),
         "sha256":         "",
         "anchorInputUid": anchor_uid,
         "x":              BUBBLE_X,

@@ -64,7 +64,7 @@ TEST(OverlayInventoryTest, AddOverlayMintsUidHashesAndPlaces)
     EXPECT_EQ(o.uid, uid);
     EXPECT_EQ(o.uid.rfind("ovl-", 0), 0u); // minted with the readable prefix
     EXPECT_FALSE(o.sha256.empty());        // content hashed by the lib
-    EXPECT_EQ(o.bitmapPath, f);
+    EXPECT_EQ(o.assetPath, f);
     EXPECT_EQ(o.x, 10);
     EXPECT_EQ(o.y, 20);
     EXPECT_EQ(o.blend, BlendMode::Multiply);
@@ -88,9 +88,9 @@ TEST(OverlayInventoryTest, DedupReusesPathForIdenticalContent)
 
     EXPECT_NE(u1, u2); // distinct placements even when they share a bitmap
     EXPECT_EQ(ovs[0].sha256, ovs[1].sha256);
-    EXPECT_EQ(ovs[1].bitmapPath, f1) << "dedup: identical content reuses the already-stored path";
+    EXPECT_EQ(ovs[1].assetPath, f1) << "dedup: identical content reuses the already-stored path";
     EXPECT_NE(ovs[2].sha256, ovs[0].sha256);
-    EXPECT_EQ(ovs[2].bitmapPath, f3);
+    EXPECT_EQ(ovs[2].assetPath, f3);
     // The placement of the deduped overlay is still its own.
     EXPECT_EQ(ovs[1].x, 5);
     EXPECT_EQ(ovs[1].y, 5);

@@ -86,6 +86,44 @@ TEST(ResolveOverlayAnchorsTest, IsIdempotent)
     EXPECT_EQ(twice[0].y, once[0].y) << "resolving an already-absolute overlay must not add the top twice";
 }
 
+TEST(ResolveOverlayAnchorsTest, ScaleMovesPlacementIntoTheRendersOwnPixels)
+{
+    // A chapter re-profiled from 800px to 1600px: every page is twice as tall, so the layout's page
+    // tops are already doubled, but the overlay's stored x/y are still in the pixels it was authored
+    // at. Scaling must therefore apply to x/y *before* the page top is added — doubling the sum would
+    // put the bubble 250px too far down. This is the half of the re-scale that is easy to get subtly
+    // wrong, because the artwork would still be exactly the right size.
+    const std::unordered_map<std::string, int> doubled{{"file-c", 500}};
+    const auto out = Models::resolveOverlayAnchors({overlay("ovl-1", "file-c", 40, 20)}, doubled,
+                                                   nullptr, 2.0);
+
+    ASSERT_EQ(out.size(), 1u);
+    EXPECT_EQ(out[0].x, 80) << "x doubles with the page width";
+    EXPECT_EQ(out[0].y, 540) << "40 (=20x2) down page C, whose doubled top is at 500";
+}
+
+TEST(ResolveOverlayAnchorsTest, ScaleAlsoAppliesToAnUnanchoredOverlay)
+{
+    const auto out = Models::resolveOverlayAnchors({overlay("ovl-1", "", 40, 900)}, k_layout,
+                                                   nullptr, 0.5);
+
+    ASSERT_EQ(out.size(), 1u);
+    EXPECT_EQ(out[0].x, 20);
+    EXPECT_EQ(out[0].y, 450) << "an absolute strip-Y is in authored pixels too, so it scales as well";
+}
+
+TEST(ResolveOverlayAnchorsTest, ScaleOneChangesNothing)
+{
+    // The overwhelmingly common case, and the one every pre-existing project renders through.
+    const auto plain  = Models::resolveOverlayAnchors({overlay("ovl-1", "file-c", 40, 21)}, k_layout);
+    const auto scaled = Models::resolveOverlayAnchors({overlay("ovl-1", "file-c", 40, 21)}, k_layout,
+                                                      nullptr, 1.0);
+
+    ASSERT_EQ(scaled.size(), 1u);
+    EXPECT_EQ(scaled[0].x, plain[0].x);
+    EXPECT_EQ(scaled[0].y, plain[0].y);
+}
+
 TEST(ResolveOverlayAnchorsTest, DropsAndReportsAnOverlayWhoseAnchorPageIsNotInTheLayout)
 {
     std::vector<std::string> orphans;
@@ -247,11 +285,11 @@ std::string render(const TempDir& tmp, const std::string& tag,
 }
 
 /// The bubble: 20×20 opaque white, 10px in from the left, 20px down page C.
-Models::StripOverlay bubble(const std::string& bitmapPath, const std::string& anchor, int y)
+Models::StripOverlay bubble(const std::string& assetPath, const std::string& anchor, int y)
 {
     Models::StripOverlay o;
     o.uid            = "ovl-bubble";
-    o.bitmapPath     = bitmapPath;
+    o.assetPath      = assetPath;
     o.anchorInputUid = anchor;
     o.x              = 10;
     o.y              = y;

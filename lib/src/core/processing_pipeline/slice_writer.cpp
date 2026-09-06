@@ -55,24 +55,46 @@ std::string formatExtension(Models::OutputFormat fmt)
 }
 
 /**
- * \brief Resolves overlay page anchors against the assembled strip and decodes the bitmaps once.
- * \return The decoded overlays, at absolute strip coordinates.
+ * \brief Ratio of this render's target width to the width the overlays were authored against.
+ *
+ * Both the artwork and the placement are scaled by it, so they must be derived from one number in one
+ * place — a bubble rendered at the right size and placed at the old coordinates is worse than either
+ * mistake alone. 0 (or a nonsensical width) means "authored here", which is the no-op.
+ */
+double overlayScale(const RenderRequest& request)
+{
+    const int authored = request.overlayAuthoredWidth;
+    const int target   = request.outputProfile.targetWidth;
+    if (authored <= 0 || target <= 0 || authored == target)
+        return 1.0;
+    return static_cast<double>(target) / static_cast<double>(authored);
+}
+
+/**
+ * \brief Resolves overlay page anchors against the assembled strip and rasterises the assets once.
+ * \return The rasterised overlays, at absolute strip coordinates.
  */
 std::vector<LoadedOverlay> loadOverlaysForStrip(
     const std::vector<Models::StripOverlay>&    overlays,
     const std::unordered_map<std::string, int>& pageTopByInputUid,
+    double                                      scale,
     const ProcessingCallbacks&                  callbacks)
 {
     std::vector<std::string> orphaned;
     const std::vector<Models::StripOverlay> placed =
-        Models::resolveOverlayAnchors(overlays, pageTopByInputUid, &orphaned);
+        Models::resolveOverlayAnchors(overlays, pageTopByInputUid, &orphaned, scale);
 
     for (const auto& uid : orphaned)
         emitLog(callbacks.onLog, ProcessingLogLevel::Warning,
                 "Skipping overlay " + uid + ": the page it is anchored to is not in this render.");
 
+    if (scale != 1.0)
+        emitLog(callbacks.onLog, ProcessingLogLevel::Info,
+                "Overlays were authored at a different target width; rendering them at "
+                + std::to_string(scale) + "x.");
+
     StripOverlayCompositor compositor;
-    return compositor.decodeBitmaps(placed);
+    return compositor.rasterizeOverlays(placed, scale);
 }
 
 } // namespace
@@ -116,7 +138,8 @@ SliceWriter::SliceWriter(const RenderRequest&                        request,
     }
 
     // Last, so the orphan warnings keep their historical position after the thumbnail one.
-    m_overlays = loadOverlaysForStrip(m_request.stripOverlays, pageTopByInputUid, m_callbacks);
+    m_overlays = loadOverlaysForStrip(m_request.stripOverlays, pageTopByInputUid,
+                                      overlayScale(m_request), m_callbacks);
 }
 
 std::string SliceWriter::sliceFileName(int index) const

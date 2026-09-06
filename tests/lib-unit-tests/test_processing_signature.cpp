@@ -22,7 +22,7 @@ StripOverlay overlay(std::string uid, std::string sha, int x, int y, bool enable
 {
     StripOverlay o;
     o.uid = std::move(uid);
-    o.bitmapPath = "/tmp/" + o.uid + ".png";
+    o.assetPath = "/tmp/" + o.uid + ".png";
     o.sha256 = std::move(sha);
     o.x = x; o.y = y; o.enabled = enabled;
     return o;

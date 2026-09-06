@@ -1,6 +1,6 @@
 /**
  * \file lib/src/core/strip_overlay_compositor/strip_overlay_compositor.cpp
- * \brief StripOverlayCompositor implementation — decode overlays, composite per slice via libvips.
+ * \brief StripOverlayCompositor implementation — rasterise overlays, composite per slice via libvips.
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
  *
@@ -16,6 +16,8 @@
 
 #include <vips/vips.h>
 
+#include <algorithm>
+#include <cctype>
 #include <stdexcept>
 #include <string>
 
@@ -56,48 +58,80 @@ VipsBlendMode toVipsBlend(Models::BlendMode b)
 
 } // namespace
 
-std::vector<LoadedOverlay> StripOverlayCompositor::decodeBitmaps(
-    const std::vector<Models::StripOverlay>& overlays) const
+PixelBuffer StripOverlayCompositor::rasterizeOverlay(const std::string& assetPath, double scale) const
+{
+    if (assetPath.empty())
+        return {};
+
+    // Vector and raster reach the requested size by genuinely different routes, and "scale" is not a
+    // shared option: svgload takes it (it is a render resolution), pngload does not even accept the
+    // argument and the load fails outright if it is passed. So ask which loader will handle the file
+    // *before* opening it — vips_foreign_find_load() sniffs content without decoding — and take the
+    // matching route. This is the difference the whole vector-overlay design is for: an SVG re-renders
+    // sharp at the new size, a PNG can only be resampled.
+    const char* const loader = vips_foreign_find_load(assetPath.c_str());
+    if (!loader)
+        return {};   // caller logs — it has the uid, which is what makes the message useful
+
+    std::string name = loader;
+    std::transform(name.begin(), name.end(), name.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const bool vector = name.find("svg") != std::string::npos;
+
+    VipsImage* img = vector
+        ? vips_image_new_from_file(assetPath.c_str(), "access", VIPS_ACCESS_RANDOM,
+                                   "scale", scale, nullptr)
+        : vips_image_new_from_file(assetPath.c_str(), "access", VIPS_ACCESS_RANDOM, nullptr);
+    if (!img)
+        return {};
+
+    if (!vector && scale != 1.0) {
+        VipsImage* resized = nullptr;
+        const int rc = vips_resize(img, &resized, scale, nullptr);
+        g_object_unref(img);
+        if (rc != 0)
+            return {};
+        img = resized;
+    }
+
+    // Promote to RGBA so compositing has a consistent 4-band layout (an opaque bubble gains a
+    // fully-opaque alpha; an RGBA bubble is untouched — svgload already returns 4 bands).
+    if (!vips_image_hasalpha(img)) {
+        VipsImage* wa = nullptr;
+        const int rc = vips_addalpha(img, &wa, nullptr);
+        g_object_unref(img);
+        if (rc != 0)
+            return {};
+        img = wa;
+    }
+
+    return PixelBuffer{img};
+}
+
+std::vector<LoadedOverlay> StripOverlayCompositor::rasterizeOverlays(
+    const std::vector<Models::StripOverlay>& overlays, double scale) const
 {
     std::vector<LoadedOverlay> out;
     out.reserve(overlays.size());
 
     for (const auto& ov : overlays) {
-        if (!ov.enabled || ov.bitmapPath.empty())
+        if (!ov.enabled || ov.assetPath.empty())
             continue;
 
-        VipsImage* img = vips_image_new_from_file(
-            ov.bitmapPath.c_str(), "access", VIPS_ACCESS_RANDOM, nullptr);
-        if (!img) {
+        PixelBuffer buf = rasterizeOverlay(ov.assetPath, scale);
+        if (!buf.isValid()) {
             PLATEMAKER_LOG(Log::StripOverlayCompositor,
-                    "skip overlay '" + ov.uid + "': cannot load '" + ov.bitmapPath + "': "
+                    "skip overlay '" + ov.uid + "': cannot load '" + ov.assetPath + "': "
                     + vips_error_buffer());
             vips_error_clear();
             continue;
         }
-
-        // Promote to RGBA so compositing has a consistent 4-band layout (an opaque bubble gains a
-        // fully-opaque alpha; an RGBA bubble is untouched).
-        VipsImage* rgba = img;
-        if (!vips_image_hasalpha(img)) {
-            VipsImage* wa = nullptr;
-            if (vips_addalpha(img, &wa, nullptr) != 0) {
-                PLATEMAKER_LOG(Log::StripOverlayCompositor,
-                        "skip overlay '" + ov.uid + "': vips_addalpha failed: " + vips_error_buffer());
-                vips_error_clear();
-                g_object_unref(img);
-                continue;
-            }
-            g_object_unref(img);
-            rgba = wa;
-        }
-
         LoadedOverlay lo;
-        lo.bitmap = PixelBuffer{rgba};
+        lo.w = buf.vipsImage()->Xsize;   // read before the move, so no pointer outlives its owner here
+        lo.h = buf.vipsImage()->Ysize;
+        lo.bitmap = std::move(buf);
         lo.x = ov.x;
         lo.y = ov.y;
-        lo.w = rgba->Xsize;
-        lo.h = rgba->Ysize;
         lo.blend = ov.blend;
         PLATEMAKER_LOG(Log::StripOverlayCompositor,
                 "loaded overlay '" + ov.uid + "' " + std::to_string(lo.w) + "x" + std::to_string(lo.h)

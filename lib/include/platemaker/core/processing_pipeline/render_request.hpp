@@ -113,6 +113,23 @@ struct PLATEMAKER_EXPORT RenderRequest {
      */
     std::vector<Models::StripOverlay> stripOverlays;
 
+    /**
+     * \brief The \c outputProfile.targetWidth the overlays above were authored against. 0 = "this one".
+     *
+     * Overlay placement and artwork are both in pixels, so both mean something only relative to a
+     * target width. Re-profiling a chapter from 800 px to 1600 px doubles every page — and would leave
+     * every bubble at half size in the wrong place if this were not recorded.
+     *
+     * The render derives \c scale = targetWidth / overlayAuthoredWidth and applies it to the artwork
+     * (\c StripOverlayCompositor::rasterizeOverlays()) and to the placement
+     * (\c Models::resolveOverlayAnchors()) together. A vector asset re-renders sharp at the new size;
+     * a raster one is resampled, which is the honest limit of a raster overlay rather than a defect.
+     *
+     * 0 means "authored at this render's own target width", so a consumer that never re-profiles can
+     * ignore this field entirely and a project written before it existed renders exactly as it did.
+     */
+    int overlayAuthoredWidth = 0;
+
     // -----------------------------------------------------------------------
     // Partial re-render
     // -----------------------------------------------------------------------

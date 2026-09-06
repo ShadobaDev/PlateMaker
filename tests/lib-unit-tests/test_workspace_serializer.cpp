@@ -285,7 +285,7 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     proj.colourCorrection.excludedInputUids = {"file-001", "file-009"};
     Models::StripOverlay ovl;
     ovl.uid            = "ovl-1";
-    ovl.bitmapPath     = "/tmp/bubble.png";
+    ovl.assetPath      = "/tmp/bubble.png";
     ovl.sha256         = "deadbeef";
     ovl.anchorInputUid = "file-004";   // page-anchored: y is relative to that page's top
     ovl.x              = 40;
@@ -316,7 +316,7 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
               (std::vector<std::string>{"file-001", "file-009"}));
     ASSERT_EQ(p.getStripOverlays().size(), 1u);
     EXPECT_EQ(p.getStripOverlays()[0].uid,        "ovl-1");
-    EXPECT_EQ(p.getStripOverlays()[0].bitmapPath, "/tmp/bubble.png");
+    EXPECT_EQ(p.getStripOverlays()[0].assetPath, "/tmp/bubble.png");
     EXPECT_EQ(p.getStripOverlays()[0].sha256,     "deadbeef");
     EXPECT_EQ(p.getStripOverlays()[0].anchorInputUid, "file-004")
         << "the anchor must survive the round-trip — without it the overlay reloads as an absolute "

@@ -1557,6 +1557,7 @@ static int cmdProcess(const Opts& opts)
     request.outputDirectory  = outputDir;
     request.colourCorrection = project.colourCorrection;
     request.stripOverlays    = project.getStripOverlays();
+    request.overlayAuthoredWidth = project.overlayAuthoredWidth;
     if (partial)
         request.onlySlices = dirtySlices;
     // thumbnailCacheDir stays empty: the CLI has nothing to preview, so it pays nothing.
