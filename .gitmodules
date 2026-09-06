@@ -1,0 +1,3 @@
+[submodule "docs/specification"]
+	path = docs/specification
+	url = https://github.com/ShadobaDev/PlateMaker.wiki.git
