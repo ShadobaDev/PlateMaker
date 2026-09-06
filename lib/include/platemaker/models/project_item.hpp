@@ -19,18 +19,16 @@
  *
  * ## Incremental processing
  *
- * Call \c sanitize() before running the pipeline to update all file statuses.
- * After a successful pipeline run call \c applyProcessingResults() to update
- * hashes, re-populate provenance and rebuild the lookup tables — all in one
- * place rather than scattered across the CLI/GUI layer.
+ * The operations that *drive* it live on \c Infrastructure::ProjectEditor, because each is
+ * governed by state outside the project — the disk, the workspace's canvas palette, a render's
+ * output.  What lives here is the entity they act on and the \c const queries that describe it:
+ * \c detectStaleness() answers "does this need rendering, and why" in one report.
  *
- * ## Directory re-scan (project mod --input)
- *
- * \c mergeFileScan() replaces the current input list with a new directory
- * scan while preserving incremental-processing data for unchanged files.
- * It uses SHA-256 to identify files that were renamed (same content, different
- * path) and only marks structurally new/removed/reordered files as dirty,
- * avoiding a full reprocess when only filenames changed.
+ * \code
+ * ProjectEditor{project}.sanitize(ws.canvasProfiles());   // refresh statuses (disk + config)
+ * const auto stale = project.detectStaleness(ws.canvasProfiles(), outProfile);
+ * if (stale.needsRender()) { ... }
+ * \endcode
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
  *
@@ -50,6 +48,7 @@
 #include <vector>
 #include "platemaker/platemaker_export.h"
 #include "platemaker/models/canvas_profile.hpp"
+#include "platemaker/models/output_profile.hpp"
 #include "platemaker/models/processing_error.hpp"
 #include "platemaker/models/processing_steps.hpp"
 #include "platemaker/models/project_files.hpp"
@@ -77,11 +76,12 @@ namespace Platemaker::Models {
  *
  * ### Typical usage (incremental processing)
  * \code
- * project.sanitize(ws.canvasProfiles());    // refresh statuses (disk + config)
- * if (!project.isUpToDate()) {
- *     auto outcome = pipeline.run(...);     // Core layer
- *     project.applyProcessingResults(outcome.records, outcome.appliedProfiles,
- *                                    outcome.skippedPages, ws.canvasProfiles(), outDir, now);
+ * ProjectEditor editor{project};
+ * editor.sanitize(ws.canvasProfiles());     // refresh statuses (disk + config)
+ * if (project.detectStaleness(ws.canvasProfiles(), outProfile).needsRender()) {
+ *     auto outcome = ProcessingPipeline::render(request, cancel);   // Core layer
+ *     editor.applyProcessingResults(outcome.records, outcome.appliedProfiles,
+ *                                   outcome.skippedPages, ws.canvasProfiles(), outDir, now);
  * }
  * \endcode
  *
@@ -362,39 +362,28 @@ public:
      */
     [[nodiscard]] bool detectInputCompositionChange() const;
 
-    // -----------------------------------------------------------------------
-    // Operations
-    // -----------------------------------------------------------------------
-
     /**
-     * \brief Refreshes the status of every tracked file against disk *and* config.
+     * \brief Every reason this project's outputs might be stale, in one answer.
      *
-     * For each \c InputFile:
-     * - \c Missing   — file no longer exists on disk.
-     * - \c Modified  — file exists but its SHA-256 differs from the stored hash.
-     * - \c Processed — file exists and its SHA-256 matches.
-     * - \c Pending   — file exists but has never been hashed (empty sha256).
+     * The single place the "does it need rendering, and why" rule lives.  A consumer used to
+     * assemble it out of five separate calls plus two signature comparisons of its own — and both
+     * consumers did, in near-identical copies, so the rule existed twice outside the library that
+     * owns it.
      *
-     * For each \c OutputFile (relative to \c m_outputDirectory):
-     * - \c Missing   — slice file no longer exists on disk.
-     * - \c Modified  — slice exists but its SHA-256 differs from the stored hash.
-     * - \c Done      — slice exists and (if hashed) matches.
+     * \note Call \c ProjectEditor::sanitize() first.  \c StalenessReport::contentDirty reports
+     *       what that pass recorded and is not recomputed here, because deciding it means hashing
+     *       every input and output — far too expensive for a query used to draw a status.
      *
-     * Finally, pages whose canvas profile changed since the render that produced them
-     * — or was never recorded at all — are marked \c Desynchronized, along with the
-     * outputs they fed.  A profile edit changes neither the input nor the output file,
-     * so hashes alone can never notice it; this is what surfaces it (and what makes the
-     * GUI colour those tiles "out of sync").  See \c detectCanvasConfigChange().
-     *
-     * Sets the internal up-to-date flag to \c false if any input is not
-     * \c Processed or any output is not \c Done.
-     *
-     * \param workspaceProfiles The canvas profiles currently in effect. Required rather
-     *        than optional: an overload without it could be called by accident and would
-     *        silently skip the config check — exactly the class of bug this detects.
-     * \return \c true if every input is \c Processed and every output is \c Done.
+     * \param workspaceProfiles The workspace's canvas-profile palette, as the render will see it
+     *                          (pass an empty list to mirror a profile-less render).
+     * \param outputProfile     The **resolved** output profile this project would render with —
+     *                          resolved by the caller, since a preset id resolves against the
+     *                          catalogue rather than the workspace.
+     * \return The per-axis report; see \c StalenessReport::needsRender().
      */
-    bool sanitize(const std::vector<CanvasProfile>& workspaceProfiles);
+    [[nodiscard]] StalenessReport detectStaleness(
+        const std::vector<CanvasProfile>& workspaceProfiles,
+        const OutputProfile&              outputProfile) const;
 
     /**
      * \brief Rebuilds the non-serialised runtime lookup tables from the
@@ -422,91 +411,6 @@ public:
      * existing ids stay stable.  Called after deserialisation (\c load()) and after \c mergeFileScan().
      */
     void ensureUniqueFileUids();
-
-    /**
-     * \brief Applies the results of a pipeline run to all tracked records.
-     *
-     * Updates each \c InputFile with its current SHA-256 hash, sets status
-     * to \c Processed, fills \c contributesTo from the provenance data in
-     * \p records, records the canvas profile applied to each page from
-     * \p appliedProfiles, rebuilds the \c OutputFile list and the runtime lookup
-     * tables.
-     *
-     * \param appliedProfiles What the run applied per input; establishes the baseline
-     *                        \c detectCanvasConfigChange() compares against later.
-     *                        Also captures \c canvasProfileIdsAtRender.
-     *
-     * This method centralises all post-processing bookkeeping that was
-     * previously scattered across the CLI layer.
-     *
-     * \param records           One record per saved output file, in order.
-     * \param appliedProfiles   One entry per input the run considered.
-     * \param skippedInputPaths Absolute paths the run did not include (no matching/linked canvas
-     *                          profile, or a load error — i.e. \c ProcessingOutcome::skippedPages).
-     *                          These inputs are marked \c FileStatus::Skipped instead of
-     *                          \c Processed, so a page the render left out does not masquerade as
-     *                          done.
-     * \param workspaceProfiles The full workspace palette, to capture
-     *                          \c canvasProfileIdsAtRender via
-     *                          \c effectiveCanvasProfileIds().
-     * \param outputDirectory   Absolute path where output files were written.
-     * \param timestamp         ISO 8601 string for \c InputFile::lastProcessed.
-     *
-     * \return The typed failures that happened *after* a successful render — one per input whose
-     *         content hash could not be computed (code \c InputHashFailed, category \c Io). Such an
-     *         input is set to \c FileStatus::Error rather than left \c Pending, so it no longer
-     *         silently forces a full re-render on every subsequent run. Empty on a clean apply. The
-     *         caller should surface these (CLI print / GUI log + tile) — ignoring them re-hides the
-     *         very failure this reports.
-     */
-    [[nodiscard]] std::vector<ProcessingError> applyProcessingResults(
-        const std::vector<ProcessingSliceRecord>& records,
-        const std::vector<AppliedCanvasProfile>&  appliedProfiles,
-        const std::vector<std::string>&           skippedInputPaths,
-        const std::vector<CanvasProfile>&         workspaceProfiles,
-        const std::string&                        outputDirectory,
-        const std::string&                        timestamp);
-
-    /**
-     * \brief Applies the results of a *partial* re-render (only the dirty
-     *        output slices were regenerated).
-     *
-     * For each record, the matching \c OutputFile (by \c fileName) has its
-     * SHA-256 and provenance refreshed and its status reset to \c Done.  Inputs
-     * are left untouched (they were unchanged), and the output list is not
-     * rebuilt.  Updates the up-to-date flag based on the remaining output
-     * statuses.
-     *
-     * \param records One record per regenerated output file.
-     */
-    void applyPartialResults(
-        const std::vector<ProcessingSliceRecord>& records);
-
-    /**
-     * \brief Merges a new directory scan into the current input file list.
-     *
-     * Replaces \c m_inputImages with a new ordered list derived from
-     * \p newFilePaths while maximally preserving existing incremental-
-     * processing data:
-     *
-     * - Files matched **by path**: existing record is kept as-is.
-     * - Files matched **by SHA-256** (same content, new path): treated as a
-     *   rename; path is updated but status / hash / contributesTo are kept.
-     *   No output invalidation is triggered for pure renames at the same
-     *   strip position.
-     * - Files with no match: inserted as new \c Pending entries.
-     * - Old files no longer present: removed.
-     *
-     * If any structural change is detected (file added, removed, or
-     * reordered at a different strip position), all \c OutputFile entries are
-     * marked \c Desynchronized and \c ScanMergeResult::outputsInvalidated is
-     * set to \c true.
-     *
-     * \param newFilePaths Absolute paths from the new directory scan, in
-     *                     the desired strip order (typically sorted by name).
-     * \return A \c ScanMergeResult describing what changed.
-     */
-    ScanMergeResult mergeFileScan(const std::vector<std::string>& newFilePaths);
 
     /**
      * \brief Links a canvas profile to this project, with a conflict guard.

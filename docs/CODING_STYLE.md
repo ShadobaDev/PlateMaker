@@ -121,6 +121,32 @@ You must strictly follow the directory layout rules below when organizing or cre
 * Every **namespace** must have a direct reflection in the physical directory structure.
 * Example: Code inside `namespace Subsystem::Module` must be located inside the path `src/subsystem/module/`.
 
+## Class size — and what the rule is actually about
+
+A class should stay small enough to hold in your head: a handful of methods, one clear purpose,
+its own file. The working number is **under ~10 public methods**.
+
+**The rule governs behaviour classes, not aggregates.** It exists to stop one class from acquiring
+several unrelated jobs. An *entity* that models a domain object legitimately has an accessor for
+each thing it holds, and an *editor* that owns mutation of an aggregate legitimately has an
+operation per member family — counting those as "responsibilities" is a category error, and
+splitting them to satisfy an arithmetic target makes the code worse, not better.
+
+Two classes are explicit exceptions, and each was measured before being exempted:
+
+| Class | Surface | Why it stands |
+|---|---|---|
+| `Models::ProjectItem` | ~23 public declarations | An entity. Its accessors are its shape: inputs, outputs, output directory, overlays, profile links. What did *not* belong were four whole-project operations driven by external state — they moved to `ProjectEditor`. |
+| `Infrastructure::WorkspaceEditor` | 16 public methods | An aggregate editor, already sectioned per entity family (canvas profiles 4, output profiles 3, projects 2, links 3, import 1, load 1, snapshot 2 — three to four each). Its private statics exist precisely to keep one copy of the invariants; splitting the class would duplicate them. |
+
+The test to apply is not "how many methods" but: **can you name what this class is for in one
+sentence, without "and"?** If yes, it passes however many accessors it carries. If no, the split
+follows the seam in that sentence.
+
+When an operation on an entity is driven by state the entity cannot see — the filesystem, another
+aggregate's configuration, the result of a process — it belongs on the corresponding `*_editor`,
+not on the entity.
+
 ## Class Grouping & Component Directories
 To avoid flat, messy directories while preventing over-engineering, use the following rules for grouping:
 

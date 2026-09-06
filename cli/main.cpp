@@ -113,6 +113,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <platemaker/infrastructure/project_editor/project_editor.hpp>
 
 #ifdef _WIN32
 #  ifndef WIN32_LEAN_AND_MEAN
@@ -1360,7 +1361,7 @@ static int cmdProcess(const Opts& opts)
             paths.reserve(files.size());
             for (const auto& f : files)
                 paths.push_back(fs::absolute(f).string());
-            newProj.mergeFileScan(paths);
+            Platemaker::Infrastructure::ProjectEditor{newProj}.mergeFileScan(paths);
             projectIdx = static_cast<int>(ws.projectItems.size()) - 1;
         }
     } else {
@@ -1423,70 +1424,31 @@ static int cmdProcess(const Opts& opts)
         noProfile ? noProfiles : ws.canvasProfiles();
 
     // --- Sanitize — update file statuses (disk + config) and check if reprocess is needed ---
-    project.sanitize(effectiveProfiles);
+    Platemaker::Infrastructure::ProjectEditor{project}.sanitize(effectiveProfiles);
 
-    // Detect an output-invalidating configuration change (format / slice size /
-    // quality / …) by comparing the current profile signature against the one
-    // stored at the last render. A mismatch makes every existing slice stale.
-    const std::string curSig = Platemaker::Models::outputProfileSignature(outProfile);
-    const bool hasOutputs    = !project.getOutputImages().empty();
-    const bool sigMismatch =
-        !project.outputSignature.empty() && project.outputSignature != curSig;
+    // Every reason the outputs could be stale, from the one place that owns the rule. This and the
+    // GUI each used to assemble the same five terms by hand — one rule kept in two repositories, and
+    // one place for a sixth axis to be added on one side only.
+    const auto staleness     = project.detectStaleness(effectiveProfiles, outProfile);
+    const bool configChanged = staleness.configurationChanged();
 
-    // Format change is detectable even without a stored signature (project rendered
-    // before signatures existed): the recorded slice extension won't match.
-    bool formatMismatch = false;
-    if (hasOutputs) {
-        const std::string wantExt =
-            Platemaker::Models::outputFormatExtension(outProfile.outputFormat);
-        const std::string& firstName = project.getOutputImages().front().fileName;
-        const auto dot = firstName.find_last_of('.');
-        const std::string haveExt =
-            (dot == std::string::npos) ? std::string{} : firstName.substr(dot);
-        formatMismatch = !haveExt.empty() && haveExt != wantExt;
-    }
-
-    // Canvas-profile edits are invisible to every check above: they change neither the
-    // input files nor the output files, and outputProfileSignature() covers the output
-    // profile only. Without this, editing margins left the project reporting itself up
-    // to date while its outputs were stale.
-    const auto canvasChange =
-        project.detectCanvasConfigChange(effectiveProfiles);
-
-    // Reordering / adding / removing inputs shifts the continuous strip, so every downstream slice
-    // changes while each file stays byte-identical. Fold it into configChanged so the *full* path runs
-    // (applyProcessingResults refreshes the baseline; the partial path would leave it stale forever).
-    const bool inputOrderChanged = project.detectInputCompositionChange();
-
-    // Colour correction / overlays change output bytes but touch no input or output file, so — like the
-    // output-profile signature — only a stored fingerprint catches it. No empty-guard: "no processing"
-    // has an empty signature, so a pre-feature project (empty stored) that stays without processing does
-    // not re-render, while enabling the grade or an overlay flips the signature and forces a full render.
-    const std::string curProcSig =
-        Platemaker::Models::processingConfigSignature(project.colourCorrection, project.getStripOverlays());
-    const bool procSigMismatch = project.processingSignature != curProcSig;
-
-    const bool configChanged =
-        hasOutputs && (sigMismatch || formatMismatch || canvasChange.anyChanged() || inputOrderChanged
-                       || procSigMismatch);
-
-    if (!jsonMode && procSigMismatch)
+    if (!jsonMode && staleness.processingStepsChanged)
         std::cerr << "Colour correction / overlays changed since the last render — re-rendering.\n";
 
-    if (!jsonMode && canvasChange.anyChanged()) {
-        if (canvasChange.listChanged)
+    if (!jsonMode && staleness.canvas.anyChanged()) {
+        if (staleness.canvas.listChanged)
             std::cerr << "Canvas profiles changed since the last render "
                          "(added / removed / reordered) — re-rendering.\n";
         else
             std::cerr << "Canvas profile edited since the last render — "
-                      << canvasChange.changedInputs.size()
+                      << staleness.canvas.changedInputs.size()
                       << " page(s) affected; re-rendering.\n";
     }
 
-    if (!jsonMode && inputOrderChanged)
+    if (!jsonMode && staleness.inputCompositionChanged)
         std::cerr << "Input order/composition changed since the last render — re-rendering.\n";
 
-    if (project.isUpToDate() && !configChanged) {
+    if (!staleness.needsRender()) {
         if (!jsonMode)
             std::cerr << "Nothing to do: all "
                       << project.getInputImages().size()
@@ -1611,9 +1573,9 @@ static int cmdProcess(const Opts& opts)
     // --- Update ProjectItem via library API, then save workspace ---
     std::vector<Platemaker::Models::ProcessingError> postRenderErrors;
     if (partial) {
-        project.applyPartialResults(outcome.records);
+        Platemaker::Infrastructure::ProjectEditor{project}.applyPartialResults(outcome.records);
     } else {
-        postRenderErrors = project.applyProcessingResults(
+        postRenderErrors = Platemaker::Infrastructure::ProjectEditor{project}.applyProcessingResults(
                                        outcome.records, outcome.appliedProfiles,
                                        outcome.skippedPages,
                                        effectiveProfiles, outputDir, nowIso8601());
@@ -1641,11 +1603,13 @@ static int cmdProcess(const Opts& opts)
         }
     }
 
-    // Record the configuration that produced these outputs so a later
-    // format/size/quality change is detected as stale.
-    project.outputSignature = curSig;
+    // Record the configuration that produced these outputs so a later format/size/quality change is
+    // detected as stale. Computed here rather than reused from the staleness check, because what
+    // belongs in the baseline is the config the render actually ran with.
+    project.outputSignature = Platemaker::Models::outputProfileSignature(outProfile);
     // Same, for the colour-correction / overlay config (empty when none is configured).
-    project.processingSignature = curProcSig;
+    project.processingSignature = Platemaker::Models::processingConfigSignature(
+        project.colourCorrection, project.getStripOverlays());
 
     try {
         WorkspaceSerializer{}.save(ws, wsFile);
@@ -1788,7 +1752,7 @@ static int cmdProjectCreate(const Opts& opts)
         paths.reserve(files.size());
         for (const auto& f : files)
             paths.push_back(fs::absolute(f).string());
-        newProj.mergeFileScan(paths);
+        Platemaker::Infrastructure::ProjectEditor{newProj}.mergeFileScan(paths);
     }
 
     if (opts.has("output"))
@@ -1869,7 +1833,7 @@ static int cmdProjectMod(const Opts& opts)
         paths.reserve(files.size());
         for (const auto& f : files)
             paths.push_back(fs::absolute(f).string());
-        const auto scanResult = pi->mergeFileScan(paths);
+        const auto scanResult = Platemaker::Infrastructure::ProjectEditor{*pi}.mergeFileScan(paths);
         std::cerr << "  Input updated: " << pi->getInputImages().size()
                   << " file(s) from " << opts.get("input");
         if (!scanResult.added.empty())
@@ -2104,7 +2068,7 @@ static int cmdProjectStatus(const Opts& opts)
     // Sanitize updates file statuses from disk hashes and from the canvas profiles in
     // effect, so pages whose profile changed since their render report DESYNCHRONIZED
     // rather than a misleading PROCESSED.
-    const bool upToDate = pi->sanitize(ws.canvasProfiles());
+    const bool upToDate = Platemaker::Infrastructure::ProjectEditor{*pi}.sanitize(ws.canvasProfiles());
 
     static const auto statusStr = [](FileStatus s) -> const char* {
         switch (s) {

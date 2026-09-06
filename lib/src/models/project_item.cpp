@@ -216,159 +216,6 @@ const std::vector<std::string>& ProjectItem::outputsForInput(
 }
 
 // ---------------------------------------------------------------------------
-// sanitize
-// ---------------------------------------------------------------------------
-
-bool ProjectItem::sanitize(const std::vector<CanvasProfile>& workspaceProfiles)
-{
-    namespace fs = std::filesystem;
-
-    m_isUpToDate = true;
-
-    for (auto& file : m_inputImages) {
-        // utf8ToPath() rather than the bare string: on MSVC a narrow path is read in the ANSI
-        // code page, so a non-ASCII path would report as Missing even though the file is there.
-        if (!fs::exists(Infrastructure::utf8ToPath(file.filePath))) {
-            file.status  = FileStatus::Missing;
-            m_isUpToDate = false;
-            continue;
-        }
-
-        // An input the last render produced output for but could not hash afterwards (locked /
-        // permission / offline) stays Error until the file becomes readable again. Try to hash now:
-        // success means access was restored → recover to Processed and adopt the current content as the
-        // verification baseline; failure means still unreachable → remain Error. Like Skipped, Error
-        // has an empty sha256 and does NOT mark the project out of date — that is exactly what stops the
-        // silent re-render loop (falling through to the empty-sha256 branch below would re-mark it
-        // Pending and reprocess everything forever).
-        if (file.status == FileStatus::Error) {
-            const std::string h =
-                Infrastructure::FileMetaData::computeFileSha256(file.filePath);
-            if (h.empty())
-                continue; // still unreadable — stay Error, do not force a re-render
-            file.sha256 = h;
-            file.status = FileStatus::Processed;
-            continue;
-        }
-
-        // A page the last render skipped (no matching / linked canvas profile) stays Skipped as long
-        // as the file is unchanged.  sanitize() is disk-based and cannot re-derive the profile match,
-        // so it must NOT silently "un-skip" the page to Processed/Pending — doing so lost the render's
-        // result on every reopen, and made the project look permanently out of date (a never-rendered
-        // skipped page has no hash → Pending → forces a re-render forever, even with every output Done).
-        // Skipped is terminal: nothing more can be rendered for it without a profile change, so it does
-        // NOT mark the project out of date.  A canvas-profile *list* change is caught separately by
-        // detectCanvasConfigChange() below (listChanged), which forces a full re-render and
-        // re-evaluates every page — so a page becoming matchable is not missed.
-        if (file.status == FileStatus::Skipped) {
-            if (file.sha256.empty())
-                continue; // no content baseline, but still deliberately skipped — leave it
-            if (Infrastructure::FileMetaData::computeFileSha256(file.filePath) == file.sha256)
-                continue; // unchanged → remain Skipped
-            // The file changed since it was skipped: fall through so it becomes Modified and the next
-            // render re-includes or re-skips it.
-        }
-
-        if (file.sha256.empty()) {
-            // Never processed — mark as Pending so the pipeline knows to run.
-            file.status  = FileStatus::Pending;
-            m_isUpToDate = false;
-            continue;
-        }
-
-        const std::string currentHash =
-            Infrastructure::FileMetaData::computeFileSha256(file.filePath);
-
-        if (currentHash != file.sha256) {
-            file.status  = FileStatus::Modified;
-            m_isUpToDate = false;
-        } else {
-            file.status = FileStatus::Processed;
-        }
-    }
-
-    // Validate output slices against disk: a deleted or externally-edited
-    // output makes the project out-of-date even when every input is unchanged.
-    for (auto& out : m_outputImages) {
-        const std::string path = m_outputDirectory + "/" + out.fileName;
-
-        if (!fs::exists(Infrastructure::utf8ToPath(path))) {
-            out.status   = FileStatus::Missing;
-            m_isUpToDate = false;
-            continue;
-        }
-
-        // No stored hash to compare against (legacy record) — trust existence.
-        if (out.sha256.empty()) {
-            out.status = FileStatus::Done;
-            continue;
-        }
-
-        const std::string currentHash =
-            Infrastructure::FileMetaData::computeFileSha256(path);
-
-        if (currentHash != out.sha256) {
-            out.status   = FileStatus::Modified;
-            m_isUpToDate = false;
-        } else {
-            out.status = FileStatus::Done;
-        }
-    }
-
-    // Config axis: a canvas-profile edit leaves every file byte-identical, so nothing
-    // above can see it. Mark what it invalidated as Desynchronized ("out of sync with
-    // config") — the status the UI already renders in amber.
-    //
-    // Only files the disk pass found clean are re-flagged: Missing / Modified / Pending
-    // are more specific and more urgent, so a config change must not mask them.
-    const auto markDesynchronized = [](FileStatus& status, FileStatus cleanValue) {
-        if (status == cleanValue)
-            status = FileStatus::Desynchronized;
-    };
-
-    const auto canvasChange = detectCanvasConfigChange(workspaceProfiles);
-    if (canvasChange.anyChanged()) {
-        m_isUpToDate = false;
-
-        if (canvasChange.listChanged) {
-            // The effective profile list itself changed (or, for a workspace written
-            // before fingerprints existed, there is no baseline at all). Which page got
-            // which profile can no longer be attributed, so everything is suspect.
-            for (auto& inf : m_inputImages)
-                markDesynchronized(inf.status, FileStatus::Processed);
-            for (auto& out : m_outputImages)
-                markDesynchronized(out.status, FileStatus::Done);
-        } else {
-            // Precise: only the pages whose applied profile changed, plus the slices
-            // they fed (provenance already records that mapping).
-            for (const auto& path : canvasChange.changedInputs) {
-                for (auto& inf : m_inputImages)
-                    if (inf.filePath == path)
-                        markDesynchronized(inf.status, FileStatus::Processed);
-
-                for (const auto& outName : outputsForInput(path))
-                    for (auto& out : m_outputImages)
-                        if (out.fileName == outName)
-                            markDesynchronized(out.status, FileStatus::Done);
-            }
-        }
-    }
-
-    // Composition axis: reordering / adding / removing inputs shifts the continuous strip, so every
-    // downstream slice changes while each input file stays byte-identical — no hash notices. The strip
-    // is one concatenation, so a change anywhere invalidates the whole output; mark every clean output
-    // Desynchronized (the inputs themselves are unchanged and stay Processed). See
-    // detectInputCompositionChange().
-    if (detectInputCompositionChange()) {
-        m_isUpToDate = false;
-        for (auto& out : m_outputImages)
-            markDesynchronized(out.status, FileStatus::Done);
-    }
-
-    return m_isUpToDate;
-}
-
-// ---------------------------------------------------------------------------
 // dirtyOutputNames / inputsAllProcessed
 // ---------------------------------------------------------------------------
 
@@ -523,6 +370,55 @@ bool ProjectItem::detectInputCompositionChange() const
 }
 
 // ---------------------------------------------------------------------------
+// detectStaleness
+// ---------------------------------------------------------------------------
+
+StalenessReport ProjectItem::detectStaleness(
+    const std::vector<CanvasProfile>& workspaceProfiles,
+    const OutputProfile&              outputProfile) const
+{
+    StalenessReport report;
+
+    report.hasOutputs = !m_outputImages.empty();
+
+    // Not recomputed: this is what the last sanitize() concluded after hashing every file. Doing it
+    // again here would make a status refresh cost a full re-hash of the project.
+    report.contentDirty = !m_isUpToDate;
+
+    // The output profile can change every byte while leaving the geometry — and therefore every
+    // sourceMap — identical, so only a stored signature catches it. Guarded on non-empty: a project
+    // rendered before signatures existed has nothing to compare and must not be flagged forever.
+    const std::string currentSignature = outputProfileSignature(outputProfile);
+    report.outputProfileChanged =
+        !outputSignature.empty() && outputSignature != currentSignature;
+
+    // A format switch is visible even without that baseline, because the recorded file names carry
+    // the old extension. It is also the one axis that orphans *every* existing output: the new
+    // settings cannot produce any of the old names.
+    if (report.hasOutputs) {
+        const std::string  wantedExtension = outputFormatExtension(outputProfile.outputFormat);
+        const std::string& firstName       = m_outputImages.front().fileName;
+        const auto         dot             = firstName.find_last_of('.');
+        const std::string  storedExtension =
+            (dot == std::string::npos) ? std::string{} : firstName.substr(dot);
+        report.outputFormatChanged = !storedExtension.empty() && storedExtension != wantedExtension;
+    }
+
+    report.canvas                  = detectCanvasConfigChange(workspaceProfiles);
+    report.inputCompositionChanged = detectInputCompositionChange();
+
+    // Colour correction and overlays change output bytes while touching no input or output file.
+    // No empty-guard here, unlike the output signature: "no processing" has an empty signature, so a
+    // project that never used a step matches and stays quiet — but turning a step back *off* must
+    // still differ from the non-empty signature stored when it was on, and re-render.
+    const std::string currentProcessing =
+        processingConfigSignature(colourCorrection, m_stripOverlays);
+    report.processingStepsChanged = processingSignature != currentProcessing;
+
+    return report;
+}
+
+// ---------------------------------------------------------------------------
 // rebuildLookupTables
 // ---------------------------------------------------------------------------
 
@@ -539,289 +435,6 @@ void ProjectItem::rebuildLookupTables()
         if (!inf.sha256.empty())
             m_sha256Index[inf.sha256] = inf.filePath;
     }
-}
-
-// ---------------------------------------------------------------------------
-// applyProcessingResults
-// ---------------------------------------------------------------------------
-
-std::vector<ProcessingError> ProjectItem::applyProcessingResults(
-    const std::vector<ProcessingSliceRecord>& records,
-    const std::vector<AppliedCanvasProfile>&  appliedProfiles,
-    const std::vector<std::string>&           skippedInputPaths,
-    const std::vector<CanvasProfile>&         workspaceProfiles,
-    const std::string&                        outputDirectory,
-    const std::string&                        timestamp)
-{
-    std::vector<ProcessingError> postRenderErrors; // returned: inputs that could not be hashed after render
-    // Build contributesTo map: filePath → [output file names].
-    std::unordered_map<std::string, std::vector<std::string>> contributes;
-    for (const auto& rec : records)
-        for (const auto& seg : rec.sourceMap)
-            contributes[seg.sourceFilePath].push_back(rec.fileName);
-
-    // filePath → canvas profile the run applied to it.
-    std::unordered_map<std::string, const AppliedCanvasProfile*> applied;
-    applied.reserve(appliedProfiles.size());
-    for (const auto& ap : appliedProfiles)
-        applied[ap.sourceFilePath] = &ap;
-
-    // Paths the run did not include (no matching/linked canvas profile, or a load error).
-    const std::unordered_set<std::string> skipped(
-        skippedInputPaths.begin(), skippedInputPaths.end());
-
-    // Update each InputFile: hash, status, timestamp, contributesTo, canvas baseline.
-    for (auto& inf : m_inputImages) {
-        // A skipped page was not rendered, so it must not claim to be Processed (that is the
-        // "skipped pages silently go green" bug). Mark it Skipped and leave its hash/timestamp
-        // untouched — nothing was produced for it, and it contributes to no output.
-        if (skipped.count(inf.filePath)) {
-            inf.status = FileStatus::Skipped;
-            inf.contributesTo.clear();
-            inf.canvasProfileId.clear();
-            inf.canvasFingerprint.clear();
-            continue;
-        }
-
-        const std::string h =
-            Infrastructure::FileMetaData::computeFileSha256(inf.filePath);
-        if (!h.empty()) {
-            inf.sha256        = h;
-            inf.status        = FileStatus::Processed;
-            inf.lastProcessed = timestamp;
-        } else {
-            // The render succeeded and produced output from this input, but its content could not be
-            // hashed afterwards (locked / permission / offline). Leaving it Pending (the old
-            // `if (!h.empty())` skip) made sanitize() re-mark it Pending forever → the next render
-            // redid everything and overwrote the output, silently, without end. Mark it Error instead:
-            // it *was* rendered (record lastProcessed) but has no verification baseline (empty sha256),
-            // and Error is sticky + non-forcing in sanitize(), so the loop is broken. Surface it so the
-            // caller can tell the user which file to fix.
-            inf.status        = FileStatus::Error;
-            inf.lastProcessed = timestamp;
-            postRenderErrors.push_back(ProcessingError{
-                ProcessingErrorCode::InputHashFailed, ProcessingErrorCategory::Io,
-                "Input could not be read to verify after render (locked / permission / offline).",
-                inf.filePath, {}});
-        }
-        const auto it = contributes.find(inf.filePath);
-        inf.contributesTo = (it != contributes.end())
-                            ? it->second
-                            : std::vector<std::string>{};
-
-        // Record which profile produced this page, so a later edit to it is detectable.
-        // Inputs the run never reached (e.g. Missing) get no entry — clear the baseline
-        // rather than leave a stale one claiming a profile was applied.
-        const auto ap = applied.find(inf.filePath);
-        if (ap != applied.end()) {
-            inf.canvasProfileId   = ap->second->profileId;
-            inf.canvasFingerprint = ap->second->fingerprint;
-            // Record the display W×H the run resolved against, so detectCanvasConfigChange() can
-            // re-match this page offline instead of blanket-invalidating on any profile-list change.
-            // Only overwrite from a real reading (>0): a page the run could not measure keeps whatever
-            // dimensions a previous successful render established rather than dropping to "unknown".
-            if (ap->second->width  > 0) inf.width  = ap->second->width;
-            if (ap->second->height > 0) inf.height = ap->second->height;
-        } else {
-            inf.canvasProfileId.clear();
-            inf.canvasFingerprint.clear();
-            // Leave width/height as-is: dimensions are a property of the file, not the render config,
-            // and a page the run never reached (Missing) is better served by its last-known size.
-        }
-    }
-
-    // Rebuild OutputFile list from records.
-    m_outputImages.clear();
-    m_outputImages.reserve(records.size());
-    for (std::size_t i = 0; i < records.size(); ++i) {
-        OutputFile outf;
-        // Positional but stable and unique within this wholesale rebuild — output_00N always maps to
-        // out-N. (Unlike inputs, the output list is regenerated in full each render, so there is no
-        // cross-scan collision to guard against.)
-        outf.uid       = "out-" + std::to_string(i);
-        outf.fileName  = records[i].fileName;
-        outf.sha256    = records[i].outputSha256;
-        outf.sourceMap = records[i].sourceMap;
-        outf.status    = FileStatus::Done;
-        m_outputImages.push_back(std::move(outf));
-    }
-
-    m_outputDirectory = outputDirectory;
-    m_isUpToDate       = true;
-
-    // Baseline for detectCanvasConfigChange(): the profile list this render used.
-    // Captured here rather than by the caller so it can never drift out of sync with
-    // the per-input fingerprints written above.
-    canvasProfileIdsAtRender = effectiveCanvasProfileIds(workspaceProfiles);
-
-    // Baseline for detectInputCompositionChange(): the input sequence (uids, in strip order) this
-    // render used. A later reorder / add / remove changes this and thus stales the outputs.
-    inputOrderAtRender = orderedInputUids();
-
-    rebuildLookupTables();
-
-    return postRenderErrors;
-}
-
-// ---------------------------------------------------------------------------
-// applyPartialResults
-// ---------------------------------------------------------------------------
-
-void ProjectItem::applyPartialResults(
-    const std::vector<ProcessingSliceRecord>& records)
-{
-    // Partial re-render: only the dirty output slices were regenerated. Inputs
-    // are unchanged, so their hashes / provenance / contributesTo stay as-is —
-    // we just refresh the hash and clear the dirty status of the rewritten
-    // outputs. (Unlike applyProcessingResults, which rebuilds everything.)
-    for (const auto& rec : records) {
-        for (auto& out : m_outputImages) {
-            if (out.fileName == rec.fileName) {
-                out.sha256    = rec.outputSha256;
-                out.sourceMap = rec.sourceMap;
-                out.status    = FileStatus::Done;
-                break;
-            }
-        }
-    }
-
-    // Up-to-date only if no output remains dirty (and inputs were already clean).
-    m_isUpToDate = true;
-    for (const auto& out : m_outputImages) {
-        if (out.status != FileStatus::Done) {
-            m_isUpToDate = false;
-            break;
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// mergeFileScan
-// ---------------------------------------------------------------------------
-
-ScanMergeResult ProjectItem::mergeFileScan(
-    const std::vector<std::string>& newFilePaths)
-{
-    ScanMergeResult result;
-
-    // -------------------------------------------------------------------
-    // Build lookup maps from the existing input list.
-    // -------------------------------------------------------------------
-
-    // path → index in m_inputImages (for path-based matching).
-    std::unordered_map<std::string, std::size_t> pathToOldIdx;
-    pathToOldIdx.reserve(m_inputImages.size());
-    for (std::size_t i = 0; i < m_inputImages.size(); ++i)
-        pathToOldIdx[m_inputImages[i].filePath] = i;
-
-    // sha256 → index in m_inputImages (for rename detection).
-    // Only populate for files that have been processed (non-empty sha256).
-    std::unordered_map<std::string, std::size_t> sha256ToOldIdx;
-    sha256ToOldIdx.reserve(m_inputImages.size());
-    for (std::size_t i = 0; i < m_inputImages.size(); ++i) {
-        const auto& inf = m_inputImages[i];
-        if (!inf.sha256.empty())
-            sha256ToOldIdx[inf.sha256] = i;
-    }
-
-    // Set of new paths for fast "is the old file still here?" check.
-    std::unordered_set<std::string> newPathSet(
-        newFilePaths.begin(), newFilePaths.end());
-
-    // -------------------------------------------------------------------
-    // Build the new ordered list.
-    // -------------------------------------------------------------------
-    std::vector<InputFile> newList;
-    newList.reserve(newFilePaths.size());
-
-    // Track which old indices were consumed (to find removals later).
-    std::unordered_set<std::size_t> consumedOldIndices;
-
-    bool structuralChange = false;
-
-    for (int newOrder = 0; newOrder < static_cast<int>(newFilePaths.size()); ++newOrder) {
-        const std::string& newPath = newFilePaths[static_cast<std::size_t>(newOrder)];
-
-        // --- Case 1: same path exists in old list ---
-        const auto pathIt = pathToOldIdx.find(newPath);
-        if (pathIt != pathToOldIdx.end()) {
-            InputFile inf = m_inputImages[pathIt->second];
-            if (inf.order != newOrder) structuralChange = true;
-            inf.order = newOrder;
-            consumedOldIndices.insert(pathIt->second);
-            newList.push_back(std::move(inf));
-            continue;
-        }
-
-        // --- Case 2: rename detection — hash the new file ---
-        const std::string newHash =
-            Infrastructure::FileMetaData::computeFileSha256(newPath);
-
-        // A sha256 match is only a rename if:
-        //   (a) the hash is non-empty,
-        //   (b) the hash exists in the old records, AND
-        //   (c) that old record has NOT already been claimed by a path match
-        //       (guards against two files with identical content being
-        //        incorrectly treated as renames of the same source).
-        const auto sha256It = (!newHash.empty())
-                              ? sha256ToOldIdx.find(newHash)
-                              : sha256ToOldIdx.end();
-
-        const bool isRename = sha256It != sha256ToOldIdx.end() &&
-                              consumedOldIndices.count(sha256It->second) == 0;
-
-        if (isRename) {
-            // Same content, new path → rename.
-            const std::size_t oldIdx = sha256It->second;
-            InputFile inf = m_inputImages[oldIdx];
-            result.renamed.push_back(newPath);
-            inf.filePath = newPath; // update path, keep everything else
-            // If the strip position changed, that's a structural change.
-            if (inf.order != newOrder) structuralChange = true;
-            inf.order = newOrder;
-            consumedOldIndices.insert(oldIdx);
-            newList.push_back(std::move(inf));
-        } else {
-            // --- Case 3: brand-new file ---
-            InputFile inf;
-            // uid is left empty here and minted uniquely by ensureUniqueFileUids() below — deriving it
-            // from the list position ("file-" + index) handed the same id to different files across
-            // re-scans.
-            inf.filePath = newPath;
-            inf.order    = newOrder;
-            inf.status   = FileStatus::Pending;
-            newList.push_back(std::move(inf));
-            result.added.push_back(newPath);
-            structuralChange = true;
-        }
-    }
-
-    // -------------------------------------------------------------------
-    // Detect removed files (old indices not consumed and path not in newPaths).
-    // -------------------------------------------------------------------
-    for (std::size_t i = 0; i < m_inputImages.size(); ++i) {
-        if (consumedOldIndices.count(i) == 0) {
-            result.removed.push_back(m_inputImages[i].filePath);
-            structuralChange = true;
-        }
-    }
-
-    // -------------------------------------------------------------------
-    // Apply structural change consequences.
-    // -------------------------------------------------------------------
-    if (structuralChange) {
-        for (auto& outf : m_outputImages)
-            outf.status = FileStatus::Desynchronized;
-        result.outputsInvalidated = true;
-    }
-
-    // Replace the old input list with the new one.
-    m_inputImages = std::move(newList);
-    m_isUpToDate   = false; // always requires at least a sanitize() pass
-
-    ensureUniqueFileUids();  // mint uids for the brand-new files (left empty above)
-    rebuildLookupTables();
-    return result;
 }
 
 // ---------------------------------------------------------------------------

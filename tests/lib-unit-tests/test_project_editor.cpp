@@ -217,7 +217,7 @@ TEST(InputCompositionTest, ApplyProcessingResultsCapturesBaseline)
     // Files need not exist — the baseline is captured unconditionally at the end of the apply.
     // (The unreadable inputs now come back as post-render Error entries; this test only cares about
     // the baseline, so the returned errors are intentionally discarded.)
-    (void)p.applyProcessingResults(/*records*/ {}, /*applied*/ {}, /*skipped*/ {},
+    (void)Infrastructure::ProjectEditor{p}.applyProcessingResults(/*records*/ {}, /*applied*/ {}, /*skipped*/ {},
                                    /*workspaceProfiles*/ {}, /*outDir*/ "out", /*ts*/ "2026-07-29T00:00:00Z");
 
     EXPECT_EQ(p.inputOrderAtRender, (std::vector<std::string>{"u2", "u0", "u1"}));
@@ -332,11 +332,11 @@ TEST(InputCompositionSanitizeTest, ReorderMarksOutputsDesynchronized)
     p.inputOrderAtRender = {"u0", "u1", "u2"};   // baseline from the "render"
     p.rebuildLookupTables();
 
-    EXPECT_TRUE(p.sanitize(/*workspaceProfiles*/ {}));   // unchanged → everything settled
+    EXPECT_TRUE(Infrastructure::ProjectEditor{p}.sanitize(/*workspaceProfiles*/ {}));   // unchanged → everything settled
 
     // Reorder, then re-sanitize: outputs go out of sync, inputs stay Processed.
     Infrastructure::ProjectEditor(p).setInputOrder({"u2", "u1", "u0"});
-    EXPECT_FALSE(p.sanitize({}));
+    EXPECT_FALSE(Infrastructure::ProjectEditor{p}.sanitize({}));
     for (const auto& out : p.getOutputImages())
         EXPECT_EQ(out.status, FileStatus::Desynchronized);
     for (const auto& inf : p.getInputImages())

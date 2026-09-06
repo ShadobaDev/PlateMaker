@@ -31,6 +31,17 @@ released), which re-derives onto this baseline per the cascade rule.
 - **`ProjectItem::stripOverlays` is now a lib-owned inventory, not a public field.** It is private,
   read through `getStripOverlays()` (const + mutable, like `getInputImages()`); mutation goes through
   `addOverlay()` / `removeOverlay()`.
+- **`sanitize()`, `mergeFileScan()`, `applyProcessingResults()` and `applyPartialResults()` move from
+  `ProjectItem` to `Infrastructure::ProjectEditor`** — where `project_editor.hpp` always said they
+  belonged (*"it is the natural home for input add / remove / rescan (currently
+  `ProjectItem::mergeFileScan`) as those migrate here"*). Each is driven by state the entity cannot
+  see — the filesystem, the workspace's canvas palette, a render's output — rather than being a
+  question a project answers about itself, and between them they were **440 of `project_item.cpp`'s
+  940 lines**. Call sites become `ProjectEditor{project}.sanitize(...)`; the editor is a transient
+  bound to the project for one edit, so this is a one-line change per site.
+  `ProjectItem` keeps its containers, its identity and its `const` queries — still ~23 public
+  declarations, which `docs/CODING_STYLE.md` now records as a deliberate exception rather than an
+  oversight: the method-count rule governs behaviour classes, not aggregates.
 - **Headers hold one significant type each.** Five headers were describing more than one thing, and
   the largest made you scroll past 200 lines of data types to reach the class they belonged to.
   `project_item.hpp` (755 lines) sheds its seven structs into `project_files.hpp` (the tracked
@@ -63,6 +74,16 @@ released), which re-derives onto this baseline per the cascade rule.
   renaming those would make every existing workspace lose its curves and provenance records.
 
 ### Added
+
+- **`ProjectItem::detectStaleness(canvasProfiles, outputProfile)` — one answer to "does this need
+  rendering, and why".** The returned `Models::StalenessReport` carries a field per axis: content
+  (from the last `sanitize()`), output-profile signature, output format, canvas config, input
+  composition, and the processing steps. Previously each consumer assembled that five-term
+  disjunction itself, and both did — the CLI and the GUI carried near-identical copies while only
+  three of the five axes were library code at all. Two copies of one rule in two repositories is one
+  place for a sixth axis to be added on one side and silently forgotten on the other. The axes stay
+  separate rather than collapsing to a flag because consumers need more than the verdict: the CLI
+  prints *which* setting moved.
 
 - **Project-wide colour correction (page domain).** A `Models::ColourCorrection` on each `ProjectItem`
   — per-channel tone curves (control points → a 256-entry LUT via `vips_maplut`),

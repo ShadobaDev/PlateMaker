@@ -31,6 +31,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <platemaker/infrastructure/project_editor/project_editor.hpp>
 
 namespace Platemaker {
 
@@ -174,7 +175,7 @@ TEST(NonAsciiPathTest, SanitizeReportsProcessedRatherThanPending)
     ASSERT_FALSE(inf.sha256.empty());
     project.getInputImages().push_back(inf);
 
-    project.sanitize({});
+    Infrastructure::ProjectEditor{project}.sanitize({});
 
     ASSERT_EQ(project.getInputImages().size(), 1u);
     EXPECT_EQ(project.getInputImages()[0].status, Models::FileStatus::Processed);

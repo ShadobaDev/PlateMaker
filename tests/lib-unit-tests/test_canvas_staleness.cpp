@@ -24,6 +24,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <platemaker/infrastructure/project_editor/project_editor.hpp>
 
 namespace Platemaker::Models {
 namespace {
@@ -512,7 +513,7 @@ TEST(SanitizeCanvasTest, UnchangedConfigLeavesEverythingClean)
     const std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
     DiskProject d("clean", 3, ws, "p1");
 
-    EXPECT_TRUE(d.project.sanitize(ws));
+    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
     for (int i = 0; i < 3; ++i) {
         EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed) << "input " << i;
         EXPECT_EQ(d.outputStatus(i), FileStatus::Done)      << "output " << i;
@@ -544,20 +545,20 @@ TEST(SanitizeCanvasTest, SkippedInputIsStickyAndDoesNotForceARender)
 
     // Reopen: both skips survive, page 2 stays Processed, and the project is up to date (every output
     // is Done; a skipped page is terminal, not pending work).
-    EXPECT_TRUE(d.project.sanitize(ws));
+    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
     EXPECT_EQ(d.inputStatus(0), FileStatus::Skipped) << "never-rendered skip must not become Pending";
     EXPECT_EQ(d.inputStatus(1), FileStatus::Skipped) << "stale-hash skip must not become Processed";
     EXPECT_EQ(d.inputStatus(2), FileStatus::Processed);
     EXPECT_TRUE(d.project.isUpToDate());
 
     // Idempotent across a second reopen.
-    EXPECT_TRUE(d.project.sanitize(ws));
+    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
     EXPECT_EQ(d.inputStatus(0), FileStatus::Skipped);
     EXPECT_EQ(d.inputStatus(1), FileStatus::Skipped);
 
     // But editing a skipped file must re-open it for evaluation (Modified), not leave it stuck.
     std::ofstream(pages[1].filePath, std::ios::binary) << "CHANGED-CONTENT";
-    EXPECT_FALSE(d.project.sanitize(ws));
+    EXPECT_FALSE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
     EXPECT_EQ(d.inputStatus(1), FileStatus::Modified);
 }
 
@@ -577,11 +578,11 @@ TEST(SanitizeCanvasTest, MarginEditDesynchronizesOnlyTheAffectedPages)
     pages[1].canvasProfileId   = "p2";
     pages[1].canvasFingerprint = canvasRenderFingerprint(ws[1]);
 
-    ASSERT_TRUE(d.project.sanitize(ws)) << "baseline must start clean";
+    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws)) << "baseline must start clean";
 
     ws[1].margins.top = 999;   // edit only the profile page 1 uses
 
-    EXPECT_FALSE(d.project.sanitize(ws));
+    EXPECT_FALSE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
 
     EXPECT_EQ(d.inputStatus(0),  FileStatus::Processed);
     EXPECT_EQ(d.outputStatus(0), FileStatus::Done);
@@ -604,10 +605,10 @@ TEST(SanitizeCanvasTest, AddingAMatchingProfileDesynchronizesOnlyThePagesItMatch
     pages[1].width = 800;  pages[1].height = 1280;
     pages[2].width = 1600; pages[2].height = 10240;
 
-    ASSERT_TRUE(d.project.sanitize(std::vector<CanvasProfile>{})) << "baseline clean with no profiles";
+    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(std::vector<CanvasProfile>{})) << "baseline clean with no profiles";
 
     const std::vector<CanvasProfile> ws{makeProfile("p1", 800, 1280, 40)};   // matches page 1 only
-    EXPECT_FALSE(d.project.sanitize(ws));
+    EXPECT_FALSE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
 
     EXPECT_EQ(d.inputStatus(0),  FileStatus::Processed);
     EXPECT_EQ(d.outputStatus(0), FileStatus::Done);
@@ -624,10 +625,10 @@ TEST(SanitizeCanvasTest, AddingANonMatchingProfileLeavesEverythingClean)
     DiskProject d("addnomatch", 3, /*profiles*/ {}, /*usedProfileId*/ "");
     for (auto& inf : d.project.getInputImages()) { inf.width = 1600; inf.height = 10240; }
 
-    ASSERT_TRUE(d.project.sanitize(std::vector<CanvasProfile>{}));
+    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(std::vector<CanvasProfile>{}));
 
     const std::vector<CanvasProfile> ws{makeProfile("p1", 800, 1280, 40)};   // matches nothing here
-    EXPECT_TRUE(d.project.sanitize(ws)) << "a profile that matches nothing must not desynchronize";
+    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws)) << "a profile that matches nothing must not desynchronize";
     for (int i = 0; i < 3; ++i) {
         EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed) << "input " << i;
         EXPECT_EQ(d.outputStatus(i), FileStatus::Done)      << "output " << i;
@@ -647,7 +648,7 @@ TEST(SanitizeCanvasTest, LegacyWorkspaceDesynchronizesEverything)
     }
     d.project.canvasProfileIdsAtRender.clear();
 
-    EXPECT_FALSE(d.project.sanitize(ws));
+    EXPECT_FALSE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
     for (int i = 0; i < 3; ++i) {
         EXPECT_EQ(d.inputStatus(i),  FileStatus::Desynchronized) << "input " << i;
         EXPECT_EQ(d.outputStatus(i), FileStatus::Desynchronized) << "output " << i;
@@ -659,12 +660,12 @@ TEST(SanitizeCanvasTest, ColourEditLeavesEverythingClean)
     // The regression that would make every tile amber on a harmless overlay tweak.
     std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
     DiskProject d("colour", 2, ws, "p1");
-    ASSERT_TRUE(d.project.sanitize(ws));
+    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
 
     ws[0].visualColour     = RGBA{1, 2, 3, 4};
     ws[0].backgroundColour = RGBA{5, 6, 7, 8};
 
-    EXPECT_TRUE(d.project.sanitize(ws)) << "template-only fields must not desynchronize";
+    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws)) << "template-only fields must not desynchronize";
     for (int i = 0; i < 2; ++i) {
         EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed);
         EXPECT_EQ(d.outputStatus(i), FileStatus::Done);
@@ -677,12 +678,12 @@ TEST(SanitizeCanvasTest, MissingFileIsNotMaskedByConfigChange)
     // config pass must not overwrite it.
     std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
     DiskProject d("missing", 2, ws, "p1");
-    ASSERT_TRUE(d.project.sanitize(ws));
+    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
 
     std::filesystem::remove(d.project.getInputImages()[0].filePath);
     ws[0].margins.top = 999;   // config changes too
 
-    EXPECT_FALSE(d.project.sanitize(ws));
+    EXPECT_FALSE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
     EXPECT_EQ(d.inputStatus(0), FileStatus::Missing)
         << "Missing must survive the config pass";
     EXPECT_EQ(d.inputStatus(1), FileStatus::Desynchronized);

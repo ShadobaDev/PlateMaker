@@ -25,6 +25,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <platemaker/infrastructure/project_editor/project_editor.hpp>
 
 namespace Platemaker {
 namespace {
@@ -58,7 +59,7 @@ TEST(PostRenderErrorTest, UnhashableInputBecomesErrorAndIsReturned)
     // this exercises exactly the post-render hash-failure branch.
     ProjectItem p = projectWithInput("does-not-exist-after-render.png");
 
-    const auto errors = p.applyProcessingResults(
+    const auto errors = Infrastructure::ProjectEditor{p}.applyProcessingResults(
         /*records*/ {}, /*applied*/ {}, /*skipped*/ {}, /*workspaceProfiles*/ {},
         /*outDir*/ "out", /*ts*/ "2026-08-05T00:00:00Z");
 
@@ -78,7 +79,7 @@ TEST(PostRenderErrorTest, SkippedInputIsNotAnError)
 {
     ProjectItem p = projectWithInput("skipped.png");
 
-    const auto errors = p.applyProcessingResults(
+    const auto errors = Infrastructure::ProjectEditor{p}.applyProcessingResults(
         /*records*/ {}, /*applied*/ {}, /*skipped*/ {std::string("skipped.png")},
         /*workspaceProfiles*/ {}, /*outDir*/ "out", /*ts*/ "2026-08-05T00:00:00Z");
 
@@ -110,7 +111,7 @@ TEST(PostRenderErrorTest, SanitizeRecoversErrorWhenFileBecomesReadable)
     p.getInputImages().front().status = FileStatus::Error;
     p.getInputImages().front().sha256.clear();
 
-    p.sanitize(/*workspaceProfiles*/ {});
+    Infrastructure::ProjectEditor{p}.sanitize(/*workspaceProfiles*/ {});
 
     const InputFile& inf = p.getInputImages().front();
     EXPECT_EQ(inf.status, FileStatus::Processed) << "readable again → recovered";
@@ -125,7 +126,7 @@ TEST(PostRenderErrorTest, SanitizeErrorWithMissingFileBecomesMissing)
     ProjectItem p = projectWithInput("truly-gone.png");
     p.getInputImages().front().status = FileStatus::Error;
 
-    p.sanitize(/*workspaceProfiles*/ {});
+    Infrastructure::ProjectEditor{p}.sanitize(/*workspaceProfiles*/ {});
 
     EXPECT_EQ(p.getInputImages().front().status, FileStatus::Missing);
 }

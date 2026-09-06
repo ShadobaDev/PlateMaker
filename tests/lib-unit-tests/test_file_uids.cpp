@@ -19,6 +19,7 @@
 
 #include <string>
 #include <unordered_set>
+#include <platemaker/infrastructure/project_editor/project_editor.hpp>
 
 namespace Platemaker::Models {
 namespace {
@@ -38,7 +39,7 @@ TEST(FileUidTest, MergeFileScanGivesEveryInputAUniqueNonEmptyUid)
     // Paths need not exist: a brand-new file just hashes to empty and is treated as new, which is the
     // path that mints the uid.
     ProjectItem p;
-    p.mergeFileScan({"a.png", "b.png", "c.png"});
+    Platemaker::Infrastructure::ProjectEditor{p}.mergeFileScan({"a.png", "b.png", "c.png"});
 
     ASSERT_EQ(p.getInputImages().size(), 3u);
     for (const auto& f : p.getInputImages()) {
@@ -49,7 +50,7 @@ TEST(FileUidTest, MergeFileScanGivesEveryInputAUniqueNonEmptyUid)
 
     // A re-scan that keeps two files and adds two more must not reissue a colliding id — the old
     // "file-" + position scheme gave a new file the same id as a kept one (the "two file-19s" bug).
-    p.mergeFileScan({"a.png", "b.png", "d.png", "e.png"});
+    Platemaker::Infrastructure::ProjectEditor{p}.mergeFileScan({"a.png", "b.png", "d.png", "e.png"});
     ASSERT_EQ(p.getInputImages().size(), 4u);
     EXPECT_EQ(uniqueInputUids(p), 4u);
 }
@@ -57,7 +58,7 @@ TEST(FileUidTest, MergeFileScanGivesEveryInputAUniqueNonEmptyUid)
 TEST(FileUidTest, EnsureUniqueFileUidsMintsEmptyAndDeduplicates)
 {
     ProjectItem p;
-    p.mergeFileScan({"a.png", "b.png", "c.png"});
+    Platemaker::Infrastructure::ProjectEditor{p}.mergeFileScan({"a.png", "b.png", "c.png"});
     auto& inputs = p.getInputImages();
 
     // The two states an old workspace could carry: a collision, and an empty id (from the old "uuid"
