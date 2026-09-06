@@ -1,0 +1,298 @@
+<mxfile host="65bd71144e">
+    <diagram name="Render flow (activity diagram)" id="render-flow">
+        <mxGraphModel dx="1966" dy="706" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1850" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="g_guard" value="outer try / catch(...)  —  turns any escaped exception into a typed&#xa;Unexpected/Internal outcome instead of unwinding out of the worker thread" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=4;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry y="150" width="1380" height="1550" as="geometry"/>
+                </mxCell>
+                <mxCell id="region_inputs" value="«iterative»&#xa;for each file in request.inputs" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=4;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="330" width="1030" height="540" as="geometry"/>
+                </mxCell>
+                <mxCell id="pin_inputs" value="inputs" style="rounded=0;whiteSpace=wrap;html=1;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="384" width="56" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="region_slices" value="«iterative»&#xa;for each slice ScaledStrip::sliceAll streams" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=4;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="290" y="1200" width="1050" height="470" as="geometry"/>
+                </mxCell>
+                <mxCell id="pin_slices" value="slices" style="rounded=0;whiteSpace=wrap;html=1;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="1252" width="56" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="try_page" value="try" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=4;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="340" y="520" width="400" height="288" as="geometry"/>
+                </mxCell>
+                <mxCell id="i_start" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="600" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_i_start__start" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="i_start" target="start" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="start" value="ProcessingPipeline::render(&#xa;RenderRequest, cancel, callbacks)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="450" y="70" width="330" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="setup" value="CanvasProfileMatcher(profiles, ids)&#xa;PageRenderer(matcher, hasProfiles, targetWidth)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="450" y="170" width="330" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1" value="PHASE 1 — StripBuilder::appendAllPages()" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="450" y="250" width="330" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="cancel1" value="cancelled?" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="440" y="368" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="missing" value="FileStatus::Missing?" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="420" y="450" width="240" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="plan" value="PageRenderer::planFromHeader()&#xa;header read only — no pixels decoded" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="375" y="550" width="330" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="record" value="report match  ·  record AppliedCanvasProfile&#xa;(profile id + fingerprint + display W x H)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="375" y="620" width="330" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="append" value="pageTopY = strip.totalHeight()&#xa;strip.append(scaledPage(plan, path, grade?))&#xa;pageTopByInputUid[uid] = pageTopY&#xa;callbacks.onInput(plan.status)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="375" y="690" width="330" height="86" as="geometry"/>
+                </mxCell>
+                <mxCell id="empty" value="strip.totalHeight() == 0 ?" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="410" y="886" width="260" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="count" value="expectedSliceCount(stripHeight, outputProfile)&#xa;callbacks.onSlicingStarted" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="375" y="965" width="330" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="writer" value="SliceWriter(request, pageTopByInputUid, expectedTotal, callbacks)&#xa;· resolve partial-render filter&#xa;· open ThumbnailCache (optional)&#xa;· resolveOverlayAnchors + decode bitmaps" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="375" y="1040" width="330" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2" value="PHASE 2 — strip.sliceAll(...)  streams one slice at a time" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="355" y="1154" width="370" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="filt" value="in the partial filter?" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="425" y="1238" width="230" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="comp" value="composite overlays intersecting this slice" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="375" y="1317" width="330" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="save" value="ImageIO::encode(slice, outPath, outputProfile)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="375" y="1385" width="330" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="thumb" value="warm ThumbnailCache from the in-RAM slice&#xa;(best effort — a failure is logged, never fatal)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="375" y="1450" width="330" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="rec" value="sha256 + ProcessingSliceRecord&#xa;onProgress / onSliceSaved" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="375" y="1520" width="330" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="done" value="return outcome" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="375" y="1790" width="330" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_done_o" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="523" y="1856" width="34" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_done_i" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="531" y="1864" width="18" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_done__f_done" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="done" target="f_done_o" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="cancel2" value="cancel.isCancelled()&#xa;-&gt; outcome.cancelled = true" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="375" y="1720" width="330" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="x_cancel" value="return outcome{cancelled}&#xa;partial output stays on disk" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="900" y="368" width="300" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="x_skip" value="skippedPages += path&#xa;onInput(SkippedMissing)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="905" y="450" width="300" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="x_err" value="onInput(SkippedError, InputLoadFailed)&#xa;NON-FATAL — the run continues" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="905" y="649" width="290" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="x_nopages" value="FAIL  NoPagesLoaded / Load" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="900" y="890" width="300" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="x_filt" value="onSliceSkipped&#xa;(clean slice, not re-encoded)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="840" y="1238" width="300" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="x_comp" value="FAIL  SliceEncodeFailed / Encode&#xa;stop slicing" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="840" y="1313" width="300" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="x_save" value="FAIL  OutputLocked / Io&#xa;or SliceEncodeFailed / Encode" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="840" y="1379" width="300" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="x_slice" value="FAIL  SlicingFailed / Slice" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="840" y="1144" width="300" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_xcancel_o" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="1260" y="376" width="34" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_xcancel_i" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="1268" y="384" width="18" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_xcancel__f" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="x_cancel" target="f_xcancel_o" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_xnopages_o" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="1240" y="896" width="34" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_xnopages_i" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="1248" y="904" width="18" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_xnopages__f" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="x_nopages" target="f_xnopages_o" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_xslice_o" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="1240" y="1150" width="34" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_xslice_i" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="1248" y="1158" width="18" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_xslice__f" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="x_slice" target="f_xslice_o" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_xcomp_o" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="1240" y="1319" width="34" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_xcomp_i" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="1248" y="1327" width="18" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_xcomp__f" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="x_comp" target="f_xcomp_o" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_xsave_o" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="1240" y="1385" width="34" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_xsave_i" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="1248" y="1393" width="18" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_xsave__f" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="x_save" target="f_xsave_o" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_start__setup" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="start" target="setup" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_setup__p1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="setup" target="p1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_p1__cancel1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="p1" target="cancel1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="615" y="310"/>
+                            <mxPoint x="545" y="310"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_cancel1__missing" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="cancel1" target="missing" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_cancel1__x_cancel" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="cancel1" target="x_cancel" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_missing__plan" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="missing" target="plan" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_missing__x_skip" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="missing" target="x_skip" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_plan__record" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="plan" target="record" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_record__append" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="record" target="append" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="merge_input" value="" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="470" y="825" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_append__merge_input" value="next input, then:" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="append" target="merge_input" edge="1">
+                    <mxGeometry x="-0.1111" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_xskip__merge_input" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="x_skip" target="merge_input" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1290" y="475"/>
+                            <mxPoint x="1290" y="845"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_merge_input__empty" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="merge_input" target="empty" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_append__x_err" value="throws" style="edgeStyle=isometricEdgeStyle;rounded=0;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;elbow=vertical;" parent="1" source="try_page" target="x_err" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_empty__count" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="empty" target="count" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_empty__x_nopages" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="empty" target="x_nopages" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_count__writer" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="count" target="writer" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_writer__p2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="writer" target="p2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_p2__filt" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="p2" target="filt" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_filt__comp" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="filt" target="comp" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_filt__x_filt" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="filt" target="x_filt" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_comp__save" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="comp" target="save" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_comp__x_comp" value="throws" style="edgeStyle=isometricEdgeStyle;rounded=0;html=1;elbow=vertical;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="comp" target="x_comp" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_save__thumb" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="save" target="thumb" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_save__x_save" value="throws" style="edgeStyle=isometricEdgeStyle;rounded=0;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;elbow=vertical;" parent="1" source="save" target="x_save" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_thumb__rec" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="thumb" target="rec" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="merge_slice" value="" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="470" y="1610" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_rec__merge_slice" value="next slice, then:" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="rec" target="merge_slice" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_xfilt__merge_slice" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="x_filt" target="merge_slice" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1300" y="1260"/>
+                            <mxPoint x="1300" y="1630"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_merge_slice__cancel2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="merge_slice" target="cancel2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_p2__x_slice" value="throws" style="edgeStyle=isometricEdgeStyle;rounded=0;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;arcSize=10;elbow=vertical;" parent="1" source="p2" target="x_slice" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_cancel2__done" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="cancel2" target="done" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_stream" value="Why the save happens inside &lt;br&gt;the callback&lt;br&gt;&lt;br&gt;ScaledStrip streams each slice out and releases&amp;nbsp;source images as it goes. Collecting slices into a&amp;nbsp;list first would hold the whole chapter in RAM; writing them here keeps one slice and about two sources alive at a time, whatever the length." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="1156" width="200" height="174" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_anchor" value="pageTopByInputUid is built here &lt;br&gt;because this loop&amp;nbsp;is the only point in a run where a page&#39;s uid and&amp;nbsp;its strip-Y are both known. &lt;br&gt;&lt;br&gt;&lt;div&gt;A page that failed to&amp;nbsp;load gets no entry, so an overlay anchored to it is&amp;nbsp;reported orphaned instead of landing on a neighbour.&lt;/div&gt;" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="640" width="200" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_xerr__merge_input" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="x_err" target="merge_input" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1055" y="845"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="n_fatal" value="How a fatal slice error leaves the region&#xa;&#xa;writeSlice() returns false, sliceAll() stops streaming and returns&#xa;normally, and render() then sees outcome.failed and returns it.&#xa;The activity ends either way — but nothing is thrown across the&#xa;region boundary, and slices already written stay on disk." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="900" y="1480" width="340" height="120" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

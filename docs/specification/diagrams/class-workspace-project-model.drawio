@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="65bd71144e">
+    <diagram name="Workspace and project model (class diagram)" id="workspace-and-project-model">
+        <mxGraphModel dx="1966" dy="706" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1350" pageHeight="1150" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="ws" value="Workspace                     &lt;workspace&gt;.platemaker.json" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="60" width="420" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="wsf0" value="canvasProfiles   vector&lt;CanvasProfile&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="ws" vertex="1">
+                    <mxGeometry y="26" width="420" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="wsf1" value="outputProfiles   vector&lt;OutputProfile&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="ws" vertex="1">
+                    <mxGeometry y="46" width="420" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="wsf2" value="projectItems     vector&lt;ProjectItem&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="ws" vertex="1">
+                    <mxGeometry y="66" width="420" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="wsf3" value="outputDirectory  string" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="ws" vertex="1">
+                    <mxGeometry y="86" width="420" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="wsf4" value="stripDirty       bool" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="ws" vertex="1">
+                    <mxGeometry y="106" width="420" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="wsf5" value="version          int   (schema, migrated on load)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="ws" vertex="1">
+                    <mxGeometry y="126" width="420" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="cp" value="CanvasProfile" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="570" y="60" width="340" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="cpf0" value="id &#183; name" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="cp" vertex="1">
+                    <mxGeometry y="26" width="340" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="cpf1" value="canvasSize   W x H  (matching key)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="cp" vertex="1">
+                    <mxGeometry y="46" width="340" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="cpf2" value="margins      T R B L  (cropped away)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="cp" vertex="1">
+                    <mxGeometry y="66" width="340" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="cpf3" value="templateInfo &#183; colours (template only)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="cp" vertex="1">
+                    <mxGeometry y="86" width="340" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="op" value="OutputProfile" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="960" y="60" width="340" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="opf0" value="id &#183; name" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="op" vertex="1">
+                    <mxGeometry y="26" width="340" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="opf1" value="targetWidth &#183; sliceHeight" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="op" vertex="1">
+                    <mxGeometry y="46" width="340" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="opf2" value="outputFormat + per-format options" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="op" vertex="1">
+                    <mxGeometry y="66" width="340" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="opf3" value="startIndex &#183; lastSlicePolicy" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="op" vertex="1">
+                    <mxGeometry y="86" width="340" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="pi" value="ProjectItem   &#8212;   one chapter (ENTITY)" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="280" width="480" height="250" as="geometry"/>
+                </mxCell>
+                <mxCell id="pif0" value="name &#183; uid &#183; inputDirectory" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pi" vertex="1">
+                    <mxGeometry y="26" width="480" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="pif1" value="outputSignature            baseline: output profile" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pi" vertex="1">
+                    <mxGeometry y="44" width="480" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="pif2" value="canvasProfileIdsAtRender   baseline: profile list" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pi" vertex="1">
+                    <mxGeometry y="62" width="480" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="pif3" value="inputOrderAtRender         baseline: input sequence" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pi" vertex="1">
+                    <mxGeometry y="80" width="480" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="pif4" value="processingSignature        baseline: CC + overlays" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pi" vertex="1">
+                    <mxGeometry y="98" width="480" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="pif5" value="colourCorrection           ColourCorrection" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pi" vertex="1">
+                    <mxGeometry y="116" width="480" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="pif6" value="- - - private, guarded accessors - - -" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pi" vertex="1">
+                    <mxGeometry y="134" width="480" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="pif7" value="m_inputImages     vector&lt;InputFile&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pi" vertex="1">
+                    <mxGeometry y="152" width="480" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="pif8" value="m_outputImages    vector&lt;OutputFile&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pi" vertex="1">
+                    <mxGeometry y="170" width="480" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="pif9" value="m_stripOverlays   vector&lt;StripOverlay&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pi" vertex="1">
+                    <mxGeometry y="188" width="480" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="pif10" value="m_canvasProfileIds &#183; m_outputProfileId" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pi" vertex="1">
+                    <mxGeometry y="206" width="480" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="pif11" value="m_outputDirectory &#183; m_isUpToDate" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pi" vertex="1">
+                    <mxGeometry y="224" width="480" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="inf" value="InputFile" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="780" y="280" width="330" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="inff0" value="uid &#183; filePath &#183; order" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="inf" vertex="1">
+                    <mxGeometry y="26" width="330" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="inff1" value="sha256          content baseline" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="inf" vertex="1">
+                    <mxGeometry y="44" width="330" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="inff2" value="status          FileStatus" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="inf" vertex="1">
+                    <mxGeometry y="62" width="330" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="inff3" value="width &#183; height  display W x H at render" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="inf" vertex="1">
+                    <mxGeometry y="80" width="330" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="inff4" value="canvasProfileId + canvasFingerprint" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="inf" vertex="1">
+                    <mxGeometry y="98" width="330" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="inff5" value="contributesTo   output names" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="inf" vertex="1">
+                    <mxGeometry y="116" width="330" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="inff6" value="lastProcessed" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="inf" vertex="1">
+                    <mxGeometry y="134" width="330" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="of" value="OutputFile" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="1010" y="550" width="290" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="off0" value="uid &#183; fileName" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="of" vertex="1">
+                    <mxGeometry y="26" width="290" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="off1" value="sha256" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="of" vertex="1">
+                    <mxGeometry y="44" width="290" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="off2" value="status  FileStatus" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="of" vertex="1">
+                    <mxGeometry y="62" width="290" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="off3" value="sourceMap  vector&lt;SourceSegment&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="of" vertex="1">
+                    <mxGeometry y="80" width="290" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="ov" value="StripOverlay" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="165" y="560" width="330" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ovf0" value="uid &#183; bitmapPath &#183; sha256" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="ov" vertex="1">
+                    <mxGeometry y="26" width="330" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="ovf1" value="anchorInputUid   empty = absolute strip-Y" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="ov" vertex="1">
+                    <mxGeometry y="44" width="330" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="ovf2" value="x &#183; y &#183; enabled &#183; blend" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="ov" vertex="1">
+                    <mxGeometry y="62" width="330" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="ovf3" value="(the bitmap is rasterised by the CONSUMER)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="ov" vertex="1">
+                    <mxGeometry y="80" width="330" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="cc" value="ColourCorrection" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="590" y="560" width="290" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ccf0" value="enabled" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="cc" vertex="1">
+                    <mxGeometry y="26" width="290" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="ccf1" value="brightness &#183; contrast &#183; saturation" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="cc" vertex="1">
+                    <mxGeometry y="44" width="290" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="ccf2" value="curves  master + red/green/blue" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="cc" vertex="1">
+                    <mxGeometry y="62" width="290" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="ccf3" value="excludedInputUids" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="cc" vertex="1">
+                    <mxGeometry y="80" width="290" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="split" value="MUTATION lives in Infrastructure editors &#8212; never on the entity" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="690" width="1210" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="we" value="WorkspaceEditor" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="760" width="590" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="wef0" value="canvas profile palette   add &#183; remove &#183; replace &#183; templateInfo" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="we" vertex="1">
+                    <mxGeometry y="26" width="590" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="wef1" value="output profile palette   add &#183; remove &#183; replace" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="we" vertex="1">
+                    <mxGeometry y="46" width="590" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="wef2" value="projects                 add &#183; duplicate" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="we" vertex="1">
+                    <mxGeometry y="66" width="590" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="wef3" value="project &lt;-&gt; profile links" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="we" vertex="1">
+                    <mxGeometry y="86" width="590" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="wef4" value="import profiles &#183; installLoaded &#183; snapshotMeta / restoreMeta" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="we" vertex="1">
+                    <mxGeometry y="106" width="590" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="wef5" value="private statics: one copy of the id/uniqueness invariants" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="we" vertex="1">
+                    <mxGeometry y="126" width="590" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="pe" value="ProjectEditor" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="720" y="760" width="580" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="pef0" value="setInputOrder &#183; moveInput      strip order" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pe" vertex="1">
+                    <mxGeometry y="26" width="580" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="pef1" value="sanitize                       refresh statuses (disk + config)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pe" vertex="1">
+                    <mxGeometry y="46" width="580" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="pef2" value="mergeFileScan                  reconcile a directory scan" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pe" vertex="1">
+                    <mxGeometry y="66" width="580" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="pef3" value="applyProcessingResults         take a render&#39;s output in" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pe" vertex="1">
+                    <mxGeometry y="86" width="580" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="pef4" value="applyPartialResults            partial re-render" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pe" vertex="1">
+                    <mxGeometry y="106" width="580" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="pef5" value="snapshot / restore             undo support" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pe" vertex="1">
+                    <mxGeometry y="126" width="580" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ws__pi" value="0..n" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="ws" target="pi" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="330" y="230"/>
+                            <mxPoint x="330" y="230"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_ws__cp" value="0..n" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="ws" target="cp" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="530" y="115"/>
+                            <mxPoint x="530" y="115"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_ws__op" value="0..n" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="ws" target="op" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1130" y="200"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_pi__inf" value="0..n" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="pi" target="inf" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="630" y="360"/>
+                            <mxPoint x="630" y="360"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_pi__of" value="0..n" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="pi" target="of" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1155" y="470"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_pi__ov" value="0..n" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="pi" target="ov" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_pi__cc" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="pi" target="cc" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="735" y="500"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_we__ws" value="mutates" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" parent="1" source="we" target="ws" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="30" y="840"/>
+                            <mxPoint x="30" y="135"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_pe__pi" value="mutates" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" parent="1" source="pe" target="pi" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1010" y="740"/>
+                            <mxPoint x="60" y="740"/>
+                            <mxPoint x="60" y="405"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="n_split" value="Entity or editor?&#xa;&#xa;If an operation is driven by state the project cannot see &#8212; what is on&#xa;disk, what the workspace&#39;s palette says, what a render just produced &#8212;&#xa;it belongs on the editor. If it is a question the project answers about&#xa;itself, it stays a const query on the entity.&#xa;&#xa;That is why sanitize(), mergeFileScan() and applyProcessingResults()&#xa;live on ProjectEditor while detectStaleness() stays on ProjectItem." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="940" width="560" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_presets" value="Presets are provenance, not a flag&#xa;&#xa;An output preset is an ordinary OutputProfile the library defines in&#xa;code (models/output_presets.hpp). There is no &#39;is a preset&#39; field: a&#xa;profile is a preset because it came from the catalogue. Presets are&#xa;never serialised &#8212; the serializer strips them on save and drops&#xa;copies on load &#8212; so outputProfileId can reference one by stable id." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="720" y="940" width="580" height="150" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

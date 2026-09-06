@@ -1,0 +1,227 @@
+<mxfile host="65bd71144e">
+    <diagram name="Page domain - render" id="page-domain---render">
+        <mxGraphModel dx="1966" dy="706" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1250" pageHeight="1560" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="i" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="215" y="30" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="in" value="one input page, inside StripBuilder&#39;s per-input region&#xa;(the loop itself lives in activity-render-flow)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="90" width="380" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_i__in" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="i" target="in" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="plan" value="PageRenderer::planFromHeader(path)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="170" width="380" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="hdr" value="vips_image_new_from_file — HEADER ONLY, no pixels decoded&#xa;EXIF Orientation 5-8 transposes W x H, so the size reported&#xa;is the one the autorotated scaler will produce" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="230" width="380" height="66" as="geometry"/>
+                </mxCell>
+                <mxCell id="hasp" value="workspace has canvas profiles?" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="315" width="320" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="noprof" value="no match attempted — the page is scaled, never cropped&#xa;(the dimension check below is skipped too)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="520" y="315" width="340" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="dims" value="width &gt; 0 and height &gt; 0 ?" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="85" y="390" width="290" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="thr" value="throw runtime_error&#xa;&quot;cannot determine image dimensions&quot;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="520" y="390" width="340" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="match" value="CanvasProfileMatcher::resolveForSize(width, height)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="465" width="380" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="st" value="Matched              -&gt; plan.profile&#xa;FoundInWorkspaceOnly -&gt; AppendedProfileNotLinked (+ candidate ids)&#xa;no match             -&gt; AppendedWithoutProfile" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="530" width="380" height="62" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_plan" value="" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="205" y="610" width="50" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_plan__hdr" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="plan" target="hdr" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_hdr__hasp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="hdr" target="hasp" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_hasp__dims" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="hasp" target="dims" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_hasp__noprof" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="hasp" target="noprof" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_dims__match" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="dims" target="match" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_dims__thr" value="no" style="edgeStyle=isometricEdgeStyle;rounded=0;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="dims" target="thr" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_match__st" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="match" target="st" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_st__m_plan" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="st" target="m_plan" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="sp" value="PageRenderer::scaledPage(plan, path, grade)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="680" width="380" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_m_plan__sp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="m_plan" target="sp" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="b1" value="plan.profile set AND any margin &gt; 0 ?" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="750" width="340" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="m1" value="ImageIO::decode(path, toSRGB = true)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="57" y="830" width="340" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="m2" value="grade set ?" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="107" y="890" width="240" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="m3" value="ColourCorrector::applyToBuffer(buf, *grade)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="57" y="960" width="340" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="m4" value="" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="205" y="1025" width="44" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="m5" value="MarginCropper::crop(buf, plan.profile-&gt;margins)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="57" y="1085" width="340" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="g1" value="grade set ?" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="540" y="750" width="240" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="g2" value="ImageIO::decode(path, toSRGB = false)&#xa;raw: the ungraded form of this path goes straight&#xa;through Scaler, which does not transform" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="480" y="840" width="360" height="66" as="geometry"/>
+                </mxCell>
+                <mxCell id="g3" value="ColourCorrector::applyToBuffer(buf, *grade)&#xa;(unconditional on this branch)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="480" y="954" width="360" height="46" as="geometry"/>
+                </mxCell>
+                <mxCell id="s_file" value="Scaler::scale(path, targetWidth)&#xa;the file overload — no buffer involved" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="900" y="830" width="320" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_buf" value="" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="398" y="1160" width="44" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="s_buf" value="Scaler::scale(buffer, path, targetWidth)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="1225" width="340" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_out" value="" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="398" y="1300" width="44" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="out" value="ScaledImage appended to the strip.&#xa;Still lazy — the pixels are pulled later, while slicing." style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="230" y="1365" width="380" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_o" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="403" y="1510" width="34" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_i" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="410" y="1517" width="20" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_sp__b1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="sp" target="b1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_b1__m1" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="b1" target="m1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_b1__g1" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="b1" target="g1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_m1__m2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="m1" target="m2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_m2__m3" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="m2" target="m3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_m2__m4" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="m2" target="m4" edge="1">
+                    <mxGeometry x="-0.7892" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="437" y="913"/>
+                            <mxPoint x="437" y="1043"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_m3__m4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="m3" target="m4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_m4__m5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="m4" target="m5" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_m5__m_buf" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="m5" target="m_buf" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="230" y="1178"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_g1__g2" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="g1" target="g2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_g1__s_file" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="g1" target="s_file" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_g2__g3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="g2" target="g3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_g3__m_buf" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="g3" target="m_buf" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="660" y="1178"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_m_buf__s_buf" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="m_buf" target="s_buf" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_s_buf__m_out" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="s_buf" target="m_out" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_s_file__m_out" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="s_file" target="m_out" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1060" y="1318"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_m_out__out" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="m_out" target="out" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_out__f_o" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="2" target="f_o" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_thr__f_o" value="propagates to StripBuilder,&#xa;which reports SkippedError" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;dashed=1;dashPattern=8 8;" parent="1" source="thr" target="2" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1240" y="413"/>
+                            <mxPoint x="1240" y="1458"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="n1" value="Why this is the only diagram with grade branches&#xa;&#xa;render() is the one caller that passes a non-null grade.&#xa;layoutPagesFromHeaders() and decodePageToRgba() both pass&#xa;nullptr, so on those paths every &quot;grade set?&quot; is decided&#xa;before it is asked — which is why their diagrams are shorter&#xa;rather than repetitions of this one." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="730" y="645" width="490" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="n2" value="The two Scaler overloads are different calls&#xa;&#xa;Both buffered branches converge on scale(buffer, path, width).&#xa;The no-margin, no-grade branch uses scale(path, width) instead,&#xa;which never materialises a PixelBuffer at all." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="680" y="1190" width="350" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_noprof__m_plan" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;jumpStyle=arc;" parent="1" source="noprof" target="m_plan" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="920" y="338"/>
+                            <mxPoint x="920" y="630"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="out" target="2" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="420" y="1415" as="sourcePoint"/>
+                        <mxPoint x="420" y="1510" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="2" value="" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="398" y="1440" width="44" height="36" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

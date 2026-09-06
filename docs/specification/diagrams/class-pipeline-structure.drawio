@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="65bd71144e">
+    <diagram name="Pipeline structure (class diagram)" id="pipeline-structure">
+        <mxGraphModel dx="1104" dy="706" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="1000" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="pub" value="PUBLIC API   &#8212;   lib/include/platemaker/core/processing_pipeline/" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="30" width="1160" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="pp" value="ProcessingPipeline   (stateless, all static)" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="90" width="560" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="pp1" value="render(RenderRequest, cancel, callbacks) -&gt; ProcessingOutcome" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pp" vertex="1">
+                    <mxGeometry y="26" width="560" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="pp2" value="layoutPagesFromHeaders(inputs, ...) -&gt; vector&lt;PagePreviewGeometry&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pp" vertex="1">
+                    <mxGeometry y="52" width="560" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="pp3" value="decodePageToRgba(input, ..., rgba, w, h)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="pp" vertex="1">
+                    <mxGeometry y="78" width="560" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="rq" value="RenderRequest   (aggregate, all by value)" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="680" y="90" width="540" height="190" as="geometry"/>
+                </mxCell>
+                <mxCell id="rq0" value="inputs                 vector&lt;InputFile&gt;   (in strip order)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="rq" vertex="1">
+                    <mxGeometry y="26" width="540" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="rq1" value="outputProfile          OutputProfile" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="rq" vertex="1">
+                    <mxGeometry y="44" width="540" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="rq2" value="canvasProfiles         vector&lt;CanvasProfile&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="rq" vertex="1">
+                    <mxGeometry y="62" width="540" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="rq3" value="canvasProfileIds       vector&lt;string&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="rq" vertex="1">
+                    <mxGeometry y="80" width="540" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="rq4" value="outputDirectory        string" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="rq" vertex="1">
+                    <mxGeometry y="98" width="540" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="rq5" value="thumbnailCacheDir      string        (empty -&gt; none)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="rq" vertex="1">
+                    <mxGeometry y="116" width="540" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="rq6" value="colourCorrection       ColourCorrection   (disabled -&gt; no-op)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="rq" vertex="1">
+                    <mxGeometry y="134" width="540" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="rq7" value="stripOverlays          vector&lt;StripOverlay&gt;  (empty -&gt; no-op)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="rq" vertex="1">
+                    <mxGeometry y="152" width="540" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="rq8" value="onlySlices             optional&lt;set&lt;string&gt;&gt; (absent -&gt; full)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="rq" vertex="1">
+                    <mxGeometry y="170" width="540" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="c1" value="PageRenderer" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="380" width="360" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="c1a" value="planFromHeader(path) -&gt; PagePlan" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="c1" vertex="1">
+                    <mxGeometry y="26" width="360" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="c1b" value="scaledPage(plan, path, grade) -&gt; ScaledImage" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="c1" vertex="1">
+                    <mxGeometry y="48" width="360" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="c1c" value="holds: matcher&amp;, hasProfiles, targetWidth" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="c1" vertex="1">
+                    <mxGeometry y="82" width="360" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="c2" value="StripBuilder" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="460" y="380" width="360" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="c2a" value="appendAllPages(inputs, cancel, outcome)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="c2" vertex="1">
+                    <mxGeometry y="26" width="360" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="c2b" value="strip()  &#183;  pageTopByInputUid()" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="c2" vertex="1">
+                    <mxGeometry y="48" width="360" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="c2c" value="owns: ScaledStrip, uid-&gt;stripY map,&#xa;grade-exclusion set" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="c2" vertex="1">
+                    <mxGeometry y="82" width="360" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="c3" value="SliceWriter" style="swimlane;whiteSpace=wrap;html=1;startSize=26;horizontal=1;" parent="1" vertex="1">
+                    <mxGeometry x="860" y="380" width="360" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="c3a" value="writeSlice(SliceResult&amp;&amp;, outcome) -&gt; bool" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="c3" vertex="1">
+                    <mxGeometry y="26" width="360" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="c3b" value="sliceFileName(i)  &#183;  plannedSliceCount()" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="c3" vertex="1">
+                    <mxGeometry y="48" width="360" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="c3c" value="owns: decoded overlays, ThumbnailCache,&#xa;extension, counters" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;" parent="c3" vertex="1">
+                    <mxGeometry y="82" width="360" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="col" value="COLLABORATORS" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="590" width="1160" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="k0" value="Scaler&#xa;EXIF autorotate + resize to target width" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="640" width="275" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="k1" value="MarginCropper&#xa;crop the canvas profile&#39;s four margins" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="355" y="640" width="275" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="k2" value="ColourCorrector&#xa;curves / brightness / contrast / saturation" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="640" width="275" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="k3" value="ImageIO&#xa;decode a source, encode a slice (atomic)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="945" y="640" width="275" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="k4" value="CanvasProfileMatcher&#xa;display W x H -&gt; profile" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="720" width="275" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="k5" value="ScaledStrip&#xa;accumulate pages, stream fixed-height slices" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="355" y="720" width="275" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="k6" value="StripOverlayCompositor&#xa;decode bitmaps, composite at strip-Y" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="720" width="275" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="k7" value="ThumbnailCache&#xa;preview from the in-RAM slice" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="945" y="720" width="275" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_pp__c1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="pp" target="c1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="340" y="360"/>
+                            <mxPoint x="240" y="360"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_pp__c2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="pp" target="c2" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="340" y="360"/>
+                            <mxPoint x="640" y="360"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_pp__c3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="pp" target="c3" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="340" y="360"/>
+                            <mxPoint x="1040" y="360"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_rq__pp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" parent="1" source="rq" target="pp" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="660" y="155"/>
+                            <mxPoint x="660" y="155"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_c2__c1" value="asks per page" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="c2" target="c1" edge="1">
+                    <mxGeometry x="0.0204" y="-10" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="640" y="560"/>
+                            <mxPoint x="240" y="560"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="n_why" value="Why these three, and why internal&#xa;&#xa;render() was 324 lines holding seven phases behind comment banners, with&#xa;eleven parameters and five try/catch blocks. StripBuilder and SliceWriter&#xa;each own the state their phase carries &#8212; the strip and its uid-&gt;Y map, the&#xa;loaded overlays and the cache &#8212; instead of it living as locals in one frame.&#xa;&#xa;Their headers live under src/ and are never installed, so no consumer gets a&#xa;declaration: the public surface is still the three static entry points above." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="810" width="700" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="int" value="INTERNAL   &#8212;   lib/src/core/processing_pipeline/   (headers not installed)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="300" width="1160" height="34" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

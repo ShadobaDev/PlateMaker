@@ -1,0 +1,157 @@
+<mxfile host="65bd71144e">
+    <diagram name="Preview workflow (activity diagram)" id="preview-workflow">
+        <mxGraphModel dx="1966" dy="1756" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1350" pageHeight="1050" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="bnd" value="CONSUMER   —   Qt GUI, StripViewer" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="-70" width="1230" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="i_open" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="605" y="-30" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_i_open__open" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="i_open" target="open" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="open" value="user opens the strip editor" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="490" y="50" width="260" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="feed" value="feed = the project&#39;s INPUT pages&#xa;(not its rendered output slices)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="490" y="130" width="260" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="lay" value="layoutPagesFromHeaders(inputs, outProfile, profiles, ids)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="240" width="480" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="geo" value="vector&lt;PagePreviewGeometry&gt;&#xa;width · height · sourceW/H · canvasProfileId · status · inputUid · readable" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="300" width="480" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="stack" value="stack the pages; SKIP entries with readable == false&#xa;(exactly as the render skips them, or every page below&#xa;sits at the wrong strip offset)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="370" width="480" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="prox" value="PROXY TIER  —  instant, never blank&#xa;m_proxyCache : the ThumbnailCache entry the Input tab already warmed" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="501" width="380" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="sharp" value="SHARP TIER  —  on demand, viewport only&#xa;decodePageToRgba() on QtConcurrent, for pages in view&#xa;plus a one-page prefetch margin" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="980" y="511" width="360" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="lru" value="m_pageCache  —  the decoded page, UNGRADED&#xa;byte-capped LRU; off-screen pages evicted, so RAM&#xa;tracks the viewport rather than the chapter length" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="980" y="615" width="360" height="66" as="geometry"/>
+                </mxCell>
+                <mxCell id="grade" value="copy the page (toImage) and grade the COPY in place:&#xa;ColourCorrector::applyToRgba(img.bits(), w, h, cc)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="985" y="795" width="350" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="ov" value="OVERLAYS  —  one OverlayItem per bubble, above the strip&#xa;painted from the authoring model by paintArtifact()" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="115" y="714" width="330" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="render" value="Render  -&gt;  ProcessingPipeline::render()&#xa;bakes exactly what was on screen" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="985" width="480" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_open__feed" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="open" target="feed" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_feed__lay" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="feed" target="lay" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_lay__geo" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="lay" target="geo" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_geo__stack" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="geo" target="stack" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="fork1" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="445" width="480" height="10" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_stack__fork1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="stack" target="fork1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_fork1__prox" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;" parent="1" source="fork1" target="prox" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_fork1__sharp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;" parent="1" source="fork1" target="sharp" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="860" y="496" as="sourcePoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_fork1__ov" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="fork1" target="ov" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="620" y="500"/>
+                            <mxPoint x="420" y="500"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="join1" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="950" width="480" height="10" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ov__join1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" parent="1" source="ov" target="join1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_join1__render" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="join1" target="render" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_prox_o" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="203" y="581" width="34" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_prox_i" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="211" y="589" width="18" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_prox__f_prox" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="prox" target="f_prox_o" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_render_o" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="603" y="1055" width="34" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="f_render_i" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="611" y="1063" width="18" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_render__f_render" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="render" target="f_render_o" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_why" value="Why the strip is built from INPUTS, not from rendered output&#xa;&#xa;1. It works before the first render. A grade or a bubble has to be authored&#xa;   before it is baked; on an output feed there was nothing to look at.&#xa;2. Rendering does not change the view. Edits preview against the input, so&#xa;   the render bakes what was on screen. On the old feed the render baked the&#xa;   grade into the output and the preview then graded it a second time.&#xa;3. The unit of work is the PAGE — the unit a grade&#39;s per-page exclusions and&#xa;   an overlay&#39;s page anchor both address. An output slice can straddle two&#xa;   pages, so on that feed neither could be honoured at display time at all." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="20" y="1120" width="620" height="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_ungraded" value="Why decodePageToRgba returns the page UNGRADED&#xa;&#xa;Its consumer re-grades on every slider move, and re-decoding a page for&#xa;that would cost roughly 100x what grading the buffer costs. The colour&#xa;step never influences how a page is READ, so a page fetched once stays a&#xa;valid baseline for every grade the user tries on it — which is also why&#xa;the call takes no colour argument at all.&#xa;&#xa;The grade engine is the render&#39;s own (ColourCorrector), so the preview is&#xa;not an approximation of the committed result." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="680" y="1120" width="570" height="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_slices" value="Slices are deliberately absent&#xa;&#xa;Slices are a publishing artifact — files to upload. A viewer draws a&#xa;continuous strip and hides the seams anyway. What the author still needs&#xa;is the slice GRID, drawn as seam guides every sliceHeight down the strip:&#xa;the line a bubble must not be split by." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="280" width="370" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="2" value="&lt;span style=&quot;color: rgb(0, 0, 0); text-align: center;&quot;&gt;QGraphicsScene coordinates ARE strip coordinates, 1:1&lt;/span&gt;" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="75" y="50" width="370" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="3" value="&lt;span style=&quot;color: rgb(0, 0, 0); text-align: center;&quot;&gt;StripItem paints every page in one pass with&lt;/span&gt;&lt;br style=&quot;color: rgb(63, 63, 63); scrollbar-color: rgb(226, 226, 226) rgb(251, 251, 251); text-align: center;&quot;&gt;&lt;span style=&quot;color: rgb(0, 0, 0); text-align: center;&quot;&gt;QPainter::Antialiasing OFF — per-page items&lt;/span&gt;&lt;br style=&quot;color: rgb(63, 63, 63); scrollbar-color: rgb(226, 226, 226) rgb(251, 251, 251); text-align: center;&quot;&gt;&lt;span style=&quot;color: rgb(0, 0, 0); text-align: center;&quot;&gt;leave a 1px hairline at each join&lt;/span&gt;" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="180" width="370" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="cc_on" value="grade enabled AND this page&#xa;not in excludedInputUids ?" style="rhombus;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="1000" y="701" width="320" height="62" as="geometry"/>
+                </mxCell>
+                <mxCell id="gcache" value="m_gradedCache  —  the graded pixmap, cached separately&#xa;so scrolling inside a page does not re-grade it" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="985" y="870" width="350" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_baseline" value="Why the ungraded page is kept&#xa;&#xa;The grade is a derived copy, never applied to the resident page.&#xa;That is what makes a page fetched once a valid baseline for every&#xa;grade the user tries on it — a slider drag re-grades from the same&#xa;cached pixels instead of paying ~100x to decode again.&#xa;&#xa;The per-page exclusion is honoured HERE, at display time, by the&#xa;same rule the render applies. It is also why the preview&#39;s unit of&#xa;work is the page: an output slice can straddle an excluded and an&#xa;included page, so on a slice feed the exclusion could not be&#xa;honoured at all." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="460" y="525" width="490" height="190" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_sharp__lru" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="sharp" target="lru" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_lru__cc_on" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="lru" target="cc_on" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_cc_on__grade" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="cc_on" target="grade" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_grade__gcache" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="grade" target="gcache" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_gcache__join1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" parent="1" source="gcache" target="join1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_cc_on__join1" value="no — paint the page ungraded" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="cc_on" target="join1" edge="1">
+                    <mxGeometry x="-0.4932" y="3" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

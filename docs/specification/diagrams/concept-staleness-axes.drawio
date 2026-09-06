@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="65bd71144e">
+    <diagram name="Staleness axes (concept diagram)" id="staleness-axes">
+        <mxGraphModel dx="1104" dy="706" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1080" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="step1" value="1.  ProjectEditor{project}.sanitize(workspaceProfiles)&#xa;hashes every input and output against disk" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="40" width="480" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="step2" value="2.  project.detectStaleness(workspaceProfiles, outputProfile)&#xa;-&gt; StalenessReport" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="860" y="40" width="480" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_step1__step2" value="must run first" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="step1" target="step2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="hdr" value="SIX AXES  &#8212;  each catches something the others cannot" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="130" width="1280" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="ax0" value="contentDirty" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="180" width="410" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="aw0" value="A file changed, vanished, or was never processed." style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="230" width="410" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ah0" value="SHA-256 per input and per output, plus existence.&#xa;Recorded by sanitize(); detectStaleness() reads the&#xa;verdict rather than re-hashing, which would make a&#xa;status refresh cost a full pass over the project." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="280" width="410" height="105" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ax0__aw0" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="ax0" target="aw0" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ax1" value="outputProfileChanged" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="180" width="410" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="aw1" value="Target width, slice height, format or encoder options moved." style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="230" width="410" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ah1" value="Compares the stored outputSignature against the&#xa;current profile&#39;s. Guarded on non-empty: a project&#xa;rendered before signatures existed has no baseline&#xa;and must not be flagged stale forever." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="280" width="410" height="105" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ax1__aw1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="ax1" target="aw1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ax2" value="outputFormatChanged" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="180" width="410" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="aw2" value="PNG -&gt; JPEG and the like, visible without any baseline." style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="230" width="410" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ah2" value="The recorded slice extension is not the one the&#xa;current format writes. The ONLY axis that orphans&#xa;every existing file: the new settings cannot produce&#xa;any of the old names." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="280" width="410" height="105" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ax2__aw2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="ax2" target="aw2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ax3" value="canvas  (CanvasConfigChange)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="430" width="410" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="aw3" value="A canvas profile was edited, added, removed or reordered." style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="480" width="410" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ah3" value="Precise: re-matches each page by its stored display&#xa;W x H and flags only pages whose applied profile id or&#xa;fingerprint changed. A profile matching no page raises&#xa;nothing. listChanged is the coarse fallback, used only&#xa;for legacy pages with no stored dimensions." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="540" width="410" height="105" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ax3__aw3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="ax3" target="aw3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ax4" value="inputCompositionChanged" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="430" width="410" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="aw4" value="Inputs added, removed or reordered." style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="480" width="410" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ah4" value="The strip is one concatenation, so a change anywhere&#xa;shifts pixels across every slice below it while each&#xa;input file stays byte-identical. Compares the uid&#xa;sequence in strip order against inputOrderAtRender." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="540" width="410" height="105" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ax4__aw4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="ax4" target="aw4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ax5" value="processingStepsChanged" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="430" width="410" height="34" as="geometry"/>
+                </mxCell>
+                <mxCell id="aw5" value="Colour correction or an overlay differs from the render&#39;s." style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="480" width="410" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ah5" value="processingConfigSignature(cc, overlays). No empty-guard,&#xa;unlike the output signature: turning a step back OFF must&#xa;still differ from the non-empty signature stored when it&#xa;was on. Includes each overlay&#39;s x,y &#8212; so nudging a bubble&#xa;one pixel does invalidate the chapter." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="540" width="410" height="105" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ax5__aw5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="ax5" target="aw5" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="cfg" value="configurationChanged()&#xa;hasOutputs &amp;&amp; (any of the five settings axes)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="410" y="710" width="430" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="need" value="needsRender()&#xa;contentDirty || configurationChanged()" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="710" width="410" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="useA" value="CONSUMER USE &#8212; regenerate or not&#xa;if (!staleness.needsRender()) -&gt; nothing to do" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="410" y="800" width="430" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="useB" value="CONSUMER USE &#8212; warn or not&#xa;configurationChanged() means the previous output was made&#xa;under rules that no longer apply, so every slice is replaced" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="805" width="410" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_cfg__useA" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="cfg" target="useA" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_need__useB" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" parent="1" source="need" target="useB" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_dup" value="Why this is one report and not five calls&#xa;&#xa;Until 0.6.0 each consumer assembled the same five-term disjunction itself,&#xa;and both did: the CLI and the GUI carried near-identical copies, comments&#xa;included, while only three of the five axes were library code at all.&#xa;&#xa;Two copies of one rule in two repositories is one place for a sixth axis to&#xa;be added on one side and silently forgotten on the other &#8212; and the forgotten&#xa;side keeps shipping stale output without saying anything.&#xa;&#xa;The axes stay separate rather than collapsing into a single flag because a&#xa;consumer needs more than the verdict: the CLI prints which setting moved." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="700" width="260" height="320" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_hash" value="What a hash can never see&#xa;&#xa;Editing a canvas profile&#39;s margins changes neither the input files nor the&#xa;output files &#8212; both stay byte-identical &#8212; yet every affected page renders&#xa;differently. The same is true of reordering inputs, of switching output&#xa;format, and of enabling a grade. That is the whole reason the five settings&#xa;axes exist: content hashing is necessary and not remotely sufficient." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="410" y="890" width="430" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_count" value="A shrinking chapter orphans files&#xa;&#xa;A margin edit changes page height, so strip height, so the slice COUNT.&#xa;Ten slices can become eight, leaving output_009 and output_010 behind&#xa;under names the new settings never produce. Any consumer that deletes&#xa;what a render no longer generates must do so on every configuration&#xa;change, not only on a format switch." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="890" width="410" height="130" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

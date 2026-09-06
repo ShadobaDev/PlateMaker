@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="65bd71144e">
+    <diagram name="Library components (package diagram)" id="library-components">
+        <mxGraphModel dx="1104" dy="706" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1150" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="core_pp" value="ProcessingPipeline&#xa;render / layoutPagesFromHeaders / decodePageToRgba" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="220" width="420" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="core_int" value="internal: PageRenderer &#183; StripBuilder &#183; SliceWriter&#xa;(headers under src/, never installed)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="220" width="420" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="core0" value="Scaler&#xa;autorotate + resize" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="290" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="core1" value="MarginCropper&#xa;crop profile margins" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="274" y="290" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="core2" value="ColourCorrector&#xa;grade, page domain" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="488" y="290" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="core3" value="StripOverlayCompositor&#xa;composite, strip domain" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="702" y="290" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="core4" value="ScaledStrip&#xa;assemble + stream slices" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="356" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="core5" value="CanvasProfileMatcher&#xa;W x H -&gt; profile" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="274" y="356" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="core6" value="TemplateGenerator&#xa;margin guide PNG" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="488" y="356" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="core7" value="PixelBuffer&#xa;RAII over VipsImage" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="702" y="356" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="inf0" value="ImageIO&#xa;decode / encode (atomic)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="490" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="inf1" value="WorkspaceSerializer&#xa;workspace JSON + repair" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="274" y="490" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="inf2" value="ProfileBundleSerializer&#xa;portable profile bundle" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="488" y="490" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="inf3" value="WorkspaceEditor&#xa;workspace mutation" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="702" y="490" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="inf4" value="ProjectEditor&#xa;project mutation" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="556" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="inf5" value="ThumbnailCache&#xa;previews under .platemaker-cache" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="274" y="556" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="inf6" value="FileMetaData&#xa;SHA-256" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="488" y="556" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="inf7" value="Log&#xa;component-gated tracing" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="702" y="556" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="inf8" value="IdGenerator&#xa;stable local ids" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="622" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="inf9" value="CancellationToken&#xa;cooperative cancel" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="274" y="622" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="inf10" value="BuildInfo&#xa;version + linked components" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="488" y="622" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="inf11" value="path_utf8&#xa;UTF-8 narrow paths" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="702" y="622" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_cli__l1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" source="2" target="3" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="700" y="170" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_l1__l2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" source="3" target="4" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="940" y="202" as="sourcePoint"/>
+                        <mxPoint x="940" y="440" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_l2__l3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="4" target="5" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="940" y="472" as="sourcePoint"/>
+                        <mxPoint x="940" y="750" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_l1__l4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="3" target="19" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1180" y="202" as="sourcePoint"/>
+                        <mxPoint x="1340" y="1026" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="1040" y="304"/>
+                            <mxPoint x="1040" y="990"/>
+                            <mxPoint x="325" y="990"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="n_rule" value="The dependency rule, and why it holds&#xa;&#xa;Models knows nothing about Core or Infrastructure &#8212; which is what lets&#xa;ProjectItem consume a render&#39;s results (ProcessingSliceRecord,&#xa;AppliedCanvasProfile) without depending on anything image-processing.&#xa;&#xa;The pipeline never touches ProjectItem, Workspace or a serializer: it takes&#xa;a copy of the input list and returns records the caller applies. That is what&#xa;makes it safe to run on a worker thread while the GUI holds the workspace." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="630" y="1013.75" width="430" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="2" value="CONSUMERS &#8212; separate repositories, no library code" style="swimlane;" vertex="1" parent="1">
+                    <mxGeometry x="50" y="40" width="890" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="cli" value="platemaker-cli&#xa;this repo &#183; cli/" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="2" vertex="1">
+                    <mxGeometry x="100" y="40" width="240" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="gui" value="Platemaker GUI (Qt)&#xa;Platemaker-qt repo" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="2" vertex="1">
+                    <mxGeometry x="530" y="40" width="240" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="3" value="CORE &#8212; image processing. Depends on Models and Infrastructure." style="swimlane;" vertex="1" parent="1">
+                    <mxGeometry x="50" y="187.5" width="890" height="232.5" as="geometry"/>
+                </mxCell>
+                <mxCell id="4" value="INFRASTRUCTURE &#8212; I/O, persistence, process concerns. Depends on Models." style="swimlane;" vertex="1" parent="1">
+                    <mxGeometry x="50" y="450" width="890" height="232.5" as="geometry"/>
+                </mxCell>
+                <mxCell id="5" value="MODELS &#8212; plain data. Depends on nothing (not even Infrastructure)." style="swimlane;" vertex="1" parent="1">
+                    <mxGeometry x="50" y="720" width="890" height="242.5" as="geometry"/>
+                </mxCell>
+                <mxCell id="mod0" value="Workspace&#xa;profiles + projects" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="5" vertex="1">
+                    <mxGeometry x="10" y="40" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="mod1" value="ProjectItem&#xa;one chapter (entity)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="5" vertex="1">
+                    <mxGeometry x="224" y="40" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="mod2" value="project_files&#xa;InputFile &#183; OutputFile &#183; status" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="5" vertex="1">
+                    <mxGeometry x="438" y="40" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="mod3" value="processing_results&#xa;what a render reports back" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="5" vertex="1">
+                    <mxGeometry x="652" y="40" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="mod4" value="project_reports&#xa;StalenessReport &#183; scan &#183; canvas" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="5" vertex="1">
+                    <mxGeometry x="10" y="106" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="mod5" value="CanvasProfile&#xa;size + margins" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="5" vertex="1">
+                    <mxGeometry x="224" y="106" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="mod6" value="OutputProfile&#xa;width &#183; slice &#183; format" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="5" vertex="1">
+                    <mxGeometry x="438" y="106" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="mod7" value="output_presets&#xa;built-in catalogue" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="5" vertex="1">
+                    <mxGeometry x="652" y="106" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="mod8" value="colour_correction&#xa;curves + levels" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="5" vertex="1">
+                    <mxGeometry x="10" y="172" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="mod9" value="strip_overlay&#xa;placed bitmap + anchor" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="5" vertex="1">
+                    <mxGeometry x="224" y="172" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="mod10" value="processing_steps&#xa;step descriptor table" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="5" vertex="1">
+                    <mxGeometry x="438" y="172" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="mod11" value="ProcessingError&#xa;typed code + category" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="5" vertex="1">
+                    <mxGeometry x="652" y="172" width="200" height="52" as="geometry"/>
+                </mxCell>
+                <mxCell id="19" value="THIRD PARTY" style="swimlane;" vertex="1" parent="1">
+                    <mxGeometry x="50" y="1013.75" width="550" height="136.25" as="geometry"/>
+                </mxCell>
+                <mxCell id="tp1" value="libvips  (LGPL)&#xa;all pixel work" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="19" vertex="1">
+                    <mxGeometry x="20" y="46.25" width="240" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="tp2" value="nlohmann/json  (MIT)&#xa;header-only, serialisation" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;" parent="19" vertex="1">
+                    <mxGeometry x="290" y="46.250000000000114" width="240" height="50" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
