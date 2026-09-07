@@ -21,6 +21,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <utility>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -180,14 +181,17 @@ private:
     std::filesystem::path m_path;
 };
 
-/// A right triangle filling the lower-left half of a \p side × \p side box — one long diagonal edge,
-/// which is what makes "re-rendered" distinguishable from "upscaled".
-std::string triangleSvg(int side)
+/// A right triangle filling the lower-left half of a \p w × \p h box — one long diagonal edge, which
+/// is what makes "re-rendered" distinguishable from "upscaled". Square unless \p h says otherwise.
+std::string triangleSvg(int w, int h = -1)
 {
-    return "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + std::to_string(side) +
-           "\" height=\"" + std::to_string(side) + "\" viewBox=\"0 0 " + std::to_string(side) +
-           " " + std::to_string(side) + "\"><polygon points=\"0,0 0," + std::to_string(side) + " " +
-           std::to_string(side) + "," + std::to_string(side) + "\" fill=\"#000000\"/></svg>";
+    if (h < 0)
+        h = w;
+    const std::string sw = std::to_string(w);
+    const std::string sh = std::to_string(h);
+    return "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + sw + "\" height=\"" + sh +
+           "\" viewBox=\"0 0 " + sw + " " + sh + "\"><polygon points=\"0,0 0," + sh + " " + sw +
+           "," + sh + "\" fill=\"#000000\"/></svg>";
 }
 
 /// Number of pixels along scanline \p y whose alpha is neither fully on nor fully off — the width of
@@ -277,6 +281,67 @@ TEST(StripOverlayCompositorTest, RasterOverlayStillLoadsAndScales)
 
     std::error_code ec;
     std::filesystem::remove(tmp, ec);
+}
+
+TEST(StripOverlayCompositorTest, RgbaFormGivesTheSamePixelsAsTheBuffer)
+{
+    // Deliberately NOT square: a transposed width/height or a mis-stepped row survives a square asset
+    // unnoticed, and those are the two ways reading a raw buffer usually goes wrong.
+    const TempSvg svg(triangleSvg(20, 50), "rgba");
+    StripOverlayCompositor comp;
+
+    const OverlayRaster r = comp.rasterizeOverlayRgba(svg.path(), 2.0);
+    ASSERT_TRUE(r.isValid()) << vips_error_buffer();
+    EXPECT_EQ(r.width, 40);
+    EXPECT_EQ(r.height, 100);
+    EXPECT_EQ(r.rgba.size(), static_cast<std::size_t>(40 * 100 * 4))
+        << "four straight-alpha bytes per pixel";
+
+    // The consumer form must agree with the compositing form pixel for pixel, or a preview drawn from
+    // one would not be what the render bakes from the other.
+    const PixelBuffer buf = comp.rasterizeOverlay(svg.path(), 2.0);
+    ASSERT_TRUE(buf.isValid());
+    for (const auto& at : {std::pair<int, int>{4, 90}, {34, 6}, {20, 50}}) {
+        const auto  expected = pixel(buf, at.first, at.second);
+        const auto* px = r.rgba.data() + (static_cast<std::size_t>(at.second) * r.width + at.first) * 4;
+        for (int b = 0; b < 4; ++b)
+            EXPECT_NEAR(px[b], expected[static_cast<std::size_t>(b)], 0.5)
+                << "band " << b << " at (" << at.first << "," << at.second << ")";
+    }
+}
+
+TEST(StripOverlayCompositorTest, RgbaFromBytesMatchesRgbaFromTheSameFile)
+{
+    // The preview path. It must agree with the file path exactly, or what an author approves on screen
+    // is not what the render reads back off disk.
+    const std::string doc = triangleSvg(20, 50);
+    const TempSvg     svg(doc, "bytes");
+    StripOverlayCompositor comp;
+
+    const OverlayRaster fromFile  = comp.rasterizeOverlayRgba(svg.path(), 2.0);
+    const OverlayRaster fromBytes = comp.rasterizeSvgRgba(doc, 2.0);
+    ASSERT_TRUE(fromFile.isValid()) << vips_error_buffer();
+    ASSERT_TRUE(fromBytes.isValid()) << vips_error_buffer();
+
+    EXPECT_EQ(fromBytes.width, fromFile.width);
+    EXPECT_EQ(fromBytes.height, fromFile.height);
+    EXPECT_EQ(fromBytes.rgba, fromFile.rgba) << "the same document must rasterise identically either way";
+}
+
+TEST(StripOverlayCompositorTest, RgbaFromBytesRejectsWhatIsNotSvg)
+{
+    StripOverlayCompositor comp;
+    EXPECT_FALSE(comp.rasterizeSvgRgba("").isValid());
+    EXPECT_FALSE(comp.rasterizeSvgRgba("this is not markup at all").isValid());
+    vips_error_clear();
+}
+
+TEST(StripOverlayCompositorTest, RgbaFormIsEmptyForAnUnloadableAsset)
+{
+    StripOverlayCompositor comp;
+    EXPECT_FALSE(comp.rasterizeOverlayRgba("no-such-file-anywhere.svg").isValid());
+    EXPECT_FALSE(comp.rasterizeOverlayRgba("").isValid());
+    vips_error_clear();
 }
 
 TEST(StripOverlayCompositorTest, RasterizeOverlaysSkipsUnusableEntriesAndKeepsOrder)

@@ -108,6 +108,86 @@ PixelBuffer StripOverlayCompositor::rasterizeOverlay(const std::string& assetPat
     return PixelBuffer{img};
 }
 
+namespace {
+
+//! Flattens a loaded image to the RGBA bytes OverlayRaster promises. Shared by both entry points.
+OverlayRaster toRgba(const PixelBuffer& buf)
+{
+    if (!buf.isValid())
+        return {};
+
+    // Force 8-bit: svgload already gives uchar, but a 16-bit PNG would otherwise hand back twice the
+    // bytes the caller is told to expect.
+    VipsImage* img = buf.vipsImage();
+    VipsImage* cast = nullptr;
+    if (img->BandFmt != VIPS_FORMAT_UCHAR) {
+        if (vips_cast(img, &cast, VIPS_FORMAT_UCHAR, nullptr) != 0) {
+            vips_error_clear();
+            return {};
+        }
+        img = cast;
+    }
+
+    OverlayRaster out;
+    out.width  = img->Xsize;
+    out.height = img->Ysize;
+
+    std::size_t bytes = 0;
+    // write_to_memory hands over a malloc'd block; copying into the vector keeps the ownership story
+    // simple for a caller that only wants the pixels.
+    void* raw = vips_image_write_to_memory(img, &bytes);
+    if (raw) {
+        const auto* p = static_cast<const unsigned char*>(raw);
+        out.rgba.assign(p, p + bytes);
+        g_free(raw);
+    }
+    if (cast)
+        g_object_unref(cast);
+
+    const std::size_t expected = static_cast<std::size_t>(out.width) * out.height * 4;
+    if (out.rgba.size() != expected)
+        return {};   // not the 4-band layout promised — better empty than misread by the caller
+
+    return out;
+}
+
+} // namespace
+
+OverlayRaster StripOverlayCompositor::rasterizeOverlayRgba(const std::string& assetPath,
+                                                           double scale) const
+{
+    return toRgba(rasterizeOverlay(assetPath, scale));
+}
+
+OverlayRaster StripOverlayCompositor::rasterizeSvgRgba(const std::string& svg, double scale) const
+{
+    if (svg.empty())
+        return {};
+
+    VipsImage* img = nullptr;
+    // svgload_buffer does not copy: the block must outlive the load. It does — svg is alive for this
+    // whole function, and toRgba() materialises the pixels before returning.
+    if (vips_svgload_buffer(const_cast<char*>(svg.data()), svg.size(), &img,
+                            "access", VIPS_ACCESS_RANDOM, "scale", scale, nullptr) != 0) {
+        vips_error_clear();
+        return {};
+    }
+
+    // svgload already yields 4 bands, but say so rather than assume it.
+    if (!vips_image_hasalpha(img)) {
+        VipsImage* wa = nullptr;
+        const int rc = vips_addalpha(img, &wa, nullptr);
+        g_object_unref(img);
+        if (rc != 0) {
+            vips_error_clear();
+            return {};
+        }
+        img = wa;
+    }
+
+    return toRgba(PixelBuffer{img});
+}
+
 std::vector<LoadedOverlay> StripOverlayCompositor::rasterizeOverlays(
     const std::vector<Models::StripOverlay>& overlays, double scale) const
 {

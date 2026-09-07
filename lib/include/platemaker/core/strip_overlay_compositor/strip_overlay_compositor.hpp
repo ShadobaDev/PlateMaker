@@ -64,6 +64,22 @@ struct PLATEMAKER_EXPORT LoadedOverlay {
 };
 
 /**
+ * \brief One overlay asset rasterised to straight RGBA — for a consumer that has no libvips of its own.
+ *
+ * \c rasterizeOverlay() hands back a \c PixelBuffer, which is a handle to a \c VipsImage: reading its
+ * pixels means linking libvips. A GUI previewing a chapter should not have to. This is the same render,
+ * flattened to bytes it can wrap in whatever image type it uses.
+ */
+struct PLATEMAKER_EXPORT OverlayRaster {
+    int width  = 0;
+    int height = 0;
+    //! \c width * \c height * 4 bytes, RGBA, **straight** (unpremultiplied) alpha.
+    std::vector<unsigned char> rgba;
+
+    [[nodiscard]] bool isValid() const { return width > 0 && height > 0 && !rgba.empty(); }
+};
+
+/**
  * \class StripOverlayCompositor
  * \brief Rasterises overlay assets and composites the ones intersecting a slice onto it.
  */
@@ -85,6 +101,31 @@ public:
      * \return The RGBA buffer, or an invalid \c PixelBuffer if the asset could not be loaded.
      */
     [[nodiscard]] PixelBuffer rasterizeOverlay(const std::string& assetPath, double scale = 1.0) const;
+
+    /**
+     * \brief Same render, delivered as RGBA bytes.
+     *
+     * The form a consumer wants when it is going to *show* the result rather than composite it — a
+     * preview that draws what the render will bake, including the SVG filters its own toolkit cannot
+     * draw. Sharing this call rather than approximating it is the point: an effect that appeared only
+     * in the committed output would be an effect nobody could author.
+     *
+     * \return An empty (invalid) raster when the asset cannot be loaded.
+     */
+    [[nodiscard]] OverlayRaster rasterizeOverlayRgba(const std::string& assetPath,
+                                                    double scale = 1.0) const;
+
+    /**
+     * \brief Rasterises SVG held **in memory**, without it having to be a file first.
+     *
+     * For a consumer showing something it is still editing. Going through the file would make the
+     * preview depend on the write having landed *and* on the filesystem reporting it back faithfully —
+     * which a synced or virtual drive does not reliably do straight after a write. From bytes, what is
+     * shown is what the consumer holds, and the file only has to be right by the time a render reads it.
+     *
+     * \return An empty (invalid) raster when \p svg is not loadable SVG.
+     */
+    [[nodiscard]] OverlayRaster rasterizeSvgRgba(const std::string& svg, double scale = 1.0) const;
 
     /**
      * \brief Rasterises the enabled overlays' assets once each, in \p overlays order.
