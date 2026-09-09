@@ -10,8 +10,27 @@ any project that uses neither step**, and older workspaces load unchanged (the n
 guarded fields). Also carries the additive profile-portability work originally staged for 0.5.2 (never
 released), which re-derives onto this baseline per the cascade rule.
 
+> **Build note.** Overlays may now be SVG, so the bundled libvips must keep **librsvg** enabled. The
+> custom-libvips item in `docs/TODO.md` proposes `-Dsvg=disabled` on the grounds that SVG is a format
+> "we neither load nor save" — that justification retires here. The GPL driver behind that item is
+> `libimagequant` and is unaffected; librsvg is LGPL, so dynamic linking carries no equivalent
+> encumbrance.
+
 ### Changed
 
+- **An overlay is any image libvips can load — raster *or* vector.** `StripOverlay::bitmapPath` is now
+  **`assetPath`**, and the loader dispatches on content: a PNG goes through its own loader, an SVG
+  through librsvg. Neither the compositor nor its caller has to know which arrived, and what the asset
+  *depicts* stays entirely the consumer's concern — an SVG changes nothing about the library having no
+  text engine, because it arrives as resolved geometry. This is what lets a consumer hand over authored
+  lettering that re-renders sharp instead of a bitmap that can only be resampled.
+- **`StripOverlayCompositor::decodeBitmaps()` becomes `rasterizeOverlays(overlays, scale)`.** Vector
+  and raster reach a requested size by genuinely different routes and `scale` is not a shared loader
+  option — svgload takes it, pngload fails outright if it is passed — so the loader is resolved with
+  `vips_foreign_find_load()` *before* the file is opened and each takes its own route.
+- **Overlay placement scales with the target width.** `Models::resolveOverlayAnchors()` gained a
+  trailing `scale`, applied to `x`/`y` **before** the page top is added (page tops are already in the
+  render's own pixels). `1.0` — the default — is an exact no-op.
 - **`ProcessingPipeline::run()` becomes `render(RenderRequest, cancel, callbacks)`.** The eleven
   positional arguments — five of them optional and defaulted — are now named fields on a
   `Core::RenderRequest`, so a call site no longer reads as a column of values whose meaning comes from
@@ -73,7 +92,26 @@ released), which re-derives onto this baseline per the cascade rule.
   **The on-disk format is untouched:** the JSON keys stay `"r"`, `"g"`, `"b"` and `"srcY"`, since
   renaming those would make every existing workspace lose its curves and provenance records.
 
-### Added
+### Added### Added
+
+- **`ProjectItem::overlayAuthoredWidth`** and the matching `RenderRequest::overlayAuthoredWidth` — the
+  `OutputProfile::targetWidth` an overlay's placement and artwork were authored against. Both are in
+  pixels, so both mean something only relative to a width; the render derives one scale from this and
+  applies it to the artwork and the placement together, since the right size at the old coordinates is
+  worse than either mistake alone. `0` means "authored at this render's own target width", which is the
+  no-op every existing project starts at. Persisted additively.
+- **`StripOverlayCompositor::rasterizeOverlay(assetPath, scale)`** — one asset to a `PixelBuffer`,
+  exposed so a consumer previewing a chapter uses *the render's own* rasteriser rather than an
+  approximation of it. An SVG filter the consumer's toolkit cannot draw (Qt SVG implements no
+  `feTurbulence`) would otherwise appear only in the committed output — an effect nobody could author.
+- **`StripOverlayCompositor::rasterizeOverlayRgba()` and `rasterizeSvgRgba()`**, returning the new
+  **`OverlayRaster`** (`width`, `height`, straight-alpha RGBA bytes). `PixelBuffer` is a `VipsImage`
+  handle, so reading its pixels means linking libvips; a GUI should not have to. `rasterizeSvgRgba()`
+  takes the document **in memory**, which is what a consumer showing something it is still editing
+  needs: going through a file would make the preview depend on the write having landed *and* on the
+  filesystem reporting it back faithfully, which a synced or virtual drive does not reliably do
+  straight after a write.
+
 
 - **`ProjectItem::detectStaleness(canvasProfiles, outputProfile)` — one answer to "does this need
   rendering, and why".** The returned `Models::StalenessReport` carries a field per axis: content
