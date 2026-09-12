@@ -134,14 +134,26 @@ public:
      * non-fatal — a broken bubble must not abort a whole chapter render).  Each result is promoted to
      * RGBA so compositing has a consistent band layout.
      *
-     * \param overlays The overlay definitions, already resolved to absolute strip coordinates **at this
-     *                 same scale** — pass the scale to \c Models::resolveOverlayAnchors() too, or the
-     *                 artwork will be the right size in the wrong place.
-     * \param scale    Ratio of the render's target width to the overlays' authored width.
+     * Each overlay carries its own rendered width, so size and placement can no longer disagree: they
+     * come out of one \c Models::resolveOverlayAnchors() call against one target width, rather than from
+     * a scale the caller had to remember to pass to two functions.
+     *
+     * \param overlays Overlays already resolved to absolute strip pixels by
+     *                 \c Models::resolveOverlayAnchors().
      * \return The successfully rasterised overlays with their placement; empty when none are usable.
      */
     [[nodiscard]] std::vector<LoadedOverlay> rasterizeOverlays(
-        const std::vector<Models::StripOverlay>& overlays, double scale = 1.0) const;
+        const std::vector<Models::PlacedOverlay>& overlays) const;
+
+    /**
+     * \brief Renders \p assetPath so that it comes out \p width pixels wide. \c 0 → its own size.
+     *
+     * Neither svgload nor a resize takes a target width — both take a ratio — so this probes the asset's
+     * natural width once and then renders at the ratio that lands on the requested one. For a vector
+     * asset the probe is a parse and the render is the pass that matters: it draws at the final
+     * resolution instead of resampling something drawn at another.
+     */
+    [[nodiscard]] PixelBuffer rasterizeOverlayAtWidth(const std::string& assetPath, int width) const;
 
     /**
      * \brief Composites every loaded overlay intersecting this slice onto \p slice.

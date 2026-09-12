@@ -18,6 +18,23 @@ released), which re-derives onto this baseline per the cascade rule.
 
 ### Changed
 
+- **An overlay is placed in fractions of the target width, not in pixels.** `StripOverlay::x`/`y` become
+  **`xFrac`/`yFrac`**, and a new **`wFrac`** carries the artwork's rendered width in the same unit
+  (`0` = the asset's own pixel size). Pixels are meaningless without the width they were measured
+  against, and every mechanism for remembering that width can be captured at the wrong moment, lost, or
+  disagreed about by two consumers. A fraction cannot: `0.42` means the same place at 800 px and at
+  1600 px, so re-profiling a chapter is a no-op on the record.
+  - **`resolveOverlayAnchors()` returns a new `PlacedOverlay`** — absolute strip pixels, ready to
+    composite — instead of a `StripOverlay` with its fields quietly reinterpreted. "Resolve it twice" is
+    no longer something that compiles; the only thing that used to stop it was a sentence in a comment.
+    It takes the render's `targetWidth` and has no `scale` parameter, because there is no longer a ratio
+    to derive or to keep in step between two calls.
+  - `StripOverlayCompositor::rasterizeOverlays()` takes those placements and gains
+    **`rasterizeOverlayAtWidth()`**; `slice_writer`'s `overlayScale()` is deleted.
+  - `ProjectItem::addOverlay()` takes the three fractions. **`overlayAuthoredWidth` is removed** from
+    both `RenderRequest` and `ProjectItem`, and no pixel-to-fraction migration is written: overlays have
+    never appeared in a released build, so no workspace outside a development machine can contain one.
+    Any that does has to be re-placed.
 - **An overlay is any image libvips can load — raster *or* vector.** `StripOverlay::bitmapPath` is now
   **`assetPath`**, and the loader dispatches on content: a PNG goes through its own loader, an SVG
   through librsvg. Neither the compositor nor its caller has to know which arrived, and what the asset
@@ -92,14 +109,8 @@ released), which re-derives onto this baseline per the cascade rule.
   **The on-disk format is untouched:** the JSON keys stay `"r"`, `"g"`, `"b"` and `"srcY"`, since
   renaming those would make every existing workspace lose its curves and provenance records.
 
-### Added### Added
+### Added
 
-- **`ProjectItem::overlayAuthoredWidth`** and the matching `RenderRequest::overlayAuthoredWidth` — the
-  `OutputProfile::targetWidth` an overlay's placement and artwork were authored against. Both are in
-  pixels, so both mean something only relative to a width; the render derives one scale from this and
-  applies it to the artwork and the placement together, since the right size at the old coordinates is
-  worse than either mistake alone. `0` means "authored at this render's own target width", which is the
-  no-op every existing project starts at. Persisted additively.
 - **`StripOverlayCompositor::rasterizeOverlay(assetPath, scale)`** — one asset to a `PixelBuffer`,
   exposed so a consumer previewing a chapter uses *the render's own* rasteriser rather than an
   approximation of it. An SVG filter the consumer's toolkit cannot draw (Qt SVG implements no

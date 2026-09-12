@@ -57,7 +57,7 @@ TEST(OverlayInventoryTest, AddOverlayMintsUidHashesAndPlaces)
     const std::string f = tmp.write("a.png", "BUBBLE-BYTES-1");
 
     ProjectItem proj;
-    const std::string uid = proj.addOverlay(f, 10, 20, BlendMode::Multiply);
+    const std::string uid = proj.addOverlay(f, 0.1, 0.2, 0.35, BlendMode::Multiply);
 
     ASSERT_EQ(proj.getStripOverlays().size(), 1u);
     const auto& o = proj.getStripOverlays().front();
@@ -65,8 +65,9 @@ TEST(OverlayInventoryTest, AddOverlayMintsUidHashesAndPlaces)
     EXPECT_EQ(o.uid.rfind("ovl-", 0), 0u); // minted with the readable prefix
     EXPECT_FALSE(o.sha256.empty());        // content hashed by the lib
     EXPECT_EQ(o.assetPath, f);
-    EXPECT_EQ(o.x, 10);
-    EXPECT_EQ(o.y, 20);
+    EXPECT_DOUBLE_EQ(o.xFrac, 0.1);
+    EXPECT_DOUBLE_EQ(o.yFrac, 0.2);
+    EXPECT_DOUBLE_EQ(o.wFrac, 0.35);
     EXPECT_EQ(o.blend, BlendMode::Multiply);
     EXPECT_TRUE(o.enabled);
 }
@@ -79,9 +80,9 @@ TEST(OverlayInventoryTest, DedupReusesPathForIdenticalContent)
     const std::string f3 = tmp.write("c.png", "OTHER-BYTES");
 
     ProjectItem proj;
-    const std::string u1 = proj.addOverlay(f1, 0, 0);
-    const std::string u2 = proj.addOverlay(f2, 5, 5); // same content → reuse f1's stored path
-    const std::string u3 = proj.addOverlay(f3, 9, 9); // different content → keeps its own path
+    const std::string u1 = proj.addOverlay(f1, 0.0, 0.0, 0.0);
+    const std::string u2 = proj.addOverlay(f2, 0.05, 0.05, 0.0); // same content → reuse f1's stored path
+    const std::string u3 = proj.addOverlay(f3, 0.09, 0.09, 0.0); // different content → keeps its own path
 
     ASSERT_EQ(proj.getStripOverlays().size(), 3u);
     const auto& ovs = proj.getStripOverlays();
@@ -92,8 +93,8 @@ TEST(OverlayInventoryTest, DedupReusesPathForIdenticalContent)
     EXPECT_NE(ovs[2].sha256, ovs[0].sha256);
     EXPECT_EQ(ovs[2].assetPath, f3);
     // The placement of the deduped overlay is still its own.
-    EXPECT_EQ(ovs[1].x, 5);
-    EXPECT_EQ(ovs[1].y, 5);
+    EXPECT_DOUBLE_EQ(ovs[1].xFrac, 0.05);
+    EXPECT_DOUBLE_EQ(ovs[1].yFrac, 0.05);
 }
 
 TEST(OverlayInventoryTest, RemoveOverlayById)
@@ -103,8 +104,8 @@ TEST(OverlayInventoryTest, RemoveOverlayById)
     const std::string f2 = tmp.write("b.png", "BBB");
 
     ProjectItem proj;
-    const std::string u1 = proj.addOverlay(f1, 0, 0);
-    const std::string u2 = proj.addOverlay(f2, 0, 0);
+    const std::string u1 = proj.addOverlay(f1, 0.0, 0.0, 0.0);
+    const std::string u2 = proj.addOverlay(f2, 0.0, 0.0, 0.0);
 
     EXPECT_TRUE(proj.removeOverlay(u1));
     EXPECT_FALSE(proj.removeOverlay("ovl-nonexistent"));

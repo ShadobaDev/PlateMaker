@@ -45,91 +45,91 @@ namespace fs = std::filesystem;
 // resolveOverlayAnchors — the pure placement bridge
 // ---------------------------------------------------------------------------
 
-Models::StripOverlay overlay(const std::string& uid, const std::string& anchor, int x, int y)
+//! \p xFrac / \p yFrac are fractions of the render's target width — see Models::StripOverlay.
+Models::StripOverlay overlay(const std::string& uid, const std::string& anchor,
+                             double xFrac, double yFrac, double wFrac = 0.0)
 {
     Models::StripOverlay o;
     o.uid            = uid;
     o.anchorInputUid = anchor;
-    o.x              = x;
-    o.y              = y;
+    o.xFrac          = xFrac;
+    o.yFrac          = yFrac;
+    o.wFrac          = wFrac;
     return o;
 }
 
 const std::unordered_map<std::string, int> k_layout{{"file-a", 0}, {"file-b", 100}, {"file-c", 250}};
+//! The width every fraction in these tests is measured against. Chosen so 0.05 is a round 40px.
+constexpr int k_target = 800;
 
 } // namespace
 
 TEST(ResolveOverlayAnchorsTest, AddsTheAnchorPagesTopToThePageRelativeY)
 {
-    const auto out = Models::resolveOverlayAnchors({overlay("ovl-1", "file-c", 40, 20)}, k_layout);
+    const auto out = Models::resolveOverlayAnchors({overlay("ovl-1", "file-c", 0.05, 0.025)},
+                                                   k_layout, k_target);
 
     ASSERT_EQ(out.size(), 1u);
     EXPECT_EQ(out[0].y, 270) << "20px down page C, whose top is at strip-Y 250";
-    EXPECT_EQ(out[0].x, 40) << "x is untouched — every page shares the strip's x origin";
-    EXPECT_TRUE(out[0].anchorInputUid.empty()) << "the result is absolute, so it resolves to itself";
+    EXPECT_EQ(out[0].x, 40) << "x is measured from the strip's edge — every page shares that origin";
 }
 
-TEST(ResolveOverlayAnchorsTest, LeavesAnUnanchoredOverlayExactlyAsItIs)
+TEST(ResolveOverlayAnchorsTest, LeavesAnUnanchoredOverlayAtItsOwnStripY)
 {
-    const auto out = Models::resolveOverlayAnchors({overlay("ovl-1", "", 40, 900)}, k_layout);
+    const auto out = Models::resolveOverlayAnchors({overlay("ovl-1", "", 0.05, 1.125)},
+                                                   k_layout, k_target);
 
     ASSERT_EQ(out.size(), 1u);
-    EXPECT_EQ(out[0].y, 900);
+    EXPECT_EQ(out[0].y, 900) << "no page top to add; 1.125 of the width is simply 900px down the strip";
 }
 
-TEST(ResolveOverlayAnchorsTest, IsIdempotent)
+TEST(ResolveOverlayAnchorsTest, TheSameRecordLandsProportionallyAtEveryTargetWidth)
 {
-    const auto once  = Models::resolveOverlayAnchors({overlay("ovl-1", "file-b", 0, 10)}, k_layout);
-    const auto twice = Models::resolveOverlayAnchors(once, k_layout);
+    // The whole point of the format. A chapter re-profiled from 800px to 1600px doubles every page, so
+    // the layout's page tops are already doubled — and the overlay has to double with them, from one
+    // unchanged record. Under the old pixel format this needed a separately-recorded authored width,
+    // which could be captured at the wrong moment or lost; a fraction cannot be.
+    const auto single = overlay("ovl-1", "file-c", 0.05, 0.025, 0.35);
 
-    ASSERT_EQ(twice.size(), 1u);
-    EXPECT_EQ(twice[0].y, once[0].y) << "resolving an already-absolute overlay must not add the top twice";
+    const auto narrow = Models::resolveOverlayAnchors({single}, {{"file-c", 250}}, 800);
+    const auto wide   = Models::resolveOverlayAnchors({single}, {{"file-c", 500}}, 1600);
+
+    ASSERT_EQ(narrow.size(), 1u);
+    ASSERT_EQ(wide.size(), 1u);
+    EXPECT_EQ(narrow[0].x, 40);
+    EXPECT_EQ(narrow[0].y, 270);
+    EXPECT_EQ(narrow[0].width, 280);
+    EXPECT_EQ(wide[0].x, 80)   << "x doubles with the page width";
+    EXPECT_EQ(wide[0].y, 540)  << "40 (=20x2) down page C, whose doubled top is at 500";
+    EXPECT_EQ(wide[0].width, 560) << "the artwork doubles too, from the same one record";
 }
 
-TEST(ResolveOverlayAnchorsTest, ScaleMovesPlacementIntoTheRendersOwnPixels)
+TEST(ResolveOverlayAnchorsTest, TheOffsetScalesButThePageTopDoesNot)
 {
-    // A chapter re-profiled from 800px to 1600px: every page is twice as tall, so the layout's page
-    // tops are already doubled, but the overlay's stored x/y are still in the pixels it was authored
-    // at. Scaling must therefore apply to x/y *before* the page top is added — doubling the sum would
-    // put the bubble 250px too far down. This is the half of the re-scale that is easy to get subtly
-    // wrong, because the artwork would still be exactly the right size.
-    const std::unordered_map<std::string, int> doubled{{"file-c", 500}};
-    const auto out = Models::resolveOverlayAnchors({overlay("ovl-1", "file-c", 40, 20)}, doubled,
-                                                   nullptr, 2.0);
+    // The half of the resolve that is easy to get subtly wrong, because the artwork would still be
+    // exactly the right size: scaling the *sum* would put this bubble 250px too far down.
+    const auto out = Models::resolveOverlayAnchors({overlay("ovl-1", "file-c", 0.0, 0.025)},
+                                                   {{"file-c", 500}}, 1600);
 
     ASSERT_EQ(out.size(), 1u);
-    EXPECT_EQ(out[0].x, 80) << "x doubles with the page width";
-    EXPECT_EQ(out[0].y, 540) << "40 (=20x2) down page C, whose doubled top is at 500";
+    EXPECT_EQ(out[0].y, 540) << "500 (the page top, already in render pixels) + 40 (the scaled offset)";
 }
 
-TEST(ResolveOverlayAnchorsTest, ScaleAlsoAppliesToAnUnanchoredOverlay)
+TEST(ResolveOverlayAnchorsTest, ZeroWidthMeansTheAssetsOwnSize)
 {
-    const auto out = Models::resolveOverlayAnchors({overlay("ovl-1", "", 40, 900)}, k_layout,
-                                                   nullptr, 0.5);
+    const auto out = Models::resolveOverlayAnchors({overlay("ovl-1", "file-b", 0.1, 0.1)},
+                                                   k_layout, k_target);
 
     ASSERT_EQ(out.size(), 1u);
-    EXPECT_EQ(out[0].x, 20);
-    EXPECT_EQ(out[0].y, 450) << "an absolute strip-Y is in authored pixels too, so it scales as well";
-}
-
-TEST(ResolveOverlayAnchorsTest, ScaleOneChangesNothing)
-{
-    // The overwhelmingly common case, and the one every pre-existing project renders through.
-    const auto plain  = Models::resolveOverlayAnchors({overlay("ovl-1", "file-c", 40, 21)}, k_layout);
-    const auto scaled = Models::resolveOverlayAnchors({overlay("ovl-1", "file-c", 40, 21)}, k_layout,
-                                                      nullptr, 1.0);
-
-    ASSERT_EQ(scaled.size(), 1u);
-    EXPECT_EQ(scaled[0].x, plain[0].x);
-    EXPECT_EQ(scaled[0].y, plain[0].y);
+    EXPECT_EQ(out[0].width, 0) << "0 must survive the conversion — it is what 'draw it at its own size' is";
 }
 
 TEST(ResolveOverlayAnchorsTest, DropsAndReportsAnOverlayWhoseAnchorPageIsNotInTheLayout)
 {
     std::vector<std::string> orphans;
     const auto out = Models::resolveOverlayAnchors(
-        {overlay("ovl-keep", "file-b", 0, 10), overlay("ovl-gone", "file-deleted", 0, 10)},
-        k_layout, &orphans);
+        {overlay("ovl-keep", "file-b", 0.0, 0.0125), overlay("ovl-gone", "file-deleted", 0.0, 0.0125)},
+        k_layout, k_target, &orphans);
 
     ASSERT_EQ(out.size(), 1u) << "an overlay with nothing to sit on must not fall through to strip-Y 10";
     EXPECT_EQ(out[0].uid, "ovl-keep");
@@ -285,14 +285,15 @@ std::string render(const TempDir& tmp, const std::string& tag,
 }
 
 /// The bubble: 20×20 opaque white, 10px in from the left, 20px down page C.
-Models::StripOverlay bubble(const std::string& assetPath, const std::string& anchor, int y)
+//! \p yFrac is a fraction of the render's target width, like every coordinate on the record.
+Models::StripOverlay bubble(const std::string& assetPath, const std::string& anchor, double yFrac)
 {
     Models::StripOverlay o;
     o.uid            = "ovl-bubble";
     o.assetPath      = assetPath;
     o.anchorInputUid = anchor;
-    o.x              = 10;
-    o.y              = y;
+    o.xFrac          = 0.1;
+    o.yFrac          = yFrac;
     return o;
 }
 
@@ -309,7 +310,7 @@ TEST(OverlayAnchoringTest, AnAnchoredBubbleStaysOnItsPageWhenAPageIsInsertedAbov
 
     // Before: page C spans strip 200..300 → it *is* output_003.png, bubble at local y 20..40.
     const std::string before =
-        render(tmp, "before", Chapter::build(tmp, false).inputs, {bubble(bmp, "file-c", 20)});
+        render(tmp, "before", Chapter::build(tmp, false).inputs, {bubble(bmp, "file-c", 0.20)});
     EXPECT_EQ(rgbAt(before + "/output_003.png", 15, 25), (std::vector<int>{255, 255, 255}));
     EXPECT_EQ(rgbAt(before + "/output_003.png", 15, 60), (std::vector<int>{200, 200, 30}))
         << "below the bubble is page C's own yellow";
@@ -317,7 +318,7 @@ TEST(OverlayAnchoringTest, AnAnchoredBubbleStaysOnItsPageWhenAPageIsInsertedAbov
     // After: a 50px page slots in at index 1, so page C spans 250..350. The bubble must ride down with
     // it — same file, 50px lower — and must still be sitting on yellow.
     const std::string after =
-        render(tmp, "after", Chapter::build(tmp, true).inputs, {bubble(bmp, "file-c", 20)});
+        render(tmp, "after", Chapter::build(tmp, true).inputs, {bubble(bmp, "file-c", 0.20)});
     EXPECT_EQ(rgbAt(after + "/output_003.png", 15, 75), (std::vector<int>{255, 255, 255}))
         << "the bubble did not follow its page down";
     EXPECT_EQ(rgbAt(after + "/output_003.png", 15, 95), (std::vector<int>{200, 200, 30}))
@@ -336,9 +337,9 @@ TEST(OverlayAnchoringTest, AnUnanchoredBubbleStaysAtItsStripYAndEndsUpOnAnotherP
     TempDir tmp("absolute");
     const std::string bmp = writeSolid(tmp, "bubble.png", 20, 20, k_white);
 
-    // Strip-Y 220 = the same spot the anchored bubble started at.
+    // Strip-Y 220 (2.20 of the 100px target width) = the same spot the anchored bubble started at.
     const std::string after =
-        render(tmp, "after", Chapter::build(tmp, true).inputs, {bubble(bmp, "", 220)});
+        render(tmp, "after", Chapter::build(tmp, true).inputs, {bubble(bmp, "", 2.20)});
 
     EXPECT_EQ(rgbAt(after + "/output_003.png", 15, 25), (std::vector<int>{255, 255, 255}))
         << "an unanchored overlay must stay exactly where it was put";
@@ -359,7 +360,7 @@ TEST(OverlayAnchoringTest, ABubbleWhoseAnchorPageIsGoneIsSkippedAndReported)
 
     std::vector<std::string> warnings;
     const std::string out = render(tmp, "out", Chapter::build(tmp, false).inputs,
-                                   {bubble(bmp, "file-deleted", 20)}, &warnings);
+                                   {bubble(bmp, "file-deleted", 0.20)}, &warnings);
 
     EXPECT_EQ(rgbAt(out + "/output_001.png", 15, 25), (std::vector<int>{200, 30, 30}))
         << "the orphan fell through as an absolute strip-Y and landed on page A";

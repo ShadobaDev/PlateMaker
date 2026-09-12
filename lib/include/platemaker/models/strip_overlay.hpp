@@ -60,8 +60,8 @@ struct StripOverlay {
      *
      * The loader dispatches on content, so the consumer chooses the format and the library never needs
      * to know which it got.  A vector asset is the better choice for authored text and bubbles: it
-     * rasterises at whatever scale the render needs (see \c resolveOverlayAnchors()'s \p scale), so
-     * re-profiling a chapter to a wider target width costs a re-render rather than a resample.
+     * rasterises at whatever size \c wFrac asks for, so re-profiling a chapter to a wider target width
+     * costs a re-render rather than a resample.
      *
      * The library reads this path and never copies or writes it, exactly as it treats an input page.
      */
@@ -84,17 +84,63 @@ struct StripOverlay {
     std::string anchorInputUid;
 
     /**
-     * \brief Top-left X, in the pixels of the target width this overlay was **authored** at.
+     * \brief Top-left X, as a **fraction of the render's target width**.
      *
-     * Every page is scaled to the same target width, so the strip and a page share one X origin — \c x
-     * means the same thing anchored or not.  When the project's target width no longer matches the one
-     * the overlays were authored at, \c resolveOverlayAnchors() scales this; see its \p scale.
+     * Every coordinate here is measured in one unit: the width the strip is rendered at. Pixels are
+     * meaningless without the width they were measured against, and every mechanism for remembering
+     * that width can be captured at the wrong moment, lost, or disagreed about by two consumers — a
+     * fraction cannot, because there is nothing to remember. Re-profiling a chapter from 800 px to
+     * 1600 px is a no-op on this record: \c 0.42 means the same place at either width.
+     *
+     * Every page is scaled to that same target width, so the strip and a page share one X origin and
+     * \c xFrac means the same thing anchored or not.
      */
-    int       x = 0;
-    int       y = 0;                    //!< Top-left Y, in authored pixels (see \c x): from the anchor
-                                        //!< page's top when \c anchorInputUid is set, else the strip's top.
+    double    xFrac = 0.0;
+
+    /**
+     * \brief Top-left Y, in the same unit as \c xFrac: fractions of the **target width**.
+     *
+     * Of the width, not the height, deliberately. One unit for both axes means the placement carries no
+     * dependence on a page's aspect ratio, and it is the only rule that also works for an unanchored
+     * overlay — which has no page to be a fraction of. A page several screens tall simply gives \c yFrac
+     * greater than 1.
+     *
+     * Measured from the anchor page's top edge when \c anchorInputUid is set, else from the strip's.
+     */
+    double    yFrac = 0.0;
+
+    /**
+     * \brief Rendered width, in the same unit again. **0 means "the asset's own pixel size"**.
+     *
+     * This is what makes an overlay self-describing: the asset's natural size stops being load-bearing,
+     * so re-emitting a bubble's SVG at a different internal size can no longer change how big it
+     * renders. Only its aspect ratio still comes from the file, and the height follows from that — one
+     * number, not two.
+     *
+     * \c 0 is the honest default for artwork placed before this existed, and for a consumer that simply
+     * wants the asset drawn at its own size.
+     */
+    double    wFrac = 0.0;
+
     bool      enabled = true;           //!< Per-overlay toggle; a disabled overlay is not composited.
     BlendMode blend   = BlendMode::Over; //!< How it blends onto the slice beneath.
+};
+
+/**
+ * \brief One overlay resolved against a known layout: absolute strip **pixels**, ready to composite.
+ *
+ * A separate type from \c StripOverlay on purpose. The stored form is resolution-independent and the
+ * drawable form is not, and they were previously the same struct with its fields quietly reinterpreted
+ * — which made "resolve twice" a thing that compiled. It no longer is.
+ */
+struct PlacedOverlay {
+    std::string uid;        //!< Copied from the record, so a diagnostic can name the overlay.
+    std::string assetPath;  //!< Copied from the record.
+    int  x = 0;             //!< Absolute strip X, in this render's pixels.
+    int  y = 0;             //!< Absolute strip Y, in this render's pixels.
+    int  width = 0;         //!< Rendered width in pixels; **0 = the asset's own size**.
+    bool enabled = true;    //!< Carried through so the compositor skips it, exactly as before.
+    BlendMode blend = BlendMode::Over;
 };
 
 /**
@@ -105,9 +151,10 @@ struct StripOverlay {
  * Both the render and a consumer's preview call this with the layout they are about to draw, so the
  * preview cannot disagree with the render about where a bubble lands.
  *
- * An unanchored overlay passes through untouched.  An anchored one gets its page's top added to \c y and
- * comes back unanchored — the result is uniformly absolute, so calling this twice is harmless *at the
- * default scale*; a second call must pass \c scale 1.0, since the placement has already been scaled.
+ * Every fraction becomes pixels at \p targetWidth; an anchored overlay additionally gets its page's top
+ * added to \c y.  The result is a different type (\c PlacedOverlay), so "resolve it twice" is no longer
+ * something that compiles — it used to be the same struct with its fields reinterpreted, and the only
+ * thing stopping a second call was a sentence in this comment.
  *
  * An overlay whose anchor page is **not in the layout** is *dropped from the result* and reported in
  * \p orphanedUids.  That is the honest reading of "the page it sat on is not being rendered": the page
@@ -119,36 +166,37 @@ struct StripOverlay {
  * \param pageTopByInputUid Strip-Y of each page's top edge, keyed by \c InputFile::uid — built from the
  *                          pages that actually landed in the strip (or, in a consumer, from the same
  *                          preview layout it is drawing).
+ * \param targetWidth       The width this render (or preview) lays the strip out at. Every fraction on
+ *                          the record is in this unit, so this is the only number needed to turn the
+ *                          durable form into pixels — there is no authored width to remember.
  * \param orphanedUids      Optional: receives the \c uid of each overlay dropped for a missing anchor.
- * \param scale             Ratio of the render's target width to the width the overlays were authored at
- *                          (\c ProjectItem::overlayAuthoredWidth).  \c x and \c y are multiplied by it
- *                          **before** the page top is added, because the page tops are already in the
- *                          render's own pixels.  1.0 — the default — leaves placement untouched, which is
- *                          the case whenever the profile has not been re-targeted since authoring.
- * \return The overlays that can be placed, in the input order, all in absolute strip coordinates.
+ * \return The overlays that can be placed, in the input order, all in absolute strip pixels.
  */
-[[nodiscard]] inline std::vector<StripOverlay> resolveOverlayAnchors(
+[[nodiscard]] inline std::vector<PlacedOverlay> resolveOverlayAnchors(
     const std::vector<StripOverlay>&            overlays,
     const std::unordered_map<std::string, int>& pageTopByInputUid,
-    std::vector<std::string>*                   orphanedUids = nullptr,
-    double                                      scale        = 1.0)
+    int                                         targetWidth,
+    std::vector<std::string>*                   orphanedUids = nullptr)
 {
-    // Exact identity at 1.0 rather than a multiply-and-round, so the overwhelmingly common case cannot
-    // drift a pixel: lround(x * 1.0) is exact for every int here, but only saying so out loud makes the
-    // no-op guarantee something a reader can rely on instead of re-deriving.
-    const auto place = [scale](int v) {
-        return scale == 1.0 ? v : static_cast<int>(std::lround(v * scale));
+    const auto px = [targetWidth](double f) {
+        return static_cast<int>(std::lround(f * targetWidth));
     };
 
-    std::vector<StripOverlay> resolved;
+    std::vector<PlacedOverlay> resolved;
     resolved.reserve(overlays.size());
 
     for (const auto& o : overlays) {
-        if (o.anchorInputUid.empty()) {   // already absolute
-            StripOverlay abs = o;
-            abs.x = place(abs.x);
-            abs.y = place(abs.y);
-            resolved.push_back(std::move(abs));
+        PlacedOverlay p;
+        p.uid       = o.uid;
+        p.assetPath = o.assetPath;
+        p.enabled   = o.enabled;
+        p.blend     = o.blend;
+        p.x         = px(o.xFrac);
+        p.width     = px(o.wFrac);   // 0 stays 0 — the asset's own size
+
+        if (o.anchorInputUid.empty()) {   // already absolute: y is measured from the strip's top
+            p.y = px(o.yFrac);
+            resolved.push_back(std::move(p));
             continue;
         }
 
@@ -159,11 +207,9 @@ struct StripOverlay {
             continue;
         }
 
-        StripOverlay abs = o;
-        abs.x = place(abs.x);
-        abs.y = place(abs.y) + it->second;   // the page top is already in the render's pixels
-        abs.anchorInputUid.clear();
-        resolved.push_back(std::move(abs));
+        // The offset scales; the page top does not — it is already in this render's own pixels.
+        p.y = px(o.yFrac) + it->second;
+        resolved.push_back(std::move(p));
     }
 
     return resolved;

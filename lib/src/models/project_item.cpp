@@ -151,7 +151,8 @@ const std::vector<StripOverlay>& ProjectItem::getStripOverlays() const noexcept
     return m_stripOverlays;
 }
 
-std::string ProjectItem::addOverlay(const std::string& assetPath, int x, int y, BlendMode blend,
+std::string ProjectItem::addOverlay(const std::string& assetPath, double xFrac, double yFrac,
+                                    double wFrac, BlendMode blend,
                                     const std::string& anchorInputUid)
 {
     std::vector<std::string> taken;
@@ -161,8 +162,9 @@ std::string ProjectItem::addOverlay(const std::string& assetPath, int x, int y, 
 
     StripOverlay ov;
     ov.uid   = Infrastructure::makeUniqueId("ovl", taken);
-    ov.x     = x;
-    ov.y     = y;
+    ov.xFrac = xFrac;
+    ov.yFrac = yFrac;
+    ov.wFrac = wFrac;
     ov.blend = blend;
     ov.enabled = true;
     ov.anchorInputUid = anchorInputUid;

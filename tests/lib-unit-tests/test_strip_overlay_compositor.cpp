@@ -348,14 +348,16 @@ TEST(StripOverlayCompositorTest, RasterizeOverlaysSkipsUnusableEntriesAndKeepsOr
 {
     const TempSvg svg(triangleSvg(20), "batch");
 
-    std::vector<Models::StripOverlay> defs(4);
+    // Already-resolved placements: rasterizeOverlays() takes pixels, never fractions, so the size and
+    // the position can no longer come from two different scales.
+    std::vector<Models::PlacedOverlay> defs(4);
     defs[0].uid = "ok-1";     defs[0].assetPath = svg.path();
     defs[1].uid = "disabled"; defs[1].assetPath = svg.path(); defs[1].enabled = false;
     defs[2].uid = "missing";  defs[2].assetPath = "no-such-file-anywhere.svg";
     defs[3].uid = "ok-2";     defs[3].assetPath = svg.path();  defs[3].x = 7; defs[3].y = 9;
 
     StripOverlayCompositor comp;
-    const auto loaded = comp.rasterizeOverlays(defs, 1.0);
+    const auto loaded = comp.rasterizeOverlays(defs);
 
     // A broken bubble must not abort a chapter render, and the survivors keep their input order.
     ASSERT_EQ(loaded.size(), 2u);

@@ -188,8 +188,30 @@ OverlayRaster StripOverlayCompositor::rasterizeSvgRgba(const std::string& svg, d
     return toRgba(PixelBuffer{img});
 }
 
+PixelBuffer StripOverlayCompositor::rasterizeOverlayAtWidth(const std::string& assetPath,
+                                                            int width) const
+{
+    if (width <= 0)
+        return rasterizeOverlay(assetPath, 1.0);
+
+    // Probe for the natural width. libvips loaders are lazy, so this reads enough of the asset to know
+    // its size without decoding pixels — for an SVG, a parse of a few KB.
+    VipsImage* probe = vips_image_new_from_file(assetPath.c_str(), "access", VIPS_ACCESS_SEQUENTIAL,
+                                                nullptr);
+    if (!probe) {
+        vips_error_clear();
+        return {};
+    }
+    const int natural = probe->Xsize;
+    g_object_unref(probe);
+    if (natural <= 0)
+        return {};
+
+    return rasterizeOverlay(assetPath, static_cast<double>(width) / natural);
+}
+
 std::vector<LoadedOverlay> StripOverlayCompositor::rasterizeOverlays(
-    const std::vector<Models::StripOverlay>& overlays, double scale) const
+    const std::vector<Models::PlacedOverlay>& overlays) const
 {
     std::vector<LoadedOverlay> out;
     out.reserve(overlays.size());
@@ -198,7 +220,7 @@ std::vector<LoadedOverlay> StripOverlayCompositor::rasterizeOverlays(
         if (!ov.enabled || ov.assetPath.empty())
             continue;
 
-        PixelBuffer buf = rasterizeOverlay(ov.assetPath, scale);
+        PixelBuffer buf = rasterizeOverlayAtWidth(ov.assetPath, ov.width);
         if (!buf.isValid()) {
             PLATEMAKER_LOG(Log::StripOverlayCompositor,
                     "skip overlay '" + ov.uid + "': cannot load '" + ov.assetPath + "': "

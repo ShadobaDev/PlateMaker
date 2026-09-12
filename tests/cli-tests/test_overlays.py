@@ -89,6 +89,9 @@ def _set_overlay(workspace: pathlib.Path, *, anchor_to: str | None, y: int) -> N
     """
     Put a single bubble on the project, anchored to *anchor_to* (a page filename) or absolute.
 
+    *y* is given in pixels for readability and converted here, because the persisted form is a
+    **fraction of the target width** — which is what makes a placement survive a re-profile.
+
     Written straight into the workspace JSON because the CLI has no overlay command — overlays are
     authored by a GUI. That makes this a test of the persisted contract too: the same keys a consumer
     writes are the ones the render reads back.
@@ -108,8 +111,9 @@ def _set_overlay(workspace: pathlib.Path, *, anchor_to: str | None, y: int) -> N
         "assetPath":      str(BUBBLE.resolve()),
         "sha256":         "",
         "anchorInputUid": anchor_uid,
-        "x":              BUBBLE_X,
-        "y":              y,
+        "xFrac":          BUBBLE_X / PAGE_W,
+        "yFrac":          y / PAGE_W,
+        "wFrac":          0.0,          # 0 = the asset's own pixel size
         "enabled":        True,
         "blend":          "Over",
     }]

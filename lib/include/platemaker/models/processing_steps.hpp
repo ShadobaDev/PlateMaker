@@ -150,7 +150,8 @@ inline constexpr std::array<ProcessingStepDef, 2> k_processingStepDefs = {{
     for (const auto& o : overlays) {
         if (!o.enabled)
             continue;
-        s += "ov{" + o.sha256 + ";" + o.anchorInputUid + "@" + to_string(o.x) + "," + to_string(o.y)
+        s += "ov{" + o.sha256 + ";" + o.anchorInputUid + "@" + to_string(o.xFrac) + "," + to_string(o.yFrac)
+           + "x" + to_string(o.wFrac)
            + ";" + to_string(static_cast<int>(o.blend)) + "}";
     }
 

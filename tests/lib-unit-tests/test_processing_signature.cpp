@@ -18,13 +18,14 @@
 namespace Platemaker::Models {
 
 namespace {
-StripOverlay overlay(std::string uid, std::string sha, int x, int y, bool enabled = true)
+StripOverlay overlay(std::string uid, std::string sha, double xFrac, double yFrac,
+                     bool enabled = true)
 {
     StripOverlay o;
     o.uid = std::move(uid);
     o.assetPath = "/tmp/" + o.uid + ".png";
     o.sha256 = std::move(sha);
-    o.x = x; o.y = y; o.enabled = enabled;
+    o.xFrac = xFrac; o.yFrac = yFrac; o.enabled = enabled;
     return o;
 }
 } // namespace

@@ -288,8 +288,8 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     ovl.assetPath      = "/tmp/bubble.png";
     ovl.sha256         = "deadbeef";
     ovl.anchorInputUid = "file-004";   // page-anchored: y is relative to that page's top
-    ovl.x              = 40;
-    ovl.y              = 1500;
+    ovl.xFrac          = 0.05;
+    ovl.yFrac          = 1.875;
     ovl.enabled        = true;
     ovl.blend          = Models::BlendMode::Multiply;
     proj.getStripOverlays().push_back(std::move(ovl));
@@ -321,8 +321,8 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     EXPECT_EQ(p.getStripOverlays()[0].anchorInputUid, "file-004")
         << "the anchor must survive the round-trip — without it the overlay reloads as an absolute "
            "strip-Y and lands on whatever artwork now happens to sit there";
-    EXPECT_EQ(p.getStripOverlays()[0].x, 40);
-    EXPECT_EQ(p.getStripOverlays()[0].y, 1500);
+    EXPECT_DOUBLE_EQ(p.getStripOverlays()[0].xFrac, 0.05);
+    EXPECT_DOUBLE_EQ(p.getStripOverlays()[0].yFrac, 1.875);
     EXPECT_TRUE(p.getStripOverlays()[0].enabled);
     EXPECT_EQ(p.getStripOverlays()[0].blend, Models::BlendMode::Multiply);
 

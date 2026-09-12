@@ -163,16 +163,6 @@ public:
     /// Disabled by default — an untouched project renders byte-identically.  See \c processing_steps.hpp.
     ColourCorrection colourCorrection;
 
-    /// The \c OutputProfile::targetWidth the strip overlays were authored against.  0 = unset, meaning
-    /// "whatever this render targets", which is the no-op every project starts at.
-    ///
-    /// Overlay placement and artwork are both in pixels, so both are relative to a target width.  Set by
-    /// the consumer when it authors overlays; read by the render to scale artwork and placement together
-    /// if the project has since been re-profiled (see \c Core::RenderRequest::overlayAuthoredWidth).
-    /// Unlike the baselines above this is *not* a render baseline — it records what the overlays mean,
-    /// not what the last render did, so a render never writes it.
-    int overlayAuthoredWidth = 0;
-
     // -----------------------------------------------------------------------
     // Construction
     // -----------------------------------------------------------------------
@@ -260,8 +250,9 @@ public:
      * the library never copies it.
      *
      * \param assetPath     Absolute path to the artwork — raster (PNG) or vector (SVG). Must exist.
-     * \param x,y            Top-left placement — page-relative when \p anchorInputUid is given, else in
-     *                      absolute strip coordinates (see \c StripOverlay::anchorInputUid).
+     * \param xFrac,yFrac    Top-left placement, as fractions of the render's target width — page-relative
+     *                      when \p anchorInputUid is given, else absolute (see \c StripOverlay).
+     * \param wFrac          Rendered width in that same unit; \c 0 means the asset's own pixel size.
      * \param blend          Blend mode (default \c Over).
      * \param anchorInputUid The \c InputFile::uid of the page this overlay rides on. Prefer passing it:
      *                      an anchored overlay follows its page when the chapter is edited, while an
@@ -270,7 +261,7 @@ public:
      * \return The minted uid. If the file cannot be hashed the overlay is still added with an empty
      *         sha256 (no dedup, and staleness cannot see a later content change until it is re-added).
      */
-    std::string addOverlay(const std::string& assetPath, int x, int y,
+    std::string addOverlay(const std::string& assetPath, double xFrac, double yFrac, double wFrac,
                            BlendMode blend = BlendMode::Over,
                            const std::string& anchorInputUid = {});
 
