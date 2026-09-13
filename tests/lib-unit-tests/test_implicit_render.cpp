@@ -310,7 +310,6 @@ TEST(ColourCorrectionPipelineTest, ExcludedInputIsNotGraded)
     Models::InputFile fb = input(b); fb.uid = "in-b";
 
     Models::ColourCorrection cc;
-    cc.enabled           = true;
     cc.saturation        = 0.0;   // desaturate to grey — unless the page is excluded
     cc.excludedInputUids = {"in-a"};
 

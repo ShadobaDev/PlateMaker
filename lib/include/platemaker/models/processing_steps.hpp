@@ -134,7 +134,7 @@ inline constexpr std::array<ProcessingStepDef, 2> k_processingStepDefs = {{
 
     std::string s;
 
-    if (cc.enabled) {
+    if (!isNeutral(cc)) {
         s += "cc{cu m" + curveSig(cc.curves.master) + "r" + curveSig(cc.curves.red)
            + "g" + curveSig(cc.curves.green) + "b" + curveSig(cc.curves.blue)
            + ";b" + to_string(cc.brightness)

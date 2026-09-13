@@ -32,32 +32,44 @@ StripOverlay overlay(std::string uid, std::string sha, double xFrac, double yFra
 
 TEST(ProcessingSignatureTest, EmptyWhenNothingIsConfigured)
 {
-    ColourCorrection cc;                       // disabled by default
+    ColourCorrection cc;                       // neutral by default
     EXPECT_TRUE(processingConfigSignature(cc, {}).empty());
 
-    // A disabled grade and a disabled overlay contribute nothing → still empty (matches a pre-feature
+    // A neutral grade and a disabled overlay contribute nothing → still empty (matches a pre-feature
     // workspace, so it never forces a needless re-render).
-    cc.enabled = false;
-    cc.brightness = 0.5;                        // set but disabled → ignored
     std::vector<StripOverlay> ovs{ overlay("o1", "aaa", 0, 0, /*enabled*/ false) };
     EXPECT_TRUE(processingConfigSignature(cc, ovs).empty());
+
+    // Excluding pages from a grade that changes nothing excludes them from nothing, so it is still not
+    // a configured step — the same rule isNeutral() applies, checked here because this is the caller
+    // whose answer decides whether a chapter re-renders.
+    cc.excludedInputUids = {"file-1"};
+    EXPECT_TRUE(processingConfigSignature(cc, {}).empty());
 }
 
-TEST(ProcessingSignatureTest, EnablingColourCorrectionChangesTheSignature)
+TEST(ProcessingSignatureTest, GradingChangesTheSignature)
 {
-    ColourCorrection off;                       // disabled
-    ColourCorrection on = off;
-    on.enabled = true;
-    EXPECT_NE(processingConfigSignature(off, {}), processingConfigSignature(on, {}));
+    ColourCorrection neutral;
+    ColourCorrection graded = neutral;
+    graded.brightness = 0.1;
+    EXPECT_NE(processingConfigSignature(neutral, {}), processingConfigSignature(graded, {}));
 
-    ColourCorrection brighter = on;
+    ColourCorrection brighter = graded;
     brighter.brightness += 0.1;
-    EXPECT_NE(processingConfigSignature(on, {}), processingConfigSignature(brighter, {}));
+    EXPECT_NE(processingConfigSignature(graded, {}), processingConfigSignature(brighter, {}));
+
+    // Each of the four knobs on its own is a grade: whichever one is touched, the chapter is stale.
+    for (const ColourCorrection& one : {
+             [] { ColourCorrection c; c.contrast   = 1.2; return c; }(),
+             [] { ColourCorrection c; c.saturation = 0.0; return c; }(),
+             [] { ColourCorrection c; c.curves.master = {{0.0, 0.0}, {1.0, 0.5}}; return c; }(),
+         })
+        EXPECT_NE(processingConfigSignature(neutral, {}), processingConfigSignature(one, {}));
 }
 
 TEST(ProcessingSignatureTest, ExcludedUidsAreOrderInsensitive)
 {
-    ColourCorrection a; a.enabled = true; a.excludedInputUids = {"file-1", "file-9"};
+    ColourCorrection a; a.brightness = 0.2; a.excludedInputUids = {"file-1", "file-9"};
     ColourCorrection b = a;              b.excludedInputUids = {"file-9", "file-1"}; // reordered
     EXPECT_EQ(processingConfigSignature(a, {}), processingConfigSignature(b, {}));
 

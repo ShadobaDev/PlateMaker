@@ -84,10 +84,11 @@ void StripBuilder::appendOnePage(const Models::InputFile& file, ProcessingOutcom
         plan.geo.width,
         plan.geo.height});
 
-    // Grade this page when the step is enabled and the page is not excluded. When off,
-    // scaledPage() runs exactly the historical code paths (byte-identical output).
+    // Grade this page when the grade would change something and the page is not excluded. A neutral
+    // grade takes scaledPage() down exactly the historical code paths (byte-identical output), which is
+    // what keeps an ungraded project renderable to the same bytes as a build without this feature.
     const bool applyGrade =
-        m_colourCorrection.enabled && m_gradeExcluded.count(file.uid) == 0;
+        !Models::isNeutral(m_colourCorrection) && m_gradeExcluded.count(file.uid) == 0;
 
     // Read before the append: appending is what moves the strip's bottom edge, so this is the Y the
     // page starts at.

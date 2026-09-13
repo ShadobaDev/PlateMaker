@@ -57,14 +57,17 @@ struct ColourCurves {
  * \brief Project-wide colour correction applied per input page at render time (page domain).
  *
  * Non-destructive: the source files are never modified — the grade is applied to a copy in the
- * pipeline.  \c enabled gates the whole step; with it \c false the pipeline does no colour work and
- * the output is byte-identical to a build without this feature.
+ * pipeline.
+ *
+ * **There is no master toggle: a neutral grade is no grade.**  \c isNeutral() is what the pipeline
+ * gates on, so a project nobody has graded does no colour work and renders byte-identically to a build
+ * without this feature.  A stored flag beside the values could disagree with them — and a consumer
+ * then has two answers to "is this project graded" and no rule for which one wins.  Switching a grade
+ * off is resetting it, which is undoable like any other edit.
  *
  * Apply order within the grade: tone curves → brightness/contrast → saturation.
  */
 struct ColourCorrection {
-    bool enabled = false; //!< Master toggle. When false the step is skipped entirely.
-
     ColourCurves curves;     //!< Per-channel tone curves (empty = identity). Applied first, 8-bit only (MVP).
     double brightness = 0.0; //!< Additive lift, roughly [-1, 1]; 0 = no change.
     double contrast   = 1.0; //!< Multiplicative contrast around mid-grey; 1 = no change.
@@ -74,10 +77,29 @@ struct ColourCorrection {
      * \brief Input \c uid values this grade skips (e.g. a title or end page).
      *
      * Keyed by \c InputFile::uid (not path) so a rename does not silently un-exclude a page.  An
-     * excluded page is rendered exactly as it would be with the whole step disabled.
+     * excluded page is rendered exactly as it would be if the grade were neutral.
      */
     std::vector<std::string> excludedInputUids;
 };
+
+/**
+ * \brief True when this grade would leave every pixel exactly as it found it.
+ *
+ * The one test for "is this project graded", asked by the pipeline, by the staleness signature and by
+ * any consumer previewing the grade — so that none of them can answer it differently.
+ *
+ * Compared exactly against the neutral values rather than within a tolerance: these are stored numbers
+ * a user set, not computed ones, and a slider returned to its default has to read as untouched.
+ *
+ * \c excludedInputUids is deliberately not consulted.  Excluding pages from a grade that changes
+ * nothing excludes them from nothing, and counting it would make a project "graded" with no way for
+ * the user to see why.
+ */
+[[nodiscard]] inline bool isNeutral(const ColourCorrection& cc) noexcept
+{
+    return cc.brightness == 0.0 && cc.contrast == 1.0 && cc.saturation == 1.0
+        && !hasAnyCurve(cc.curves);
+}
 
 } // namespace Platemaker::Models
 

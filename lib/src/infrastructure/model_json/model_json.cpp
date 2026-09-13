@@ -193,7 +193,6 @@ void from_json(const nlohmann::json& j, ColourCurves& v) {
 // --- ColourCorrection ---
 void to_json(nlohmann::json& j, const ColourCorrection& v) {
     j = nlohmann::json{
-        {"enabled",           v.enabled},
         {"curves",            v.curves},
         {"brightness",        v.brightness},
         {"contrast",          v.contrast},
@@ -203,8 +202,9 @@ void to_json(nlohmann::json& j, const ColourCorrection& v) {
 }
 void from_json(const nlohmann::json& j, ColourCorrection& v) {
     // All additive: an old workspace has no "colourCorrection" object at all, and a future field left
-    // out of an older file simply keeps its struct default (disabled / neutral / identity curves).
-    if (j.contains("enabled"))           j.at("enabled").get_to(v.enabled);
+    // out of an older file simply keeps its struct default (neutral / identity curves). An unknown key
+    // is ignored, which is how a file written before the master toggle was dropped still loads — the
+    // grade it carries is simply live, as its values always said it was.
     if (j.contains("curves"))            j.at("curves").get_to(v.curves);
     if (j.contains("brightness"))        j.at("brightness").get_to(v.brightness);
     if (j.contains("contrast"))          j.at("contrast").get_to(v.contrast);

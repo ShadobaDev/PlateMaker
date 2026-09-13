@@ -276,7 +276,6 @@ TEST(PagePreviewTest, PageRgbaIsTheUngradedBaselineTheRenderGrades)
 
     // The same page rendered WITH the grade lands somewhere else entirely.
     Models::ColourCorrection cc;
-    cc.enabled    = true;
     cc.brightness = 60.0;
 
     Infrastructure::CancellationToken cancel;

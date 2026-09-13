@@ -276,7 +276,6 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     Models::ProjectItem proj;
     proj.name = "Chapter";
     proj.uid  = "proj-proc-001";
-    proj.colourCorrection.enabled           = true;
     proj.colourCorrection.brightness        = 0.1;
     proj.colourCorrection.contrast          = 1.2;
     proj.colourCorrection.saturation        = 0.8;
@@ -302,7 +301,7 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
 
     ASSERT_EQ(loaded.projectItems.size(), 1u);
     const auto& p = loaded.projectItems.front();
-    EXPECT_TRUE(p.colourCorrection.enabled);
+    EXPECT_FALSE(Models::isNeutral(p.colourCorrection));
     EXPECT_DOUBLE_EQ(p.colourCorrection.brightness, 0.1);
     EXPECT_DOUBLE_EQ(p.colourCorrection.contrast,   1.2);
     EXPECT_DOUBLE_EQ(p.colourCorrection.saturation, 0.8);
@@ -359,7 +358,7 @@ TEST(WorkspaceSerializerTest, LegacyProjectLoadsProcessingDefaults)
 
     ASSERT_EQ(loaded.projectItems.size(), 1u);
     const auto& p = loaded.projectItems.front();
-    EXPECT_FALSE(p.colourCorrection.enabled);
+    EXPECT_TRUE(Models::isNeutral(p.colourCorrection));
     EXPECT_TRUE(p.colourCorrection.excludedInputUids.empty());
     EXPECT_TRUE(p.getStripOverlays().empty());
 

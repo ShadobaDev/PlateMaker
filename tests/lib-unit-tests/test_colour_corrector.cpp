@@ -66,7 +66,6 @@ std::vector<double> pixel(const PixelBuffer& buf)
 Models::ColourCorrection neutral()
 {
     Models::ColourCorrection cc;
-    cc.enabled = true; // apply() itself does not check enabled; the pipeline gates it
     return cc;         // brightness 0, contrast 1, saturation 1
 }
 

@@ -145,6 +145,11 @@ released), which re-derives onto this baseline per the cascade rule.
   before scale by a new stateless `Core::ColourCorrector`. Because these are point operations, a
   project-wide grade equals a per-page one while keeping exclusions. Curves are 8-bit/3-band in 
   this release (cubic interpolation + 16-bit deferred).
+  **There is no master toggle: a neutral grade is no grade.** `Models::isNeutral()` is the single test
+  the pipeline gates on, the staleness signature gates on, and a consumer previewing the grade gates
+  on — so none of them can answer "is this project graded" differently. A stored flag beside the
+  values could disagree with them, and a consumer would then have two answers and no rule for which
+  wins. Switching a grade off is resetting it.
   `ColourCorrector::applyToRgba()` grades an in-memory RGBA8888 buffer in place (reusing `apply()`), so a
   consumer with no libvips dependency — a GUI — can drive a live grade *preview* of already-decoded output
   slices; being a point grade, that preview equals the committed render.
