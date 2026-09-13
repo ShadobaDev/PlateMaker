@@ -111,6 +111,11 @@ released), which re-derives onto this baseline per the cascade rule.
 
 ### Added
 
+- **`StripOverlay` compares by value.** `operator==` / `!=` over every field, so a consumer can ask
+  whether an edit changed anything without re-deriving the answer field by field — which is how a field
+  added later comes to be silently left out of the comparison. The fractions compare exactly rather than
+  fuzzily: they are stored values, not computed ones, and a placement that round-trips through a file
+  has to compare equal to itself.
 - **`StripOverlayCompositor::rasterizeOverlay(assetPath, scale)`** — one asset to a `PixelBuffer`,
   exposed so a consumer previewing a chapter uses *the render's own* rasteriser rather than an
   approximation of it. An SVG filter the consumer's toolkit cannot draw (Qt SVG implements no

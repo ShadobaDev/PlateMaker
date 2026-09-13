@@ -124,6 +124,25 @@ struct StripOverlay {
 
     bool      enabled = true;           //!< Per-overlay toggle; a disabled overlay is not composited.
     BlendMode blend   = BlendMode::Over; //!< How it blends onto the slice beneath.
+
+    /**
+     * Brief Value equality over every field.
+     *
+     * So that a consumer can ask whether an edit changed anything without re-deriving the answer field
+     * by field — which is how a new field comes to be silently left out of the comparison. The
+     * fractions are compared exactly rather than fuzzily: they are stored values, not computed ones,
+     * and a placement that round-trips through a file has to compare equal to itself.
+     */
+    [[nodiscard]] bool operator==(const StripOverlay& o) const noexcept
+    {
+        return uid == o.uid && assetPath == o.assetPath && sha256 == o.sha256
+            && anchorInputUid == o.anchorInputUid && xFrac == o.xFrac && yFrac == o.yFrac
+            && wFrac == o.wFrac && enabled == o.enabled && blend == o.blend;
+    }
+    [[nodiscard]] bool operator!=(const StripOverlay& o) const noexcept 
+    { 
+        return !(*this == o); 
+    }
 };
 
 /**
