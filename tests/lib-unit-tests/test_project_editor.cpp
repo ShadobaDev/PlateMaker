@@ -122,6 +122,52 @@ TEST(ProjectEditorTest, MoveInputUpAndDown)
 // ProjectEditor::snapshot / restore — undo/redo support
 // ---------------------------------------------------------------------------
 
+TEST(ProjectEditorTest, ReplaceInputFileKeepsThePageAndForgetsTheOldFile)
+{
+    ProjectItem p = makeProject(3);
+    InputFile& page = p.getInputImages()[1];
+    page.sha256          = "old-hash";
+    page.width           = 800;
+    page.height          = 5120;
+    page.canvasProfileId = "cp-1";
+    OutputFile out;
+    out.fileName = "output_001.jpg";
+    out.status   = FileStatus::Done;
+    p.getOutputImages().push_back(out);
+
+    ASSERT_TRUE(Infrastructure::ProjectEditor{p}.replaceInputFile("u1", "rescan.png"));
+
+    const InputFile& after = p.getInputImages()[1];
+    // Still the same page: what overlays point at, and where it sits in the strip.
+    EXPECT_EQ(after.uid, "u1");
+    EXPECT_EQ(after.order, 1);
+    EXPECT_EQ(after.filePath, "rescan.png");
+    // Nothing that described the old file survives to be mistaken for the new one.
+    EXPECT_TRUE(after.sha256.empty());
+    EXPECT_EQ(after.status, FileStatus::Pending);
+    EXPECT_EQ(after.width, 0);
+    EXPECT_EQ(after.height, 0);
+    EXPECT_TRUE(after.canvasProfileId.empty());
+    // A page of another height moves every slice below it.
+    EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Desynchronized);
+    EXPECT_EQ(orderSeqUids(p), (std::vector<std::string>{"u0", "u1", "u2"}));
+}
+
+TEST(ProjectEditorTest, ReplaceInputFileRefusesWhatWouldBreakAPage)
+{
+    ProjectItem p = makeProject(3);
+    Infrastructure::ProjectEditor editor{p};
+
+    EXPECT_FALSE(editor.replaceInputFile("missing", "x.png"));   // no such page
+    EXPECT_FALSE(editor.replaceInputFile("u1", ""));             // no file
+    EXPECT_FALSE(editor.replaceInputFile("u1", "p1.png"));       // already this page's file
+    EXPECT_FALSE(editor.replaceInputFile("u1", "p2.png"));       // another page's: a rescan would fold them
+
+    // Refusing means refusing: nothing moved and nothing was reset.
+    EXPECT_EQ(vectorSeqPaths(p), (std::vector<std::string>{"p0.png", "p1.png", "p2.png"}));
+    EXPECT_EQ(p.getInputImages()[1].status, FileStatus::Processed);
+}
+
 TEST(ProjectEditorSnapshotTest, RoundTripsContentAndPreservesName)
 {
     ProjectItem p = makeProject(3);

@@ -90,6 +90,41 @@ bool ProjectEditor::moveInput(const std::string& uid, int delta)
     return setInputOrder(ordered);
 }
 
+bool ProjectEditor::replaceInputFile(const std::string& uid, const std::string& newPath)
+{
+    if (newPath.empty())
+        return false;
+
+    Models::InputFile* target = nullptr;
+    for (auto& f : m_project.m_inputImages) {
+        if (f.uid == uid)
+            target = &f;
+        else if (f.filePath == newPath)
+            return false;   // another page's file — a rescan matches by path and would fold the two
+    }
+    if (!target || target->filePath == newPath)
+        return false;
+
+    // Identity stays: the uid is what overlays and grade exclusions point at, the order is where the
+    // page sits. Nothing else about the entry is kept, because all of it described the old file.
+    target->filePath = newPath;
+    target->sha256.clear();
+    target->status = Models::FileStatus::Pending;
+    target->lastProcessed.clear();
+    target->thumbnailPath.clear();
+    target->canvasProfileId.clear();
+    target->canvasFingerprint.clear();
+    target->width  = 0;
+    target->height = 0;
+
+    for (auto& outf : m_project.m_outputImages)
+        outf.status = Models::FileStatus::Desynchronized;
+    m_project.m_isUpToDate = false;
+
+    m_project.rebuildLookupTables();   // keyed by path, and the path just changed
+    return true;
+}
+
 std::string ProjectEditor::snapshot() const
 {
     // to_json(ProjectItem) reads the profile links via the public accessors, so a plain conversion

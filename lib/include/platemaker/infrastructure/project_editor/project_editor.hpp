@@ -78,6 +78,28 @@ public:
      */
     bool moveInput(const std::string& uid, int delta);
 
+    /**
+     * \brief Points input \p uid at a different file on disk, keeping everything that makes it the
+     *        same page.
+     *
+     * *"I have a newer scan of page 4"* is not a removal followed by an addition: those mint a new
+     * uid, and everything anchored to the old one — overlays, grade exclusions — is left with no page.
+     * This keeps \c uid and \c order, the page's identity and its place in the strip, and resets
+     * exactly the state that described the *old* file: its hash, status, recorded size, thumbnail and
+     * the canvas profile it was matched to. The new file is \c Pending until the next \c sanitize()
+     * hashes it. Every output is marked \c Desynchronized, as \c mergeFileScan() does for any
+     * structural change — a page of a different height moves every slice below it.
+     *
+     * \param uid     The input to repoint.
+     * \param newPath Path of the replacement file, in the same form the project's other paths use.
+     *                Not opened here.
+     * \return \c true if the input now points at \p newPath. \c false — changing nothing — if \p uid
+     *         is unknown, \p newPath is empty, is already this input's file, or is already **another**
+     *         input's file: inputs are matched by path on every rescan, so two pages sharing one file
+     *         would be folded into one.
+     */
+    bool replaceInputFile(const std::string& uid, const std::string& newPath);
+
     // -----------------------------------------------------------------------
     // Snapshot / restore (undo/redo support)
     // -----------------------------------------------------------------------

@@ -111,6 +111,13 @@ released), which re-derives onto this baseline per the cascade rule.
 
 ### Added
 
+- **`ProjectEditor::replaceInputFile(uid, newPath)` — a newer file for the same page.** Removing an
+  input and adding its replacement mints a new uid, and everything anchored to the old one — overlays,
+  grade exclusions — is left with no page. This keeps `uid` and `order`, resets exactly the state that
+  described the old file (hash, status, recorded size, thumbnail, matched canvas profile), marks every
+  output `Desynchronized` as any structural change does, and rebuilds the path-keyed lookup tables a
+  consumer editing `filePath` in place would have left stale. It refuses a path that is already another
+  input's: inputs are matched by path on every rescan, and two pages on one file would be folded into one.
 - **`StripOverlay` compares by value.** `operator==` / `!=` over every field, so a consumer can ask
   whether an edit changed anything without re-deriving the answer field by field — which is how a field
   added later comes to be silently left out of the comparison. The fractions compare exactly rather than
