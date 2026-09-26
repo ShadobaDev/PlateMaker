@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -92,6 +93,106 @@ void backfillInputOrderBaseline(Models::ProjectItem& pi)
         pi.inputOrderAtRender = std::move(order);
 }
 
+// ---------------------------------------------------------------------------
+// Paths relative to the workspace file
+//
+// A workspace folder has to survive being moved, renamed or zipped: everything the consumer writes for
+// it sits beside the file, so the folder is the unit people copy. The model keeps every path absolute —
+// the compositor, the inventory, staleness and every consumer receive exactly what they always did — and
+// the relative form exists only in the file, where the one piece of code that knows the file's location
+// can translate it.
+//
+//  - An overlay's asset inside the workspace folder is written twice: `assetPath` absolute, as always,
+//    and `assetPathRelative` beside it. Both, because a reader from before this key ignores it and keeps
+//    working from the absolute path for as long as the folder has not moved — the arrangement Ableton's
+//    sets use for samples. A reader that knows the key prefers it when it names a file that exists.
+//  - A path with no root at all (`overlays/x.svg`, `pages/001.png`) is read against the workspace folder,
+//    in `assetPath`, in an input's `filePath`, and in an output's `sourceMap` — which records the input's
+//    `filePath` verbatim, and is matched against it as a string (backfillInputOrderBaseline() above), so
+//    the two must be read alike. Nothing this library or its consumers write produces
+//    one — both store absolute paths — so this is for files written by hand, or packaged, relative.
+//    A root-relative path (`/tmp/x`) is left alone: it names a place, not a place in the folder.
+//  - `outputDirectory` is not translated: a CLI user's relative `--output` is resolved against the working
+//    directory at render time, and reading it against the folder instead would move their output.
+// ---------------------------------------------------------------------------
+
+namespace fs = std::filesystem;
+
+/// The file key an overlay's asset path is also written under, relative to the workspace file's folder.
+constexpr const char* k_assetPathRelative = "assetPathRelative";
+
+/// UTF-8 with '/' separators — the form consumers write, so a path read back compares equal to one
+/// written fresh.
+std::string genericUtf8(const fs::path& p)
+{
+    const std::u8string s = p.lexically_normal().generic_u8string();
+    return std::string(s.begin(), s.end());
+}
+
+/// A path that says nothing about where it is — no drive, no root — and so means "in the folder".
+bool isFolderRelative(const std::string& utf8)
+{
+    return !utf8.empty() && !utf8ToPath(utf8).has_root_path();
+}
+
+/// \p absUtf8 relative to \p folder when it lies inside it; nothing otherwise.
+std::optional<std::string> relativeInside(const std::string& absUtf8, const fs::path& folder)
+{
+    const fs::path abs = utf8ToPath(absUtf8);
+    if (absUtf8.empty() || !abs.is_absolute())
+        return std::nullopt;
+    const fs::path rel = abs.lexically_normal().lexically_relative(folder.lexically_normal());
+    if (rel.empty() || rel == "." || *rel.begin() == "..")
+        return std::nullopt;
+    return genericUtf8(rel);
+}
+
+/// save(): writes the relative copy beside every overlay asset that lies inside \p folder.
+void addRelativePaths(nlohmann::json& j, const fs::path& folder)
+{
+    if (!j.contains("projectItems"))
+        return;
+    for (auto& project : j["projectItems"]) {
+        if (!project.contains("stripOverlays"))
+            continue;
+        for (auto& overlay : project["stripOverlays"])
+            if (overlay.contains("assetPath") && overlay["assetPath"].is_string())
+                if (const auto rel = relativeInside(overlay["assetPath"].get<std::string>(), folder))
+                    overlay[k_assetPathRelative] = *rel;
+    }
+}
+
+/// load(): turns every relative form back into the absolute path the model holds.
+void resolveRelativePaths(nlohmann::json& j, const fs::path& folder)
+{
+    if (!j.contains("projectItems"))
+        return;
+    const auto inFolder = [&folder](const std::string& rel) { return genericUtf8(folder / utf8ToPath(rel)); };
+
+    for (auto& project : j["projectItems"]) {
+        if (project.contains("stripOverlays"))
+            for (auto& overlay : project["stripOverlays"]) {
+                const std::string rel = overlay.value(k_assetPathRelative, std::string{});
+                std::error_code   ec;
+                if (!rel.empty() && fs::exists(folder / utf8ToPath(rel), ec))
+                    overlay["assetPath"] = inFolder(rel);   // the folder has moved, or it never did
+                else if (isFolderRelative(overlay.value("assetPath", std::string{})))
+                    overlay["assetPath"] = inFolder(overlay["assetPath"].get<std::string>());
+                // otherwise the absolute path stands, found or not — exactly as before this key existed
+            }
+        if (project.contains("inputFiles"))
+            for (auto& input : project["inputFiles"])
+                if (isFolderRelative(input.value("filePath", std::string{})))
+                    input["filePath"] = inFolder(input["filePath"].get<std::string>());
+        if (project.contains("outputFiles"))
+            for (auto& output : project["outputFiles"])
+                if (output.contains("sourceMap"))
+                    for (auto& segment : output["sourceMap"])
+                        if (isFolderRelative(segment.value("sourceFilePath", std::string{})))
+                            segment["sourceFilePath"] = inFolder(segment["sourceFilePath"].get<std::string>());
+    }
+}
+
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
@@ -135,6 +236,9 @@ Models::Workspace WorkspaceSerializer::load(const std::string&     filePath,
     }
 
     const int fileVersion = j.at("version").get<int>();
+
+    // Relative forms are file-only; the model below receives absolute paths.
+    resolveRelativePaths(j, fs::absolute(utf8ToPath(filePath)).parent_path());
 
     Models::Workspace                  workspace;
     std::vector<Models::CanvasProfile> canvasProfiles;
@@ -219,14 +323,16 @@ void WorkspaceSerializer::save(
     const Models::Workspace& workspace,
     const std::string&       filePath) const
 {
-    namespace fs = std::filesystem;
-
-    const std::string text = serialize(workspace);
-
     // Write to a sibling temp file then rename for near-atomic replacement.
     // The appended name goes back through utf8ToPath() as well: operator/ with a narrow
     // string would rebuild a path the ambiguous way, reintroducing the bug on the temp file.
     const fs::path finalPath = utf8ToPath(filePath);
+
+    // serialize(), plus what only a location can add: the relative copies of the overlay assets.
+    nlohmann::json j = workspace;
+    addRelativePaths(j, fs::absolute(finalPath).parent_path());
+    const std::string text = j.dump(4);
+
     const fs::path tmpPath   =
         finalPath.parent_path() / utf8ToPath(pathToUtf8(finalPath.filename()) + ".tmp");
 

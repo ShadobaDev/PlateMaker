@@ -49,6 +49,12 @@ public:
      * If the file's schema version is older than the current version, each
      * intermediate migration step is applied in sequence before returning.
      *
+     * Every path in the returned model is absolute. An overlay's \c assetPathRelative, when it names a
+     * file that exists, replaces the stored absolute path (the folder has moved); a path with no root at
+     * all, in an overlay's \c assetPath, an input's \c filePath or an output's \c sourceMap, is read
+     * against the file's folder.
+     * \c outputDirectory is taken as written.
+     *
      * \param filePath Absolute path to the .platemaker.json file.
      * \return A fully populated Workspace object.
      *
@@ -81,6 +87,11 @@ public:
      * The file is written atomically (written to a temporary file then renamed)
      * to avoid corruption on unexpected termination.
      *
+     * An overlay whose asset lies inside the file's folder is written with its path twice: the absolute
+     * \c assetPath, as always, and \c assetPathRelative beside it. \c load() prefers the relative one when
+     * it names a file that exists, which is what lets the folder be moved, renamed or zipped; a reader
+     * that predates the key ignores it and keeps using the absolute path.
+     *
      * \param workspace The Workspace object to serialise.
      * \param filePath  Absolute path of the destination file.  Created if it does
      *                  not exist; overwritten if it does.
@@ -94,9 +105,10 @@ public:
     /**
      * \brief Serialises a Workspace to its canonical JSON string form.
      *
-     * Produces exactly the text that \c save() would write to disk.  Useful for
-     * change detection (compare against a saved snapshot) without touching the
-     * filesystem.
+     * Produces the text that \c save() writes to disk, less the relative copies of overlay paths —
+     * those depend on where the file is written, and this has no location. Useful for change
+     * detection (compare against a saved snapshot) without touching the filesystem: it is the same
+     * for a workspace wherever it is saved.
      *
      * \param workspace The Workspace object to serialise.
      * \return The pretty-printed JSON representation.

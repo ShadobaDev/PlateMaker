@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include <platemaker/infrastructure/file/path_utf8.hpp>
 #include <platemaker/infrastructure/workspace_editor/workspace_editor.hpp>
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 #include <platemaker/models/workspace.hpp>
@@ -25,7 +26,9 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
+#include <vector>
 
 namespace Platemaker::Infrastructure {
 
@@ -363,6 +366,158 @@ TEST(WorkspaceSerializerTest, LegacyProjectLoadsProcessingDefaults)
     EXPECT_TRUE(p.getStripOverlays().empty());
 
     std::filesystem::remove(tmp);
+}
+
+// ---------------------------------------------------------------------------
+// Paths relative to the workspace file — a folder that is moved, renamed or zipped still opens
+// ---------------------------------------------------------------------------
+
+namespace {
+
+namespace fs = std::filesystem;
+
+/// A scratch root of its own per test, with a non-ASCII name: the paths travel as UTF-8 end to end.
+struct RelScratch {
+    fs::path root;
+    explicit RelScratch(const char* name)
+        : root(fs::temp_directory_path() / utf8ToPath(std::string("pm_relpaths_ż_") + name))
+    {
+        fs::remove_all(root);
+        fs::create_directories(root);
+    }
+    ~RelScratch() { std::error_code ec; fs::remove_all(root, ec); }
+};
+
+/// The form paths are compared in: UTF-8, normalised, '/' separators — what consumers write.
+std::string g(const fs::path& p)
+{
+    const std::u8string s = p.lexically_normal().generic_u8string();
+    return std::string(s.begin(), s.end());
+}
+
+void touchFile(const fs::path& p)
+{
+    fs::create_directories(p.parent_path());
+    std::ofstream(p) << "x";
+}
+
+std::string readText(const fs::path& p)
+{
+    std::ifstream f(p);
+    return std::string(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+}
+
+std::size_t occurrences(const std::string& text, const std::string& what)
+{
+    std::size_t n = 0;
+    for (auto at = text.find(what); at != std::string::npos; at = text.find(what, at + what.size()))
+        ++n;
+    return n;
+}
+
+/// A workspace with one project holding the given overlays (by asset path).
+Models::Workspace withOverlays(const std::vector<std::string>& assets)
+{
+    Models::Workspace   ws = makeMinimalWorkspace();
+    Models::ProjectItem proj;
+    proj.name = "Chapter";
+    proj.uid  = "proj-rel-001";
+    int n = 0;
+    for (const auto& a : assets) {
+        Models::StripOverlay o;
+        o.uid       = "ovl-" + std::to_string(++n);
+        o.assetPath = a;
+        proj.getStripOverlays().push_back(std::move(o));
+    }
+    ws.projectItems.push_back(std::move(proj));
+    return ws;
+}
+
+} // anonymous namespace
+
+TEST(WorkspaceSerializerRelativePaths, OnlyAnAssetInsideTheFolderGetsARelativeCopy)
+{
+    const RelScratch s("inside");
+    const fs::path   inside  = s.root / "ws" / "overlays" / "a.svg";
+    const fs::path   outside = s.root / "elsewhere" / "b.svg";
+    touchFile(inside);
+    touchFile(outside);
+    const fs::path file = s.root / "ws" / "c.platemaker.json";
+
+    const WorkspaceSerializer ser;
+    const Models::Workspace   ws = withOverlays({g(inside), g(outside)});
+    ser.save(ws, pathToUtf8(file));
+
+    const std::string text = readText(file);
+    EXPECT_EQ(occurrences(text, "\"assetPathRelative\""), 1u);
+    EXPECT_NE(text.find("\"assetPathRelative\": \"overlays/a.svg\""), std::string::npos);
+    // serialize() has no location, so it carries no relative copy — and change detection, which compares
+    // two serialize() results, is the same wherever the workspace is saved.
+    EXPECT_EQ(ser.serialize(ws).find("assetPathRelative"), std::string::npos);
+
+    // In place, nothing changes: both paths come back exactly as written.
+    const auto loaded = ser.load(pathToUtf8(file));
+    ASSERT_EQ(loaded.projectItems.at(0).getStripOverlays().size(), 2u);
+    EXPECT_EQ(loaded.projectItems[0].getStripOverlays()[0].assetPath, g(inside));
+    EXPECT_EQ(loaded.projectItems[0].getStripOverlays()[1].assetPath, g(outside));
+}
+
+TEST(WorkspaceSerializerRelativePaths, AMovedFolderStillFindsItsOverlays)
+{
+    const RelScratch s("moved");
+    const fs::path   asset = s.root / "before" / "overlays" / "a.svg";
+    touchFile(asset);
+
+    const WorkspaceSerializer ser;
+    ser.save(withOverlays({g(asset)}), pathToUtf8(s.root / "before" / "c.platemaker.json"));
+
+    fs::rename(s.root / "before", s.root / "after");   // moved, renamed, or zipped and unpacked elsewhere
+
+    const auto loaded = ser.load(pathToUtf8(s.root / "after" / "c.platemaker.json"));
+    EXPECT_EQ(loaded.projectItems.at(0).getStripOverlays().at(0).assetPath,
+              g(s.root / "after" / "overlays" / "a.svg"));
+}
+
+TEST(WorkspaceSerializerRelativePaths, ARelativeCopyThatFindsNothingLeavesTheAbsolutePath)
+{
+    // The workspace file copied on its own, without its folder: the relative copy names nothing, so the
+    // absolute path — still valid on this machine — is the one that stands. It is also what a reader from
+    // before the key would use.
+    const RelScratch s("copied");
+    const fs::path   asset = s.root / "ws" / "overlays" / "a.svg";
+    touchFile(asset);
+
+    const WorkspaceSerializer ser;
+    ser.save(withOverlays({g(asset)}), pathToUtf8(s.root / "ws" / "c.platemaker.json"));
+    fs::create_directories(s.root / "copy");
+    fs::copy_file(s.root / "ws" / "c.platemaker.json", s.root / "copy" / "c.platemaker.json");
+
+    const auto loaded = ser.load(pathToUtf8(s.root / "copy" / "c.platemaker.json"));
+    EXPECT_EQ(loaded.projectItems.at(0).getStripOverlays().at(0).assetPath, g(asset));
+}
+
+TEST(WorkspaceSerializerRelativePaths, PathsWithNoRootAreReadAgainstTheFolder)
+{
+    // What a hand-written or packaged file carries. The output directory is the exception: a CLI user's
+    // relative --output is resolved against the working directory when rendering, and stays that way.
+    const RelScratch s("rootless");
+
+    Models::Workspace ws = withOverlays({"overlays/x.svg"});
+    Models::InputFile page;
+    page.uid      = "file-001";
+    page.filePath = "pages/001.png";
+    ws.projectItems[0].getInputImages().push_back(page);
+    ws.projectItems[0].getOutputDirectory() = "out";
+
+    const WorkspaceSerializer ser;
+    const fs::path            file = s.root / "c.platemaker.json";
+    ser.save(ws, pathToUtf8(file));
+    const auto loaded = ser.load(pathToUtf8(file));
+
+    const auto& p = loaded.projectItems.at(0);
+    EXPECT_EQ(p.getStripOverlays().at(0).assetPath, g(s.root / "overlays" / "x.svg"));
+    EXPECT_EQ(p.getInputImages().at(0).filePath, g(s.root / "pages" / "001.png"));
+    EXPECT_EQ(p.getOutputDirectory(), "out");
 }
 
 } // namespace Platemaker::Infrastructure

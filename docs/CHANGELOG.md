@@ -111,6 +111,14 @@ released), which re-derives onto this baseline per the cascade rule.
 
 ### Added
 
+- **A workspace folder can be moved, renamed or zipped.** `WorkspaceSerializer::save()` now also writes
+  an overlay's asset path relative to the workspace file (`assetPathRelative`) when the asset lies inside
+  its folder, and `load()` prefers it when it names a file that exists — so a folder copied elsewhere
+  finds its overlays where the absolute path no longer would. The absolute `assetPath` is still written,
+  so an older reader keeps working while the folder has not moved; nothing else in the file changes.
+  `load()` also reads a path with no root at all (`pages/001.png`) against the workspace folder, in
+  overlay assets, input files and output source maps — for workspaces written by hand or packaged.
+  The model's paths stay absolute, so no consumer sees a difference.
 - **`ProjectEditor::replaceInputFile(uid, newPath)` — a newer file for the same page.** Removing an
   input and adding its replacement mints a new uid, and everything anchored to the old one — overlays,
   grade exclusions — is left with no page. This keeps `uid` and `order`, resets exactly the state that
