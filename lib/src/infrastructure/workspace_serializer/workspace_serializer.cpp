@@ -28,7 +28,6 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -135,15 +134,15 @@ bool isFolderRelative(const std::string& utf8)
     return !utf8.empty() && !utf8ToPath(utf8).has_root_path();
 }
 
-/// \p absUtf8 relative to \p folder when it lies inside it; nothing otherwise.
-std::optional<std::string> relativeInside(const std::string& absUtf8, const fs::path& folder)
+/// \p absUtf8 relative to \p folder when it lies inside it; empty otherwise.
+std::string relativeInside(const std::string& absUtf8, const fs::path& folder)
 {
     const fs::path abs = utf8ToPath(absUtf8);
-    if (absUtf8.empty() || !abs.is_absolute())
-        return std::nullopt;
+    if (!abs.is_absolute())
+        return {};
     const fs::path rel = abs.lexically_normal().lexically_relative(folder.lexically_normal());
     if (rel.empty() || rel == "." || *rel.begin() == "..")
-        return std::nullopt;
+        return {};
     return genericUtf8(rel);
 }
 
@@ -157,8 +156,9 @@ void addRelativePaths(nlohmann::json& j, const fs::path& folder)
             continue;
         for (auto& overlay : project["stripOverlays"])
             if (overlay.contains("assetPath") && overlay["assetPath"].is_string())
-                if (const auto rel = relativeInside(overlay["assetPath"].get<std::string>(), folder))
-                    overlay[k_assetPathRelative] = *rel;
+                if (const std::string rel = relativeInside(overlay["assetPath"].get<std::string>(), folder);
+                    !rel.empty())
+                    overlay[k_assetPathRelative] = rel;
     }
 }
 
@@ -168,6 +168,11 @@ void resolveRelativePaths(nlohmann::json& j, const fs::path& folder)
     if (!j.contains("projectItems"))
         return;
     const auto inFolder = [&folder](const std::string& rel) { return genericUtf8(folder / utf8ToPath(rel)); };
+    // A rootless path in `key` means "in the folder"; any other stands as written.
+    const auto rebase = [&inFolder](nlohmann::json& o, const char* key) {
+        if (const std::string p = o.value(key, std::string{}); isFolderRelative(p))
+            o[key] = inFolder(p);
+    };
 
     for (auto& project : j["projectItems"]) {
         if (project.contains("stripOverlays"))
@@ -176,20 +181,17 @@ void resolveRelativePaths(nlohmann::json& j, const fs::path& folder)
                 std::error_code   ec;
                 if (!rel.empty() && fs::exists(folder / utf8ToPath(rel), ec))
                     overlay["assetPath"] = inFolder(rel);   // the folder has moved, or it never did
-                else if (isFolderRelative(overlay.value("assetPath", std::string{})))
-                    overlay["assetPath"] = inFolder(overlay["assetPath"].get<std::string>());
-                // otherwise the absolute path stands, found or not — exactly as before this key existed
+                else
+                    rebase(overlay, "assetPath");   // otherwise an absolute path stands, found or not
             }
         if (project.contains("inputFiles"))
             for (auto& input : project["inputFiles"])
-                if (isFolderRelative(input.value("filePath", std::string{})))
-                    input["filePath"] = inFolder(input["filePath"].get<std::string>());
+                rebase(input, "filePath");
         if (project.contains("outputFiles"))
             for (auto& output : project["outputFiles"])
                 if (output.contains("sourceMap"))
                     for (auto& segment : output["sourceMap"])
-                        if (isFolderRelative(segment.value("sourceFilePath", std::string{})))
-                            segment["sourceFilePath"] = inFolder(segment["sourceFilePath"].get<std::string>());
+                        rebase(segment, "sourceFilePath");
     }
 }
 
