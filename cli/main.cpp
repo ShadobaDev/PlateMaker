@@ -28,6 +28,7 @@
  *                       (SOURCE is a .platemaker.profiles.json bundle or another .platemaker.json workspace)
  *
  *   platemaker workspace list-projects  --workspace FILE
+ *   platemaker workspace export        --workspace FILE --out PACKAGE.platemaker.zip
  *   platemaker project create  --workspace FILE --name NAME [--input DIR] [--output DIR]
  *   platemaker project mod     --workspace FILE --name NAME [--new-name N] [--input DIR] [--output DIR]
  *                              [--add-canvas-profile NAME] [--rm-canvas-profile NAME] [--output-profile ID]
@@ -80,6 +81,7 @@
 #include <platemaker/infrastructure/log/log.hpp>
 #include <platemaker/infrastructure/profile_bundle_serializer/profile_bundle_serializer.hpp>
 #include <platemaker/infrastructure/workspace_editor/workspace_editor.hpp>
+#include <platemaker/infrastructure/workspace_packager/workspace_packager.hpp>
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/models/canvas_profile.hpp>
@@ -390,6 +392,12 @@ static int cmdHelp(const std::string& prog)
         << "      Import profiles into the workspace from a bundle or another workspace (SOURCE is\n"
         << "      either a .platemaker.profiles.json or a .platemaker.json). Imports are additive\n"
         << "      copies with fresh ids, so the workspace stays self-contained.\n"
+        << "\n"
+        << "  workspace export --workspace FILE --out PACKAGE.platemaker.zip\n"
+        << "      Package the workspace with every page, overlay and template it uses, so it opens on\n"
+        << "      another machine as is. No outputs: rendering the package reproduces them. Missing\n"
+        << "      files are listed, not fatal. Fonts and the pictures behind lettered pictures are the\n"
+        << "      GUI's to add, so a CLI package renders 1:1 but its lettering may not be editable.\n"
         << "\n"
         << "  process --workspace FILE\n"
         << "          { --input DIR | --project NAME }  [--output DIR]\n"
@@ -925,6 +933,47 @@ static int cmdWorkspaceExportProfiles(const Opts& opts)
 
     std::cerr << "Exported " << canvas.size() << " canvas + " << output.size()
               << " output profile(s) to '" << opts.get("out") << "'.\n";
+    return 0;
+}
+
+// ===========================================================================
+// platemaker workspace export (a package: the workspace and every file it uses, in one zip)
+// ===========================================================================
+
+static int cmdWorkspaceExport(const Opts& opts)
+{
+    using Platemaker::Infrastructure::PackagePlan;
+    using Platemaker::Infrastructure::WorkspacePackager;
+
+    if (!opts.has("workspace")) { std::cerr << "Error: --workspace FILE is required\n"; return 1; }
+    if (!opts.has("out"))       { std::cerr << "Error: --out FILE is required\n"; return 1; }
+
+    Workspace ws;
+    try { ws = WorkspaceSerializer{}.load(opts.get("workspace")); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot load workspace: " << e.what() << '\n'; return 2;
+    }
+
+    PackagePlan plan = WorkspacePackager::plan(ws, opts.get("workspace"));
+    plan.applicationName    = "platemaker-cli";
+    plan.applicationVersion = std::string(Platemaker::version_string);
+    // What only the GUI can add is not here, and the manifest says so — a reader can tell a package that
+    // renders 1:1 from one whose lettering can also be edited.
+    plan.applicationManifest =
+        R"({"editable": false, "notPacked": ["fonts", "the pictures behind lettered pictures"]})";
+
+    for (const auto& m : plan.missing)
+        std::cerr << "Warning: missing, not packed: " << m.source << " (" << m.project << ")\n";
+
+    try { WorkspacePackager::write(plan, opts.get("out")); }
+    catch (const std::exception& e) {
+        std::cerr << "Error: cannot write package: " << e.what() << '\n'; return 2;
+    }
+
+    std::cerr << "Packaged " << plan.files.size() << " file(s) into '" << opts.get("out") << "'";
+    if (!plan.missing.empty())
+        std::cerr << "; " << plan.missing.size() << " missing";
+    std::cerr << ".\n";
     return 0;
 }
 
@@ -2363,6 +2412,7 @@ static int runCli(int argc, char** argv)
                     exitCode = cmdWorkspaceListAllProfiles(opts);
                 else if (cmd2 == "export-profiles")      exitCode = cmdWorkspaceExportProfiles(opts);
                 else if (cmd2 == "import-profiles")      exitCode = cmdWorkspaceImportProfiles(opts);
+                else if (cmd2 == "export")               exitCode = cmdWorkspaceExport(opts);
                 else if (cmd2 == "list-projects")  exitCode = cmdWorkspaceListProjects(opts);
                 else {
                     std::cerr << "Unknown workspace subcommand '" << cmd2

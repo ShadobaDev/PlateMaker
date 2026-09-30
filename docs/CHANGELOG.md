@@ -111,13 +111,23 @@ released), which re-derives onto this baseline per the cascade rule.
 
 ### Added
 
-- **`WorkspacePackager::plan()` — a workspace package, planned.** Lists every file a workspace references
-  (pages, overlay assets, templates) with one place for each in a package root — `inputs/`, `overlays/`,
-  `templates/`, a name kept and suffixed ` (2)` only on a clash — and the workspace's copy rewritten to
-  name those places, rootless. Uids and hashes are kept; outputs, output directories and every trace of
-  the last render are left out, so the package opens as a workspace not yet rendered. Missing files stay
-  declared and are listed rather than stopping the plan. A consumer can append files of its own before
-  the plan is archived.
+- **Workspace packages — `WorkspacePackager` and `platemaker workspace export`.** One zip that holds a
+  workspace and every file it uses, and opens on another machine as is.
+  - `plan()` gives every referenced file (pages, overlay assets, templates) one place in the package —
+    `inputs/`, `overlays/`, `templates/`, a name kept and suffixed ` (2)` only on a clash — and rewrites
+    the workspace's copy to name those places, rootless. Uids and overlay hashes are kept; outputs,
+    output directories and every trace of the last render (including each input's hash) are left out,
+    so the package opens as a workspace not yet rendered, and rendering it reproduces the outputs byte
+    for byte. Missing files stay declared and are listed rather than stopping the plan. A consumer
+    appends files of its own before the plan is archived.
+  - `write()` archives it: targets checked before anything is written, UTF-8 names, ZIP64 where needed,
+    compressed formats stored, written whole or not at all (a temporary file renamed at the end; cancel
+    and errors leave nothing), and a `package.json` manifest last — library and application versions,
+    export time, missing files, and the application's own section.
+  - The CLI's `workspace export --workspace FILE --out PACKAGE.platemaker.zip` runs both; its manifest
+    says the lettering may not be editable, since fonts and the pictures behind lettered pictures are
+    the GUI's to add.
+- `linkedComponents()` now also reports **libarchive** (BSD-2-Clause, runtime version).
 - **libarchive** is now linked (BSD-2-Clause) for the package archive. On Windows it already shipped
   inside the libvips package and is in the SBOM; only its two public headers are fetched at configure
   time, for the version libvips pins, each checked against a known SHA256. Linux uses the system package.

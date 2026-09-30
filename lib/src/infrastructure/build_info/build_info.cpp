@@ -24,6 +24,7 @@
 
 #include <nlohmann/json.hpp> // NLOHMANN_JSON_VERSION_* (build-time)
 #include <vips/vips.h>       // vips_version() (runtime)
+#include <archive.h>         // archive_version_number() (runtime)
 
 namespace {
 
@@ -112,9 +113,17 @@ std::vector<LinkedComponent> linkedComponents()
                                     std::to_string(NLOHMANN_JSON_VERSION_MINOR) + '.' +
                                     std::to_string(NLOHMANN_JSON_VERSION_PATCH);
 
+    // MMMmmmppp, as libarchive encodes it.
+    const int         archive        = archive_version_number();
+    const std::string archiveVersion = std::to_string(archive / 1000000) + '.' +
+                                       std::to_string(archive / 1000 % 1000) + '.' +
+                                       std::to_string(archive % 1000);
+
     return {
         LinkedComponent{"libvips", vipsVersion, "LGPL-2.1-or-later",
                         "https://github.com/libvips/libvips"},
+        LinkedComponent{"libarchive", archiveVersion, "BSD-2-Clause",
+                        "https://github.com/libarchive/libarchive"},
         LinkedComponent{"nlohmann/json", jsonVersion, "MIT",
                         "https://github.com/nlohmann/json"},
     };

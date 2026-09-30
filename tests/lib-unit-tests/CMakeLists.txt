@@ -64,7 +64,8 @@ target_link_libraries(platemaker-lib-tests
     PRIVATE
         Platemaker::platemaker
         VIPS::vips-cpp
-        LibArchive::LibArchive   # the header/DLL agreement test
+        LibArchive::LibArchive   # the header/DLL agreement test, and reading a package back
+        nlohmann_json::nlohmann_json   # reading its manifest
         GTest::gtest
         GTest::gtest_main
 )

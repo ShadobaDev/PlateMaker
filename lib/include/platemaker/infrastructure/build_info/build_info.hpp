@@ -81,7 +81,8 @@ struct LinkedComponent {
 /**
  * \brief The third-party components this build links, with versions and SPDX licences.
  *
- * Reports **libvips** (LGPL-2.1-or-later, runtime version via \c vips_version()) and
+ * Reports **libvips** (LGPL-2.1-or-later, runtime version via \c vips_version()),
+ * **libarchive** (BSD-2-Clause, runtime version via \c archive_version_number()) and
  * **nlohmann/json** (MIT, build-time version).  GoogleTest is test-only and never shipped, so it
  * is not listed.
  */

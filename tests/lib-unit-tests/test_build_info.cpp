@@ -67,6 +67,15 @@ TEST(LinkedComponents, ReportsLibvipsWithLgplLicence)
     EXPECT_EQ(vips->licence, "LGPL-2.1-or-later");
 }
 
+TEST(LinkedComponents, ReportsLibarchiveWithBsdLicence)
+{
+    const auto             components = linkedComponents();
+    const LinkedComponent* archive    = find(components, "libarchive");
+    ASSERT_NE(archive, nullptr);
+    EXPECT_FALSE(archive->version.empty());
+    EXPECT_EQ(archive->licence, "BSD-2-Clause");
+}
+
 TEST(LinkedComponents, ReportsNlohmannJsonWithMitLicence)
 {
     const auto components = linkedComponents();
