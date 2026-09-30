@@ -34,6 +34,7 @@ set(PLATEMAKER_SOURCES
     src/infrastructure/model_json/model_json.cpp
     src/infrastructure/workspace_serializer/workspace_serializer.cpp
     src/infrastructure/profile_bundle_serializer/profile_bundle_serializer.cpp
+    src/infrastructure/workspace_packager/workspace_packager.cpp
     src/infrastructure/workspace_editor/workspace_editor.cpp
     src/infrastructure/project_editor/project_editor.cpp
     src/infrastructure/thumbnail_cache/thumbnail_cache.cpp
@@ -100,6 +101,7 @@ target_link_libraries(platemaker-lib
     PRIVATE
         VIPS::vips-cpp
         nlohmann_json::nlohmann_json
+        LibArchive::LibArchive
 )
 
 # ---------------------------------------------------------------------------

@@ -41,6 +41,7 @@ add_executable(platemaker-lib-tests
     test_image_io.cpp
     test_image_io_concurrency.cpp
     test_workspace_serializer.cpp
+    test_workspace_packager.cpp
     test_profile_bundle_serializer.cpp
     test_canvas_profile_matcher.cpp
     test_canvas_staleness.cpp
@@ -63,6 +64,7 @@ target_link_libraries(platemaker-lib-tests
     PRIVATE
         Platemaker::platemaker
         VIPS::vips-cpp
+        LibArchive::LibArchive   # the header/DLL agreement test
         GTest::gtest
         GTest::gtest_main
 )

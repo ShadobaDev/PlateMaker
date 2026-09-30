@@ -111,6 +111,16 @@ released), which re-derives onto this baseline per the cascade rule.
 
 ### Added
 
+- **`WorkspacePackager::plan()` — a workspace package, planned.** Lists every file a workspace references
+  (pages, overlay assets, templates) with one place for each in a package root — `inputs/`, `overlays/`,
+  `templates/`, a name kept and suffixed ` (2)` only on a clash — and the workspace's copy rewritten to
+  name those places, rootless. Uids and hashes are kept; outputs, output directories and every trace of
+  the last render are left out, so the package opens as a workspace not yet rendered. Missing files stay
+  declared and are listed rather than stopping the plan. A consumer can append files of its own before
+  the plan is archived.
+- **libarchive** is now linked (BSD-2-Clause) for the package archive. On Windows it already shipped
+  inside the libvips package and is in the SBOM; only its two public headers are fetched at configure
+  time, for the version libvips pins, each checked against a known SHA256. Linux uses the system package.
 - **A workspace folder can be moved, renamed or zipped.** `WorkspaceSerializer::save()` now also writes
   an overlay's asset path relative to the workspace file (`assetPathRelative`) when the asset lies inside
   its folder, and `load()` prefers it when it names a file that exists — so a folder copied elsewhere

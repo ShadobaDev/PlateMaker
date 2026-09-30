@@ -113,6 +113,53 @@ else()
     target_link_libraries(VIPS::vips-cpp INTERFACE PkgConfig::VIPS)
 endif()
 
+# libarchive — the workspace package (.platemaker.zip), BSD-2-Clause
+#
+# Windows: the libvips web zip already ships it — libarchive-13.dll, its import lib, and its version in
+# versions.json — and it is already in the SBOM and next to every executable. Only the two public headers
+# are missing, so exactly those are downloaded, for exactly the version vips pinned, each checked against a
+# known SHA256. A vips bump that moves libarchive fails here, loudly, until the new hashes are added — the
+# header can never silently describe a different DLL than the one that ships. Linux: the system package.
+if(WIN32)
+    file(READ "${VIPS_ROOT_DIR}/versions.json" _pm_vips_versions)
+    string(JSON PLATEMAKER_LIBARCHIVE_VERSION GET "${_pm_vips_versions}" archive)
+
+    set(_pm_la_sha256_3.8.6_archive.h       "cec5a3b390fc138e1d340604fbea3baf82b631c2e573476a71fed0893d922f91")
+    set(_pm_la_sha256_3.8.6_archive_entry.h "1057fa8237f6ff42522a05a65f5e82f3a997d3015c104e0fd532e3129c373282")
+
+    set(_pm_la_include "${CMAKE_BINARY_DIR}/_deps/libarchive-headers-${PLATEMAKER_LIBARCHIVE_VERSION}")
+    foreach(_pm_la_header archive.h archive_entry.h)
+        set(_pm_la_hash "${_pm_la_sha256_${PLATEMAKER_LIBARCHIVE_VERSION}_${_pm_la_header}}")
+        if(NOT _pm_la_hash)
+            message(FATAL_ERROR "libvips ${PLATEMAKER_VIPS_WEB_VERSION} ships libarchive "
+                "${PLATEMAKER_LIBARCHIVE_VERSION}, whose ${_pm_la_header} has no known SHA256 here. "
+                "Add _pm_la_sha256_${PLATEMAKER_LIBARCHIVE_VERSION}_${_pm_la_header} to CMakeLists.txt.")
+        endif()
+        if(NOT EXISTS "${_pm_la_include}/${_pm_la_header}")
+            file(DOWNLOAD
+                "https://raw.githubusercontent.com/libarchive/libarchive/v${PLATEMAKER_LIBARCHIVE_VERSION}/libarchive/${_pm_la_header}"
+                "${_pm_la_include}/${_pm_la_header}"
+                EXPECTED_HASH SHA256=${_pm_la_hash}
+                TLS_VERIFY ON)
+        endif()
+    endforeach()
+
+    if(MSVC)
+        add_library(LibArchive::LibArchive SHARED IMPORTED GLOBAL)
+        set_target_properties(LibArchive::LibArchive PROPERTIES
+            IMPORTED_IMPLIB   "${VIPS_ROOT_DIR}/lib/libarchive.lib"
+            IMPORTED_LOCATION "${VIPS_ROOT_DIR}/bin/libarchive-13.dll")
+    else()
+        # MinGW links the DLL directly, as it does libvips (see above).
+        add_library(LibArchive::LibArchive INTERFACE IMPORTED GLOBAL)
+        target_link_libraries(LibArchive::LibArchive INTERFACE "${VIPS_ROOT_DIR}/bin/libarchive-13.dll")
+    endif()
+    target_include_directories(LibArchive::LibArchive INTERFACE "${_pm_la_include}")
+    message(STATUS "[Windows] libarchive ${PLATEMAKER_LIBARCHIVE_VERSION} from the libvips package")
+else()
+    find_package(LibArchive REQUIRED)   # provides LibArchive::LibArchive
+endif()
+
 # nlohmann/json — header-only, header is unpacked by FetchContent (no compilation)
 # FIND_PACKAGE first: Linux system install (apt nlohmann-json3-dev) is reused if present.
 # The pinned version drives both the fetch URL and the SBOM fallback in lib/CMakeLists.txt (a system
