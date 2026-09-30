@@ -9,24 +9,30 @@
  * are copied, not re-encoded. It is the shape of InDesign's *Package* and Blender Asset Tracer's pack: copy
  * everything into one root, repoint the copy at the copies, leave the original alone.
  *
- * Layout of a package root:
+ * **A package mirrors the workspace folder.** The library knows no subfolder of a workspace by name — how
+ * a consumer lays its folder out is the consumer's business — so a file in the folder keeps its path there,
+ * whatever it is. Only what the workspace names from **elsewhere** is given a place, and those are the only
+ * names the library chooses:
  * \code
  *   <name>.platemaker.json   the copy; every path in it is rootless, read against the root on load
- *   inputs/                  the pages, flat; a name is kept and gets " (2)" only on a clash
- *   overlays/                every overlay asset
- *   templates/               every canvas profile's template
  *   package.json             the manifest: who exported it, with what, when, and what is missing
+ *   …                        every file from the workspace folder, at its own path there
+ *   inputs/                  pages from outside the folder, flat
+ *   external/                anything else from outside the folder, flat
  * \endcode
+ * A name brought in keeps its file name and gets " (2)" only where it is taken; the folder's own files are
+ * placed first, so nothing from elsewhere ever displaces one. Because an unpacked package is just the folder
+ * again, whatever reads a workspace folder reads a package — a change of layout is migrated in one place.
  *
  * **What a package does not carry: anything a render reproduces.** No output files, no output directory
  * (workspace or project), and none of the state that described the last render — the render baselines,
  * and each input's status, hash, outputs and cached thumbnail. (An input's \c sha256 is the hash its last
- * render saw, which \c sanitize() reads as "processed"; kept, a copy with no outputs would look rendered.) A package opens as a workspace that has not
- * been rendered, and rendering it reproduces the outputs.
+ * render saw, which \c sanitize() reads as "processed"; kept, a copy with no outputs would look rendered.)
+ * A package opens as a workspace that has not been rendered, and rendering it reproduces the outputs.
  *
- * **Missing files do not stop a plan.** A page that is not on disk stays declared in the copy, pointing
- * at the place in \c inputs/ it would have had — so dropping the file there is enough to bring it back —
- * and is listed in \ref PackagePlan::missing. The same goes for an overlay asset or a template.
+ * **Missing files do not stop a plan.** A file that is not on disk stays declared in the copy, pointing
+ * at the place it would have had — so dropping the file there is enough to bring it back — and is listed
+ * in \ref PackagePlan::missing.
  *
  * **Two phases, so a consumer can add what only it knows about.** \ref plan() lists what the model
  * references. A consumer then appends its own \ref PackageFile entries — the GUI adds the pictures behind

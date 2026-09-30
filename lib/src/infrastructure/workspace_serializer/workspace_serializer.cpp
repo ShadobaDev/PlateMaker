@@ -17,6 +17,7 @@
 
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 
+#include "infrastructure/file/folder_paths.hpp"        // genericUtf8(), relativeInside()
 #include "infrastructure/model_json/model_json.hpp"   // the shared Models JSON codec
 
 #include <platemaker/infrastructure/file/path_utf8.hpp>
@@ -120,30 +121,10 @@ namespace fs = std::filesystem;
 /// The file key an overlay's asset path is also written under, relative to the workspace file's folder.
 constexpr const char* k_assetPathRelative = "assetPathRelative";
 
-/// UTF-8 with '/' separators — the form consumers write, so a path read back compares equal to one
-/// written fresh.
-std::string genericUtf8(const fs::path& p)
-{
-    const std::u8string s = p.lexically_normal().generic_u8string();
-    return std::string(s.begin(), s.end());
-}
-
 /// A path that says nothing about where it is — no drive, no root — and so means "in the folder".
 bool isFolderRelative(const std::string& utf8)
 {
     return !utf8.empty() && !utf8ToPath(utf8).has_root_path();
-}
-
-/// \p absUtf8 relative to \p folder when it lies inside it; empty otherwise.
-std::string relativeInside(const std::string& absUtf8, const fs::path& folder)
-{
-    const fs::path abs = utf8ToPath(absUtf8);
-    if (!abs.is_absolute())
-        return {};
-    const fs::path rel = abs.lexically_normal().lexically_relative(folder.lexically_normal());
-    if (rel.empty() || rel == "." || *rel.begin() == "..")
-        return {};
-    return genericUtf8(rel);
 }
 
 /// save(): writes the relative copy beside every overlay asset that lies inside \p folder.
@@ -156,7 +137,7 @@ void addRelativePaths(nlohmann::json& j, const fs::path& folder)
             continue;
         for (auto& overlay : project["stripOverlays"])
             if (overlay.contains("assetPath") && overlay["assetPath"].is_string())
-                if (const std::string rel = relativeInside(overlay["assetPath"].get<std::string>(), folder);
+                if (const std::string rel = relativeInside(utf8ToPath(overlay["assetPath"].get<std::string>()), folder);
                     !rel.empty())
                     overlay[k_assetPathRelative] = rel;
     }

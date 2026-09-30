@@ -113,9 +113,11 @@ released), which re-derives onto this baseline per the cascade rule.
 
 - **Workspace packages — `WorkspacePackager` and `platemaker workspace export`.** One zip that holds a
   workspace and every file it uses, and opens on another machine as is.
-  - `plan()` gives every referenced file (pages, overlay assets, templates) one place in the package —
-    `inputs/`, `overlays/`, `templates/`, a name kept and suffixed ` (2)` only on a clash — and rewrites
-    the workspace's copy to name those places, rootless. Uids and overlay hashes are kept; outputs,
+  - `plan()` gives every referenced file (pages, overlay assets, templates) one place in the package and
+    rewrites the workspace's copy to name those places, rootless. **The package mirrors the workspace
+    folder:** a file in it keeps its path there, so the library imposes no layout of its own; only files
+    from outside the folder are brought in, pages to `inputs/` and anything else to `external/`, a name
+    kept and suffixed ` (2)` only on a clash. Uids and overlay hashes are kept; outputs,
     output directories and every trace of the last render (including each input's hash) are left out,
     so the package opens as a workspace not yet rendered, and rendering it reproduces the outputs byte
     for byte. Missing files stay declared and are listed rather than stopping the plan. A consumer

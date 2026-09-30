@@ -16,6 +16,7 @@
 
 #include <platemaker/infrastructure/workspace_packager/workspace_packager.hpp>
 
+#include "infrastructure/file/folder_paths.hpp"        // genericUtf8(), relativeInside()
 #include "infrastructure/model_json/model_json.hpp"   // the shared Models JSON codec
 
 #include <platemaker/infrastructure/file/path_utf8.hpp>
@@ -47,17 +48,10 @@ namespace {
 
 namespace fs = std::filesystem;
 
-/// The package's folders. One per kind of file, flat, so a person opening the zip can find a page.
-constexpr const char* k_inputsDir    = "inputs";
-constexpr const char* k_overlaysDir  = "overlays";
-constexpr const char* k_templatesDir = "templates";
-
-/// UTF-8 with '/' separators — the form consumers write paths in.
-std::string genericUtf8(const fs::path& p)
-{
-    const std::u8string s = p.lexically_normal().generic_u8string();
-    return std::string(s.begin(), s.end());
-}
+/// Where a file from **outside** the workspace folder goes — the only names this library chooses. A file in
+/// the folder keeps its place there, so a package holds the consumer's layout, whatever it is.
+constexpr const char* k_inputsDir   = "inputs";     //!< pages: a person opening the zip looks for them here
+constexpr const char* k_externalDir = "external";   //!< anything else the workspace named from elsewhere
 
 /// Names in a package are compared the way the file systems it lands on compare them: without case.
 /// ponytail: ASCII case only — two names differing only in the case of a non-ASCII letter are kept apart.
@@ -68,37 +62,87 @@ std::string foldCase(std::string s)
     return s;
 }
 
+/**
+ * Gives every file the copy names one place in the package, and rewrites the copy to name it.
+ *
+ * Two passes, so the workspace's own files are never displaced: first every file **in the workspace
+ * folder**, at its own path there — the package mirrors the folder, and knows nothing of what the consumer
+ * calls its subfolders; then every file **from elsewhere**, into \c inputs/ (pages) or \c external/, under
+ * its own name, with " (2)" only where the name is taken.
+ */
 class Planner {
 public:
-    Planner(PackagePlan& plan, fs::path folder) : m_plan(plan), m_folder(std::move(folder)) {}
+    Planner(PackagePlan& plan, const fs::path& folder, const std::vector<std::string>& reserved)
+        : m_plan(plan)
+    {
+        std::error_code ec;
+        m_folder = fs::weakly_canonical(folder, ec);
+        if (ec)
+            m_folder = folder.lexically_normal();
+        for (const auto& name : reserved)
+            m_taken.insert(foldCase(name));
+    }
 
     /**
-     * Gives the file at \p modelPath (as the workspace names it) a place under \p dir, and returns that
-     * place. A file already placed keeps its place; a file that is not on disk gets one too — so the copy
-     * can name it — but is listed as missing instead of packed.
+     * Records that \p field names a file (its current value, as the workspace names it) — one from outside
+     * the folder goes under \p externalDir. Placed, and \p field rewritten, by settle().
      */
-    std::string place(const std::string& modelPath, const char* dir, const std::string& project)
+    void refer(nlohmann::json& field, const char* externalDir, std::string project)
     {
-        const fs::path  source = absoluteOf(modelPath);
+        Reference r;
+        r.field       = &field;
+        r.externalDir = externalDir;
+        r.project     = std::move(project);
+        r.modelPath   = field.get<std::string>();
+        r.source      = absoluteOf(r.modelPath);
         std::error_code ec;
-        const bool      exists = fs::is_regular_file(source, ec);
-        // The same file, however it was spelled: canonical where it exists, normalised where it does not.
-        const fs::path  identity = exists ? fs::weakly_canonical(source, ec) : source.lexically_normal();
-        const std::string key    = foldCase(pathToUtf8(identity));
+        r.exists = fs::is_regular_file(r.source, ec);
+        // The same file however it was spelled: canonical as far as the disk goes, so the case of a folder
+        // name typed differently still finds it inside the workspace folder.
+        fs::path identity = fs::weakly_canonical(r.source, ec);
+        if (ec)
+            identity = r.source.lexically_normal();
+        r.key      = foldCase(pathToUtf8(identity));
+        r.inFolder = relativeInside(identity, m_folder);
+        m_refs.push_back(std::move(r));
+    }
 
-        if (const auto it = m_placed.find(key); it != m_placed.end())
-            return it->second;
-
-        const std::string target = claim(dir, source.filename());
-        m_placed.emplace(key, target);
-        if (exists)
-            m_plan.files.push_back({genericUtf8(source), target});
-        else
-            m_plan.missing.push_back({project, modelPath, target});
-        return target;
+    void settle()
+    {
+        for (const bool inside : {true, false})
+            for (const Reference& r : m_refs)
+                if (r.inFolder.empty() != inside)
+                    *r.field = place(r);
     }
 
 private:
+    struct Reference {
+        nlohmann::json* field = nullptr;   // a value in the copy; stable, since no key is added or removed after
+        const char*     externalDir = nullptr;
+        std::string     project;
+        std::string     modelPath;
+        fs::path        source;
+        bool            exists = false;
+        std::string     key;               // the file's identity, case-folded
+        std::string     inFolder;          // its path in the workspace folder; empty when it is not in it
+    };
+
+    std::string place(const Reference& r)
+    {
+        if (const auto it = m_placed.find(r.key); it != m_placed.end())
+            return it->second;   // one file, one place, however many things name it
+
+        const std::string target = r.inFolder.empty()
+                                       ? claim(r.externalDir, r.source.filename())
+                                       : claim(utf8ToPath(r.inFolder).parent_path(), utf8ToPath(r.inFolder).filename());
+        m_placed.emplace(r.key, target);
+        if (r.exists)
+            m_plan.files.push_back({genericUtf8(r.source), target});
+        else
+            m_plan.missing.push_back({r.project, r.modelPath, target});
+        return target;
+    }
+
     /// A path from the model, made absolute: a rootless one is in the workspace folder, as load() reads it.
     fs::path absoluteOf(const std::string& modelPath) const
     {
@@ -106,14 +150,16 @@ private:
         return p.has_root_path() ? p : m_folder / p;
     }
 
-    /// The first free name under \p dir: \p name itself, then "stem (2).ext", "stem (3).ext", …
-    std::string claim(const char* dir, const fs::path& name)
+    /// The first free name in \p dir (empty = the package root): \p name, then "stem (2).ext", "stem (3).ext", …
+    /// A file in the folder only fails its own name where a case-sensitive disk held two that differ in case.
+    std::string claim(const fs::path& dir, const fs::path& name)
     {
-        const std::string stem = pathToUtf8(name.stem());
-        const std::string ext  = pathToUtf8(name.extension());
+        const std::string prefix = dir.empty() ? std::string{} : genericUtf8(dir) + '/';
+        const std::string stem   = pathToUtf8(name.stem());
+        const std::string ext    = pathToUtf8(name.extension());
         for (int n = 1;; ++n) {
-            const std::string candidate = std::string(dir) + '/'
-                                        + (n == 1 ? stem + ext : stem + " (" + std::to_string(n) + ")" + ext);
+            const std::string candidate =
+                prefix + (n == 1 ? stem + ext : stem + " (" + std::to_string(n) + ")" + ext);
             if (m_taken.insert(foldCase(candidate)).second)
                 return candidate;
         }
@@ -121,7 +167,8 @@ private:
 
     PackagePlan&                                 m_plan;
     fs::path                                     m_folder;
-    std::unordered_map<std::string, std::string> m_placed;   //!< source identity → its place
+    std::vector<Reference>                       m_refs;
+    std::unordered_map<std::string, std::string> m_placed;   //!< file identity → its place
     std::unordered_set<std::string>              m_taken;    //!< places given out, case-folded
 };
 
@@ -261,7 +308,8 @@ PackagePlan WorkspacePackager::plan(const Models::Workspace& workspace, const st
 
     PackagePlan plan;
     plan.workspaceFileName = pathToUtf8(file.filename());
-    Planner planner(plan, file.parent_path());
+    // The root's own two files are never given to anything else.
+    Planner planner(plan, file.parent_path(), {plan.workspaceFileName, k_packageManifestFileName});
 
     nlohmann::json j = workspace;
 
@@ -282,8 +330,8 @@ PackagePlan WorkspacePackager::plan(const Models::Workspace& workspace, const st
         clear(project, "inputOrderAtRender");
 
         for (auto& input : project["inputFiles"]) {
-            input["filePath"] = planner.place(input.value("filePath", std::string{}), k_inputsDir, name);
-            input["status"]   = Models::FileStatus::Pending;   // not rendered, in this copy
+            planner.refer(input["filePath"], k_inputsDir, name);
+            input["status"] = Models::FileStatus::Pending;   // not rendered, in this copy
             // An input's hash is the one its last render saw — sanitize() takes a matching hash as
             // "processed", whatever the status says. Kept, it would make a copy with no outputs look
             // rendered and up to date. (Overlays keep theirs: it names their content, nothing else.)
@@ -294,16 +342,16 @@ PackagePlan WorkspacePackager::plan(const Models::Workspace& workspace, const st
         }
 
         for (auto& overlay : project["stripOverlays"])
-            if (const std::string asset = overlay.value("assetPath", std::string{}); !asset.empty())
-                overlay["assetPath"] = planner.place(asset, k_overlaysDir, name);
+            if (!overlay.value("assetPath", std::string{}).empty())
+                planner.refer(overlay["assetPath"], k_externalDir, name);
     }
 
-    // --- Templates: relative to the workspace folder already, placed like everything else ----------------
+    // Templates are named relative to the workspace folder already; a relative one is simply in it.
     for (auto& profile : j["canvasProfiles"])
-        if (auto& info = profile["templateInfo"]; info.is_object())
-            if (const std::string path = info.value("path", std::string{}); !path.empty())
-                info["path"] = planner.place(path, k_templatesDir, {});
+        if (auto& info = profile["templateInfo"]; info.is_object() && !info.value("path", std::string{}).empty())
+            planner.refer(info["path"], k_externalDir, {});
 
+    planner.settle();
     plan.workspaceJson = j.dump(4);
     return plan;
 }

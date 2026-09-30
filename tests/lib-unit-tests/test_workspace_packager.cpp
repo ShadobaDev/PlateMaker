@@ -432,6 +432,51 @@ TEST(WorkspacePackager, APlanPlacesEveryFileOnceAndCarriesNoRender)
     EXPECT_EQ(copy.canvasProfiles().at(0).templateInfo.path, "templates/3p-m.png");
 }
 
+TEST(WorkspacePackager, APackageMirrorsTheWorkspaceFolderAndBringsTheRestIn)
+{
+    // The library knows no subfolder of a workspace by name: whatever is in the folder keeps its place,
+    // and only what the workspace names from elsewhere is given one.
+    const Scratch  s("mirror");
+    const fs::path ws = s.root / "Chapter";
+    touchFile(ws / "inputs" / "001.png");            // the consumer's own "inputs/", in the folder
+    touchFile(ws / "pages" / "002.png");
+    touchFile(ws / "cover.png");                     // directly in the folder
+    touchFile(ws / "art" / "bubble.svg");            // a subfolder the library has never heard of
+    touchFile(ws / "package.json");                  // the manifest's name, taken by the workspace
+    touchFile(s.root / "scans" / "001.png");         // from elsewhere, and named like one in the folder
+    touchFile(s.root / "elsewhere" / "logo.svg");
+
+    Models::Workspace   workspace;
+    Models::ProjectItem p;
+    p.name = "One";
+    p.uid  = "proj-1";
+    // The page from elsewhere comes first: the folder's own file still keeps its name.
+    p.getInputImages()   = {page("in-0", s.root / "scans" / "001.png", 0), page("in-1", ws / "inputs" / "001.png", 1),
+                            page("in-2", ws / "pages" / "002.png", 2), page("in-3", ws / "cover.png", 3),
+                            page("in-4", ws / "pages" / "gone.png", 4)};
+    p.getStripOverlays() = {overlay("ovl-1", ws / "art" / "bubble.svg", "in-1"),
+                            overlay("ovl-2", s.root / "elsewhere" / "logo.svg", "in-2"),
+                            overlay("ovl-3", ws / "package.json", "in-3")};
+    workspace.projectItems.push_back(std::move(p));
+
+    const PackagePlan plan = WorkspacePackager::plan(workspace, pathToUtf8(ws / "Chapter.platemaker.json"));
+
+    std::map<std::string, std::string> packed;
+    for (const auto& f : plan.files)
+        packed.emplace(f.target, g(utf8ToPath(f.source)));
+    EXPECT_EQ(packed, (std::map<std::string, std::string>{
+                          {"inputs/001.png", g(ws / "inputs" / "001.png")},
+                          {"inputs/001 (2).png", g(s.root / "scans" / "001.png")},
+                          {"pages/002.png", g(ws / "pages" / "002.png")},
+                          {"cover.png", g(ws / "cover.png")},
+                          {"art/bubble.svg", g(ws / "art" / "bubble.svg")},
+                          {"external/logo.svg", g(s.root / "elsewhere" / "logo.svg")},
+                          {"package (2).json", g(ws / "package.json")},
+                      }));
+    ASSERT_EQ(plan.missing.size(), 1u);
+    EXPECT_EQ(plan.missing[0].target, "pages/gone.png");   // missing, and still where the folder had it
+}
+
 TEST(WorkspacePackager, TheArchiveHeadersMatchTheLibraryThatShips)
 {
     // The headers are fetched separately from the DLL (see the root CMakeLists.txt); a mismatch would
