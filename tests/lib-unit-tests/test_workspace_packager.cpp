@@ -137,7 +137,98 @@ PackagePlan smallPlan(const fs::path& root)
     return plan;
 }
 
+/// A zip with exactly these entries, written with libarchive directly — for what write() would refuse to make.
+void zipWith(const fs::path& zip, const std::vector<std::pair<std::string, std::string>>& entries)
+{
+    archive* a = archive_write_new();
+    archive_write_set_format_zip(a);
+#ifdef _WIN32
+    ASSERT_EQ(archive_write_open_filename_w(a, zip.c_str()), ARCHIVE_OK);
+#else
+    ASSERT_EQ(archive_write_open_filename(a, zip.c_str()), ARCHIVE_OK);
+#endif
+    for (const auto& [name, content] : entries) {
+        archive_entry* e = archive_entry_new();
+        archive_entry_set_pathname_utf8(e, name.c_str());
+        archive_entry_set_size(e, static_cast<la_int64_t>(content.size()));
+        archive_entry_set_filetype(e, AE_IFREG);
+        archive_entry_set_perm(e, 0644);
+        archive_write_header(a, e);
+        archive_write_data(a, content.data(), content.size());
+        archive_entry_free(e);
+    }
+    archive_write_free(a);
+}
+
 } // anonymous namespace
+
+TEST(WorkspacePackager, APackageUnpacksIntoANewFolderAndSaysWhatItHolds)
+{
+    const Scratch  s("unpack");
+    const fs::path zip = s.root / "Chapter.platemaker.zip";
+    ASSERT_TRUE(WorkspacePackager::write(smallPlan(s.root), pathToUtf8(zip)));
+
+    const fs::path folder   = s.root / "there" / utf8ToPath("Rozdział");
+    const auto     unpacked = WorkspacePackager::unpack(pathToUtf8(zip), pathToUtf8(folder));
+    ASSERT_TRUE(unpacked.has_value());
+    EXPECT_EQ(unpacked->workspaceFile, g(folder / "Chapter.platemaker.json"));
+    EXPECT_FALSE(fs::exists(s.root / "there" / utf8ToPath("Rozdział.partial")));
+    EXPECT_EQ(readText(folder / "inputs" / utf8ToPath("żółw.png")), "page-bytes");
+
+    const PackageManifest& m = unpacked->manifest;
+    EXPECT_EQ(m.format, 1);
+    EXPECT_EQ(m.workspaceFileName, "Chapter.platemaker.json");
+    EXPECT_EQ(m.applicationName, "Platemaker");
+    EXPECT_EQ(m.applicationVersion, "9.9.9");
+    EXPECT_FALSE(m.libraryVersion.empty());
+    EXPECT_EQ(nlohmann::json::parse(m.applicationDetails)["fonts"][0], "Comic.ttf");
+    ASSERT_EQ(m.missing.size(), 1u);
+    EXPECT_EQ(m.missing[0].target, "inputs/gone.png");
+
+    // It opens, pointing into the new folder.
+    const auto ws = WorkspaceSerializer{}.load(unpacked->workspaceFile);
+    EXPECT_EQ(ws.projectItems.at(0).getInputImages().at(0).filePath, g(folder / "inputs" / utf8ToPath("żółw.png")));
+
+    // A folder that exists is never unpacked into — not even the one just made.
+    EXPECT_THROW((void)WorkspacePackager::unpack(pathToUtf8(zip), pathToUtf8(folder)), std::runtime_error);
+}
+
+TEST(WorkspacePackager, AnUnpackThatCannotFinishLeavesNothing)
+{
+    const Scratch s("unpack-refuse");
+    const auto    refused = [&](const char* zipName, const std::vector<std::pair<std::string, std::string>>& entries) {
+        const fs::path zip    = s.root / zipName;
+        const fs::path folder = s.root / (std::string(zipName) + "-out");
+        zipWith(zip, entries);
+        EXPECT_THROW((void)WorkspacePackager::unpack(pathToUtf8(zip), pathToUtf8(folder)), std::runtime_error)
+            << zipName;
+        EXPECT_FALSE(fs::exists(folder)) << zipName;
+        EXPECT_FALSE(fs::exists(s.root / (std::string(zipName) + "-out.partial"))) << zipName;
+        EXPECT_FALSE(fs::exists(s.root / "evil.txt")) << zipName;
+    };
+    const std::string manifest = R"({"format": 1, "workspace": "w.platemaker.json"})";
+
+    refused("escapes.zip", {{"w.platemaker.json", "{}"}, {"../evil.txt", "x"}, {"package.json", manifest}});
+    refused("rooted.zip", {{"w.platemaker.json", "{}"}, {"/evil.txt", "x"}, {"package.json", manifest}});
+    refused("twice.zip", {{"w.platemaker.json", "{}"}, {"a.png", "1"}, {"A.PNG", "2"}, {"package.json", manifest}});
+    refused("no-manifest.zip", {{"w.platemaker.json", "{}"}});
+    refused("no-workspace.zip", {{"package.json", manifest}});
+    refused("nested-workspace.zip", {{"sub/w.platemaker.json", "{}"},
+                                     {"package.json", R"({"format": 1, "workspace": "sub/w.platemaker.json"})"}});
+}
+
+TEST(WorkspacePackager, ACancelledUnpackLeavesNothing)
+{
+    const Scratch  s("unpack-cancel");
+    const fs::path zip = s.root / "p.platemaker.zip";
+    ASSERT_TRUE(WorkspacePackager::write(smallPlan(s.root), pathToUtf8(zip)));
+
+    CancellationToken cancel;
+    cancel.cancel();
+    EXPECT_FALSE(WorkspacePackager::unpack(pathToUtf8(zip), pathToUtf8(s.root / "out"), {}, &cancel).has_value());
+    EXPECT_FALSE(fs::exists(s.root / "out"));
+    EXPECT_FALSE(fs::exists(s.root / "out.partial"));
+}
 
 TEST(WorkspacePackager, APackageUnpacksAndOpensWithItsManifestLast)
 {

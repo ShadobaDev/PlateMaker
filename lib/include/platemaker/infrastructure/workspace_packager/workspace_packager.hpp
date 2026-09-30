@@ -46,6 +46,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -90,8 +91,26 @@ struct PackagePlan {
 /// DLL wherever it is used by address, and MinGW then wants a symbol the DLL does not export.
 inline constexpr const char* k_packageManifestFileName = "package.json";
 
-/// \brief Reports how much of a package is written: bytes so far, and in all.
+/// \brief Reports how much of a package is written or read: bytes so far, and in all.
 using PackageProgress = std::function<void(std::uint64_t done, std::uint64_t total)>;
+
+/// \brief What a package's \c package.json says, as read back by \ref WorkspacePackager::unpack().
+struct PackageManifest {
+    int                         format = 0;          //!< The manifest's own format.
+    std::string                 libraryVersion;      //!< The libplatemaker that wrote it.
+    std::string                 applicationName;     //!< Who exported it.
+    std::string                 applicationVersion;  //!< Its version.
+    std::string                 applicationDetails;  //!< The application's own section, as JSON text ("{}" if none).
+    std::string                 exported;            //!< When, UTC, ISO 8601.
+    std::string                 workspaceFileName;   //!< The workspace file at the package root.
+    std::vector<PackageMissing> missing;             //!< What was missing when it was exported.
+};
+
+/// \brief An unpacked package: where its workspace file is now, and what its manifest says.
+struct UnpackedPackage {
+    std::string     workspaceFile;   //!< Absolute path, UTF-8.
+    PackageManifest manifest;
+};
 
 /**
  * \class WorkspacePackager
@@ -140,6 +159,30 @@ public:
                       const std::string&       zipPath,
                       const PackageProgress&   progress = {},
                       const CancellationToken* cancel   = nullptr);
+
+    /**
+     * \brief Unpacks the package at \p zipPath into \p folder, which it creates.
+     *
+     * - **A new folder only:** refused if \p folder exists, so nothing is overwritten and the folder holds
+     *   this one workspace and nothing else.
+     * - **Whole or not at all:** unpacked into \p folder + ".partial" and renamed to \p folder at the end;
+     *   a failure or a cancel removes it. A ".partial" folder left by a crash is refused, not reused.
+     * - **Nothing lands outside \p folder:** an entry with a root or a `..` is refused, as is an entry that
+     *   is not an ordinary file, and two entries for one file (compared without case).
+     * - **It must be a package:** \c package.json has to be there and name a workspace file at the root that
+     *   was unpacked too. The workspace itself is not loaded: that is the caller's next step.
+     *
+     * \param progress Called as the zip is read: its bytes read so far, and its size.
+     * \param cancel   Checked between chunks; may be null.
+     * \return The workspace file and the manifest, or \c std::nullopt when \p cancel stopped it (nothing
+     *         is left).
+     * \throws std::runtime_error when \p folder exists, the zip cannot be read or is not a package, or an
+     *         entry is refused — naming it.
+     */
+    [[nodiscard]] static std::optional<UnpackedPackage> unpack(const std::string&       zipPath,
+                                                               const std::string&       folder,
+                                                               const PackageProgress&   progress = {},
+                                                               const CancellationToken* cancel   = nullptr);
 };
 
 } // namespace Platemaker::Infrastructure

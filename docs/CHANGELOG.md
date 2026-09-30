@@ -124,7 +124,10 @@ released), which re-derives onto this baseline per the cascade rule.
     compressed formats stored, written whole or not at all (a temporary file renamed at the end; cancel
     and errors leave nothing), and a `package.json` manifest last — library and application versions,
     export time, missing files, and the application's own section.
-  - The CLI's `workspace export --workspace FILE --out PACKAGE.platemaker.zip` runs both; its manifest
+  - `unpack()` puts a package into a new folder (refused if it exists), whole or not at all, with nothing
+    allowed outside it, and returns the workspace file and the manifest read back. There is no CLI
+    command for it yet; any unzip tool gives the same folder.
+  - The CLI's `workspace export --workspace FILE --out PACKAGE.platemaker.zip` runs `plan()` + `write()`; its manifest
     says the lettering may not be editable, since fonts and the pictures behind lettered pictures are
     the GUI's to add.
 - `linkedComponents()` now also reports **libarchive** (BSD-2-Clause, runtime version).

@@ -431,4 +431,143 @@ bool WorkspacePackager::write(const PackagePlan&       plan,
     return true;
 }
 
+std::optional<UnpackedPackage> WorkspacePackager::unpack(const std::string&       zipPath,
+                                                         const std::string&       folder,
+                                                         const PackageProgress&   progress,
+                                                         const CancellationToken* cancel)
+{
+    const auto refuse = [](const std::string& why) {
+        return std::runtime_error("WorkspacePackager::unpack() — " + why);
+    };
+
+    const fs::path target  = fs::absolute(utf8ToPath(folder));
+    const fs::path partial = target.parent_path() / utf8ToPath(pathToUtf8(target.filename()) + ".partial");
+    std::error_code ec;
+    if (fs::exists(target, ec))
+        throw refuse("'" + pathToUtf8(target) + "' exists already");
+    if (fs::exists(partial, ec))
+        throw refuse("'" + pathToUtf8(partial) + "' is left from an unpack that did not finish; remove it");
+
+    const fs::path zip   = utf8ToPath(zipPath);
+    const auto     total = fs::file_size(zip, ec);
+    if (ec)
+        throw refuse("cannot read '" + zipPath + "': " + ec.message());
+
+    // Owned from here on: whatever goes wrong, the half-unpacked folder goes with it.
+    struct Reader {
+        archive* a = archive_read_new();
+        ~Reader() { archive_read_free(a); }
+    } reader;
+    archive* const a = reader.a;
+    const auto     archiveError = [&](const std::string& what) {
+        const char* why = archive_error_string(a);
+        return refuse(what + ": " + (why ? why : "archive error"));
+    };
+
+    bool cancelled = false;
+    try {
+        fs::create_directories(partial);
+        archive_read_support_format_zip(a);
+#ifdef _WIN32
+        if (archive_read_open_filename_w(a, zip.c_str(), k_chunkBytes) != ARCHIVE_OK)
+#else
+        if (archive_read_open_filename(a, zip.c_str(), k_chunkBytes) != ARCHIVE_OK)
+#endif
+            throw archiveError(zipPath);
+
+        std::unordered_set<std::string> seen;
+        archive_entry*                  entry = nullptr;
+        for (int r; (r = archive_read_next_header(a, &entry)) != ARCHIVE_EOF && !cancelled;) {
+            if (r < ARCHIVE_WARN)
+                throw archiveError(zipPath);
+            const char*       utf8 = archive_entry_pathname_utf8(entry);
+            const std::string name = utf8 ? utf8 : (archive_entry_pathname(entry) ? archive_entry_pathname(entry) : "");
+            if (archive_entry_filetype(entry) == AE_IFDIR)
+                continue;   // folders come with the files in them
+            if (archive_entry_filetype(entry) != AE_IFREG)
+                throw refuse("'" + name + "' is not an ordinary file");
+            if (unsafeTarget(name))
+                throw refuse("'" + name + "' would land outside the folder");
+            if (!seen.insert(foldCase(name)).second)
+                throw refuse("two entries for '" + name + "'");
+
+            const fs::path out = partial / utf8ToPath(name);
+            fs::create_directories(out.parent_path());
+            std::ofstream file(out, std::ios::binary);
+            if (!file)
+                throw refuse("cannot write '" + pathToUtf8(out) + "'");
+
+            const void* block  = nullptr;
+            size_t      size   = 0;
+            la_int64_t  offset = 0;
+            for (int d; (d = archive_read_data_block(a, &block, &size, &offset)) != ARCHIVE_EOF;) {
+                if (d < ARCHIVE_WARN)
+                    throw archiveError(name);
+                if (cancel && cancel->isCancelled()) {
+                    cancelled = true;
+                    break;
+                }
+                file.seekp(static_cast<std::streamoff>(offset));   // a sparse entry skips its holes
+                file.write(static_cast<const char*>(block), static_cast<std::streamsize>(size));
+                if (progress)
+                    progress(static_cast<std::uint64_t>(archive_filter_bytes(a, -1)), total);
+            }
+            if (!file)
+                throw refuse("cannot write '" + pathToUtf8(out) + "'");
+        }
+    } catch (...) {
+        fs::remove_all(partial, ec);
+        throw;
+    }
+    if (cancelled) {
+        fs::remove_all(partial, ec);
+        return std::nullopt;
+    }
+
+    // --- It is a package only if its manifest says which workspace it holds, and that file came too ---
+    UnpackedPackage result;
+    try {
+        nlohmann::json j;
+        {   // closed before the rename below: Windows will not rename a folder with a file open in it
+            std::ifstream manifestFile(partial / k_packageManifestFileName, std::ios::binary);
+            if (!manifestFile)
+                throw refuse("no " + std::string(k_packageManifestFileName) + " — not a Platemaker package");
+            j = nlohmann::json::parse(manifestFile, nullptr, /*allow_exceptions=*/false);
+        }
+        if (!j.is_object())
+            throw refuse(std::string(k_packageManifestFileName) + " is not a JSON object");
+
+        PackageManifest& m   = result.manifest;
+        m.format             = j.value("format", 0);
+        m.exported           = j.value("exported", std::string{});
+        m.workspaceFileName  = j.value("workspace", std::string{});
+        if (const auto lib = j.find("library"); lib != j.end() && lib->is_object())
+            m.libraryVersion = lib->value("version", std::string{});
+        m.applicationDetails = "{}";
+        if (const auto app = j.find("application"); app != j.end() && app->is_object()) {
+            m.applicationName    = app->value("name", std::string{});
+            m.applicationVersion = app->value("version", std::string{});
+            if (const auto d = app->find("details"); d != app->end() && d->is_object())
+                m.applicationDetails = d->dump();
+        }
+        if (const auto missing = j.find("missing"); missing != j.end() && missing->is_array())
+            for (const auto& x : *missing)
+                if (x.is_object())
+                    m.missing.push_back({x.value("project", std::string{}), x.value("source", std::string{}),
+                                         x.value("target", std::string{})});
+
+        if (m.workspaceFileName.empty() || unsafeTarget(m.workspaceFileName)
+            || m.workspaceFileName.find('/') != std::string::npos
+            || !fs::is_regular_file(partial / utf8ToPath(m.workspaceFileName), ec))
+            throw refuse("the manifest names no workspace file at the package root");
+
+        fs::rename(partial, target);
+    } catch (...) {
+        fs::remove_all(partial, ec);
+        throw;
+    }
+    result.workspaceFile = genericUtf8(target / utf8ToPath(result.manifest.workspaceFileName));
+    return result;
+}
+
 } // namespace Platemaker::Infrastructure
