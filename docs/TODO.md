@@ -157,8 +157,8 @@ requested slice height and no output exceeds it.
 > on Windows (a sharing violation surfacing as `EINVAL`). Reproduced deterministically with two lib
 > primitives on two threads (`tests/lib-unit-tests/test_image_io_concurrency.cpp`).
 >
-> This exposed an architectural seam and was resolved by a **render output contract** (SPECIFICATION
-> §7.0, shipping in **0.5.0**), *not* a workaround: **G1** `ImageIO::save()` publishes atomically
+> This exposed an architectural seam and was resolved by a **render output contract** (wiki
+> [Render](https://github.com/ShadobaDev/PlateMaker/wiki/Render), shipping in **0.5.0**), *not* a workaround: **G1** `ImageIO::save()` publishes atomically
 > (temp + rename); **G4** a locked destination throws `OutputLockedError` → `ProcessingErrorCode::
 > OutputLocked` — the lib **does not poll/retry**, the consumer decides; **G3 / Arch C** the pipeline
 > optionally warms `ThumbnailCache` from the in-RAM slice (`generate(path, PixelBuffer)` overload,
@@ -301,7 +301,7 @@ Both options could be implemented.
   `ColourCorrector::applyToRgba()` live against the strip, and Bubble/Text tools that rasterize an RGBA
   bitmap per overlay and register it through `addOverlay()`, anchored to the page it was drawn on. The
   GUI keeps its own authoring records (shape/text/font) beside the workspace, because the library
-  composites bytes and has no text model — see the GUI repo's SPECIFICATION §2.5.
+  composites bytes and has no text model — see the GUI wiki's [Workspace folder ownership](https://github.com/ShadobaDev/Platemaker-qt/wiki/Development-Workspace-Ownership).
   - *Still open on the GUI side:* the per-page CC exclusion toggles (the model and render already honour
     `excludedInputUids`) and a curve editor (the render already applies curves).
 
