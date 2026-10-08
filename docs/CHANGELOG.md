@@ -220,8 +220,8 @@ released), which re-derives onto this baseline per the cascade rule.
 - **Page-domain preview API — `ProcessingPipeline::previewLayout()` + `previewPageRgba()`.** The same
   page domain the render uses, stopped before the strip: `previewLayout()` returns where every input
   page lands (width, height, matched profile, and the status `run()` would report) decoding no pixels,
-  and `previewPageRgba()` writes one page's **ungraded** pixels at strip scale into a caller-owned
-  RGBA8888 buffer. Each entry carries its `inputUid`, so a consumer stacking the layout can build the
+  and `previewPageRgba()` writes one page's **ungraded** pixels at strip scale straight into a
+  caller-owned RGBA8888 buffer, with no intermediate copy of the page. Each entry carries its `inputUid`, so a consumer stacking the layout can build the
   uid → strip-Y map `resolveOverlayAnchors()` takes and place overlays exactly where the render will. Together they let a consumer show a chapter's strip **before any render exists**, at
   a cost that tracks the viewport rather than the chapter: layout every page once (a header read each),
   fetch pixels only for what is on screen, and grade those with `ColourCorrector::applyToRgba()` — the

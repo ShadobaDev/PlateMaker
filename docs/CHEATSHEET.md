@@ -86,28 +86,28 @@ cpack --preset linux-release      # or linux-debug / mingw-release / mingw-debug
 
 ## Local install (develop the Qt GUI against the lib)
 
-Installs to `install/<preset>/` (no archive). Point the GUI's `PLATEMAKER_DIR`
+Installs to `install/<preset>/` (no archive). Point the GUI's `LIBPLATEMAKER_DIR`
 at that folder.
 
 ```powershell
 cmake --preset mingw-debug
 cmake --build --preset mingw-debug
 cmake --install build/mingw-debug
-# → install/mingw-debug/   (set PLATEMAKER_DIR to this in Qt Creator)
+# → install/mingw-debug/   (set LIBPLATEMAKER_DIR to this in Qt Creator)
 ```
 
 ```powershell
 cmake --preset msvc-debug
 cmake --build --preset msvc-debug
 cmake --install .\build\msvc-debug\ --config Debug
-# → install/msvc-debug/   (set PLATEMAKER_DIR to this in Qt Creator)
+# → install/msvc-debug/   (set LIBPLATEMAKER_DIR to this in Qt Creator)
 ```
 
 ```powershell
 cmake --preset msvc-release
-cmake --build --preset mingw-release
-cmake --install .\build\msvc-release\ # optionally: --config Release
-# → install/msvc-debug/   (set PLATEMAKER_DIR to this in Qt Creator)
+cmake --build --preset msvc-release
+cmake --install .\build\msvc-release\ --config Release
+# → install/msvc-release/   (set LIBPLATEMAKER_DIR to this in Qt Creator)
 ```
 
 ```bash

@@ -30,8 +30,6 @@
 #include "slice_writer.hpp"
 #include "strip_builder.hpp"
 
-#include <algorithm>
-#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -271,17 +269,21 @@ void ProcessingPipeline::decodePageToRgba(
             "ProcessingPipeline::decodePageToRgba — expected 4-band 8-bit sRGB, got " + got);
     }
 
+    // Straight into the caller's buffer. vips_image_write_to_memory() would allocate a page-sized buffer
+    // of its own for the caller to copy out of — the same write, plus a second copy of the page, which
+    // for a long strip is 100–200 MiB held only to be thrown away. The size checks above make the
+    // buffer exactly the image: 4 bands of uchar, width × height.
     const std::size_t nbytes = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u;
-    std::size_t       outSize = 0;
-    void*             outData = vips_image_write_to_memory(out, &outSize);
+    VipsImage*        dst    = vips_image_new_from_memory(rgba, nbytes, width, height, 4, VIPS_FORMAT_UCHAR);
+    const bool        ok     = dst && vips_image_write(out, dst) == 0;
+    if (dst)
+        g_object_unref(dst);
     g_object_unref(out);
-    if (!outData) {
+    if (!ok) {
         const std::string err = vips_error_buffer();
         vips_error_clear();
         throw std::runtime_error("ProcessingPipeline::decodePageToRgba — read pixels: " + err);
     }
-    std::memcpy(rgba, outData, std::min(outSize, nbytes));
-    g_free(outData);
 }
 
 } // namespace Platemaker::Core

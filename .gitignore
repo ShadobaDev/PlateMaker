@@ -12,6 +12,7 @@ dist
 # Vibe-coding decimation
 *\.clinerules
 *\.claude
+graphify-out
 
 # Temporary files for editors
 temp
