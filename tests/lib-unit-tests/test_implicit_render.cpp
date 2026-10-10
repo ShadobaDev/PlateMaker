@@ -192,7 +192,7 @@ TEST(ImplicitRenderTest, UnmatchedPageIsAppendedNotSkipped)
     EXPECT_FALSE(outcome.records.empty())     << "slices should have been produced";
 
     // Both pages appear in appliedProfiles; the unmatched one carries an empty profile id.
-    const auto findApplied = [&](const std::string& p) -> const Models::AppliedCanvasProfile* {
+    const auto findApplied = [&](const std::string& p) → const Models::AppliedCanvasProfile* {
         for (const auto& ap : outcome.appliedProfiles)
             if (ap.sourceFilePath == p) return &ap;
         return nullptr;

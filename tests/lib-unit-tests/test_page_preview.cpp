@@ -129,9 +129,9 @@ std::pair<int, int> sizeOf(const std::string& path)
 TEST(PagePreviewTest, LayoutHeightsMatchTheRenderedStrip)
 {
     TempDir tmp("layout");
-    // 200x400 with 20px margins -> safe area 160x360 -> scaled to width 80 -> 80x180.
+    // 200x400 with 20px margins → safe area 160x360→scaled to width 80 → 80x180.
     const std::string cropped = writeSolidPng(tmp, "a.png", 200, 400, 200, 100, 50);
-    // 160x320, no profile of that size -> rendered implicitly -> scaled to width 80 -> 80x160.
+    // 160x320, no profile of that size → rendered implicitly → scaled to width 80 → 80x160.
     const std::string plain   = writeSolidPng(tmp, "b.png", 160, 320, 50, 100, 200);
 
     const auto cp = profile("cp-1", "Margined", 200, 400, {20, 20, 20, 20});
@@ -213,7 +213,7 @@ TEST(PagePreviewTest, LayoutFlagsPagesTheRenderWouldSkip)
 TEST(PagePreviewTest, PageRgbaMatchesTheRenderedPage)
 {
     TempDir tmp("pixels");
-    // 200x400 with 20px margins -> 160x360 -> width 80 -> 80x180. Slice height 180 makes the render's
+    // 200x400 with 20px margins → 160x360 → width 80 → 80x180. Slice height 180 makes the render's
     // single output slice exactly that scaled page, so the two are directly comparable.
     const std::string page = writeSolidPng(tmp, "a.png", 200, 400, 200, 100, 50);
 

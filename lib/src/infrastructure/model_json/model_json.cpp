@@ -230,7 +230,7 @@ void from_json(const nlohmann::json& j, StripOverlay& v) {
     if (j.contains("uid"))        j.at("uid").get_to(v.uid);
     if (j.contains("assetPath"))  j.at("assetPath").get_to(v.assetPath);
     if (j.contains("sha256"))     j.at("sha256").get_to(v.sha256);
-    // Additive: absent -> empty -> the overlay keeps the absolute strip-Y an older workspace stored.
+    // Additive: absent → empty → the overlay keeps the absolute strip-Y an older workspace stored.
     if (j.contains("anchorInputUid")) j.at("anchorInputUid").get_to(v.anchorInputUid);
     if (j.contains("xFrac"))      j.at("xFrac").get_to(v.xFrac);
     if (j.contains("yFrac"))      j.at("yFrac").get_to(v.yFrac);
@@ -346,7 +346,7 @@ void from_json(const nlohmann::json& j, ProjectItem& v) {
     // additive — absent in workspaces written before optional processing steps existed; an absent
     // object / array leaves colourCorrection disabled and stripOverlays empty (a byte-identical render).
     if (j.contains("colourCorrection")) j.at("colourCorrection").get_to(v.colourCorrection);
-    // Additive: absent -> 0 -> the overlays were authored at whatever this render targets.
+    // Additive: absent → 0 → the overlays were authored at whatever this render targets.
     if (j.contains("stripOverlays"))    j.at("stripOverlays").get_to(v.getStripOverlays());
     j.at("inputFiles").get_to(v.getInputImages());
     j.at("outputFiles").get_to(v.getOutputImages());
