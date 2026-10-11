@@ -3,7 +3,7 @@
  * \brief Unit tests for WorkspaceEditor — the single authority that mutates the profile palettes.
  *
  * These pin the intent-level operations and, crucially, that they enforce the *same* invariants a
- * loaded file is put through: unique ids, no persisted presets, templateInfo carried across a bulk
+ * loaded file is put through: unique ids, no persisted presets, templates carried across a bulk
  * replace, and the project↔profile link guard.  installLoaded() is tested directly as the load path.
  *
  * \author ShadobaDev <shadobadev@gmail.com>
@@ -36,7 +36,11 @@ Models::CanvasProfile canvas(std::string id, std::string name, int w, int h,
     cp.name              = std::move(name);
     cp.canvasSize        = {w, h};
     cp.margins           = {0, 0, 0, 0};
-    cp.templateInfo.path = std::move(templatePath);
+    if (!templatePath.empty()) {
+        Models::CanvasTemplateInfo t;
+        t.path = std::move(templatePath);
+        cp.templates.push_back(std::move(t));
+    }
     return cp;
 }
 
@@ -99,7 +103,7 @@ TEST(WorkspaceEditorTest, RemoveCanvasProfileReportsWhetherItExisted)
 }
 
 // ---------------------------------------------------------------------------
-// replaceCanvasProfiles — carries templateInfo, mints, dedups
+// replaceCanvasProfiles — carries templates, mints, dedups
 // ---------------------------------------------------------------------------
 
 TEST(WorkspaceEditorTest, ReplaceCanvasProfilesCarriesTemplateInfoFromCurrentById)
@@ -110,15 +114,16 @@ TEST(WorkspaceEditorTest, ReplaceCanvasProfilesCarriesTemplateInfoFromCurrentByI
     // Seed a profile that owns a template.
     ed.replaceCanvasProfiles({canvas("cp-1", "A", 800, 1000, "tpl.png")});
     ASSERT_EQ(ws.canvasProfiles().size(), 1u);
-    ASSERT_EQ(ws.canvasProfiles()[0].templateInfo.path, "tpl.png");
+    ASSERT_EQ(ws.canvasProfiles()[0].templates.at(0).path, "tpl.png");
 
-    // A manage-dialog round trip returns the same id but drops templateInfo. The editor must
+    // A manage-dialog round trip returns the same id but drops templates. The editor must
     // restore it from the workspace (the source of truth) while keeping the edited field (name).
     ed.replaceCanvasProfiles({canvas("cp-1", "A-renamed", 800, 1000, /*templatePath=*/"")});
 
     ASSERT_EQ(ws.canvasProfiles().size(), 1u);
     EXPECT_EQ(ws.canvasProfiles()[0].name, "A-renamed");
-    EXPECT_EQ(ws.canvasProfiles()[0].templateInfo.path, "tpl.png");
+    ASSERT_EQ(ws.canvasProfiles()[0].templates.size(), 1u);
+    EXPECT_EQ(ws.canvasProfiles()[0].templates[0].path, "tpl.png");
 }
 
 TEST(WorkspaceEditorTest, ReplaceCanvasProfilesMintsMissingIdsAndDeduplicates)
@@ -146,23 +151,30 @@ TEST(WorkspaceEditorTest, ReplaceCanvasProfilesMintsMissingIdsAndDeduplicates)
     EXPECT_EQ(report.canvasProfiles[0].oldId, "cp-dup");
 }
 
-TEST(WorkspaceEditorTest, SetCanvasProfileTemplateInfoSetsAndClearsExactly)
+TEST(WorkspaceEditorTest, SetCanvasProfileTemplatesSetsAndClearsExactly)
 {
     Models::Workspace ws;
     Infrastructure::WorkspaceEditor ed(ws);
     const std::string id = ed.addCanvasProfile(canvas("", "A", 800, 1000));
 
-    Models::CanvasTemplateInfo info;
-    info.path = "templates/a.png";
-    EXPECT_TRUE(ed.setCanvasProfileTemplateInfo(id, info));
-    EXPECT_EQ(ws.canvasProfiles()[0].templateInfo.path, "templates/a.png");
+    // A PNG and a PSD of one profile live side by side.
+    Models::CanvasTemplateInfo png;
+    png.path = "templates/a.png";
+    Models::CanvasTemplateInfo psd;
+    psd.path   = "templates/a.psd";
+    psd.format = Models::TemplateFormat::Psd;
+    EXPECT_TRUE(ed.setCanvasProfileTemplates(id, {png, psd}));
+    ASSERT_EQ(ws.canvasProfiles()[0].templates.size(), 2u);
+    EXPECT_EQ(ws.canvasProfiles()[0].templateIn(Models::TemplateFormat::Png)->path, "templates/a.png");
+    EXPECT_EQ(ws.canvasProfiles()[0].templateIn(Models::TemplateFormat::Psd)->path, "templates/a.psd");
 
     // Clearing sets an exactly-empty value — a carry heuristic could not express this.
-    EXPECT_TRUE(ed.setCanvasProfileTemplateInfo(id, Models::CanvasTemplateInfo{}));
-    EXPECT_TRUE(ws.canvasProfiles()[0].templateInfo.path.empty());
+    EXPECT_TRUE(ed.setCanvasProfileTemplates(id, {}));
+    EXPECT_TRUE(ws.canvasProfiles()[0].templates.empty());
+    EXPECT_EQ(ws.canvasProfiles()[0].templateIn(Models::TemplateFormat::Png), nullptr);
 
     // Unknown id is a no-op failure.
-    EXPECT_FALSE(ed.setCanvasProfileTemplateInfo("cp-nope", info));
+    EXPECT_FALSE(ed.setCanvasProfileTemplates("cp-nope", {png}));
 }
 
 // ---------------------------------------------------------------------------
@@ -433,22 +445,24 @@ TEST(WorkspaceEditorSnapshotMetaTest, RestoresProfilesAndProjectNames)
     EXPECT_EQ(ws.projectItems[0].name, "Chapter 01"); // name restored by uid
 }
 
-TEST(WorkspaceEditorSnapshotMetaTest, RestoresCanvasTemplateInfoExactly)
+TEST(WorkspaceEditorSnapshotMetaTest, RestoresCanvasTemplatesExactly)
 {
     Models::Workspace ws;
     Infrastructure::WorkspaceEditor ed(ws);
     const std::string cid = ed.addCanvasProfile(canvas("", "A", 800, 1000));
-    ASSERT_TRUE(ed.setCanvasProfileTemplateInfo(cid, [] {
-        Models::CanvasTemplateInfo t; t.path = "tpl.png"; return t; }()));
+    ASSERT_TRUE(ed.setCanvasProfileTemplates(cid, {[] {
+        Models::CanvasTemplateInfo t; t.path = "tpl.png"; t.sha256 = "abc"; return t; }()}));
 
     const std::string snap = ed.snapshotMeta();
 
-    // Clear the template (as a "delete template" would), then undo via restoreMeta.
-    ASSERT_TRUE(ed.setCanvasProfileTemplateInfo(cid, Models::CanvasTemplateInfo{}));
-    ASSERT_TRUE(ws.canvasProfiles()[0].templateInfo.path.empty());
+    // Clear the templates (as a "delete template" would), then undo via restoreMeta.
+    ASSERT_TRUE(ed.setCanvasProfileTemplates(cid, {}));
+    ASSERT_TRUE(ws.canvasProfiles()[0].templates.empty());
 
     ed.restoreMeta(snap);
-    EXPECT_EQ(ws.canvasProfiles()[0].templateInfo.path, "tpl.png");
+    ASSERT_EQ(ws.canvasProfiles()[0].templates.size(), 1u);
+    EXPECT_EQ(ws.canvasProfiles()[0].templates[0].path, "tpl.png");
+    EXPECT_EQ(ws.canvasProfiles()[0].templates[0].sha256, "abc");
 }
 
 TEST(WorkspaceEditorSnapshotMetaTest, LeavesProjectContentsUntouched)
@@ -494,7 +508,7 @@ TEST(WorkspaceEditorImportTest, MintsFreshIdsAndClearsTemplateInfo)
     EXPECT_EQ(imported.id, report.canvasIds[0]);
     EXPECT_EQ(imported.name, "Manga B4");           // content preserved
     EXPECT_EQ(imported.canvasSize.width, 1600);
-    EXPECT_TRUE(imported.templateInfo.path.empty()); // template stripped
+    EXPECT_TRUE(imported.templates.empty());        // templates stripped
 }
 
 TEST(WorkspaceEditorImportTest, SkipsPresetOutputProfilesButKeepsUserOnes)

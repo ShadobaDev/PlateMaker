@@ -18,6 +18,25 @@ released), which re-derives onto this baseline per the cascade rule.
 
 ### Changed
 
+- **A profile tracks one template per format, and a template says why it is out of date.**
+  `CanvasProfile::templateInfo` (one file) becomes **`templates`**: one `CanvasTemplateInfo` per format,
+  so a PNG and a PSD live side by side, each with its new **`format`** and **`sha256`**. The workspace
+  schema goes to **version 3**; a version-2 `templateInfo` loads as one entry of its file's format, its
+  signature finished with what that file really is (25.4 DPI before resolutions were recorded), so it
+  checks as outdated for the right reason. `WorkspaceEditor::setCanvasProfileTemplateInfo()` is now
+  **`setCanvasProfileTemplates()`**.
+  - **`TemplateGenerator::check()`** reports every reason a tracked template is not up to date: the file
+    missing, a different profile tracking the same file, the bytes changed since they were written,
+    and each changed signature field with its old and new value (`TemplateDifference`).
+    `templateSignature(profile, format)` is the signature a file of that format should carry.
+  - **`generate()` returns the SHA-256 of the bytes it wrote**, hashed in memory before the write —
+    never by reading the file back, which in a synced folder can return the old copy
+    (`FileMetaData::computeSha256()`). minipsd gains `MINIPSD_NO_STDIO` for that path.
+  - **Profiles that share a name are told apart.** `distinguishProfile()` says whether a profile is
+    identical to another of its name (*duplicate*) and which fields (`ProfileField`) set it apart;
+    `sameProfileContent()` compares what two profiles mean, whatever their names. Names compare
+    without case, as files named after them do on Windows.
+
 - **A slice records its output profile's resolution, not its input's.** `OutputProfile` gains **`dpi`**
   (default 72; every preset is 72 — they are all screen platforms). Before, a PNG slice carried the
   resolution of whichever page it was cut from, and a JPEG or WebP slice none at all. Now `ImageIO`

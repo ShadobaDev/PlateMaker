@@ -754,4 +754,202 @@ TEST(OutputProfileSignatureTest, CatchesFormatAndQualityChanges)
     EXPECT_NE(outputProfileSignature(a), outputProfileSignature(d));
 }
 
+// ---------------------------------------------------------------------------
+// distinguishProfile — profiles that share a name
+// ---------------------------------------------------------------------------
+
+TEST(DistinguishProfileTest, AUniqueNameNeedsNoDistinction)
+{
+    const auto a = makeProfile("a", 800, 1280, 0);
+    auto b = makeProfile("b", 900, 1280, 0);
+    b.name = "other";
+    const auto d = distinguishProfile({a, b}, a);
+    EXPECT_FALSE(d.duplicate);
+    EXPECT_TRUE(d.differs.empty());
+}
+
+TEST(DistinguishProfileTest, AnIdenticalProfileOfTheSameNameIsADuplicate)
+{
+    // As in a real workspace: two "3p-m", same in every field. Names compare without case.
+    auto a = makeProfile("a", 2200, 8280, 300);
+    a.name = "3p-m";
+    auto b = a;
+    b.id   = "b";
+    b.name = "3P-M";
+    const auto d = distinguishProfile({a, b}, a);
+    EXPECT_TRUE(d.duplicate);
+    EXPECT_TRUE(d.differs.empty());
+    EXPECT_TRUE(sameProfileContent(a, b));
+}
+
+TEST(DistinguishProfileTest, DifferencesComeInFieldOrder)
+{
+    auto a = makeProfile("a", 2200, 8280, 300);
+    auto b = makeProfile("b", 2000, 8080, 300);
+    b.dpi = 72.0;
+    b.visualColour = RGBA{1, 2, 3, 4};
+    const auto d = distinguishProfile({a, b}, a);
+    EXPECT_FALSE(d.duplicate);
+    EXPECT_EQ(d.differs, (std::vector<ProfileField>{ProfileField::CanvasSize, ProfileField::Dpi,
+                                                    ProfileField::Colours}));
+}
+
+TEST(DistinguishProfileTest, EveryFieldCounts)
+{
+    const auto base = makeProfile("a", 800, 1280, 10);
+    auto margins = base;  margins.id = "m";  margins.margins.left = 11;
+    auto settings = base; settings.id = "s"; settings.templateSettings.emptyLayer = true;
+    auto bg = base;       bg.id = "c";       bg.backgroundColour = RGBA{255, 255, 255, 255};
+    EXPECT_EQ(distinguishProfile({base, margins}, base).differs, std::vector<ProfileField>{ProfileField::Margins});
+    EXPECT_EQ(distinguishProfile({base, settings}, base).differs,
+              std::vector<ProfileField>{ProfileField::TemplateSettings});
+    EXPECT_EQ(distinguishProfile({base, bg}, base).differs, std::vector<ProfileField>{ProfileField::Colours});
+
+    // What a profile does not mean does not count: its id, its templates, the dialog's hint.
+    auto same = base;
+    same.id = "x";
+    same.hintUserSafeAreaSelect = true;
+    same.templates.push_back({});
+    EXPECT_TRUE(distinguishProfile({base, same}, base).duplicate);
+}
+
+TEST(DistinguishProfileTest, AProfileNotSavedYetIsComparedWithAll)
+{
+    // A profile in its editor has no id yet: an identical saved one is still its duplicate.
+    const auto saved = makeProfile("cp-1", 800, 1280, 0);
+    auto draft = saved;
+    draft.id.clear();
+    EXPECT_TRUE(distinguishProfile({saved}, draft).duplicate);
+}
+
+// ---------------------------------------------------------------------------
+// TemplateGenerator::check — why a tracked template is not up to date
+// ---------------------------------------------------------------------------
+
+using Platemaker::Core::TemplateCheck;
+
+class TemplateCheckTest : public ::testing::Test {
+protected:
+    void SetUp() override
+    {
+        m_dir = std::filesystem::temp_directory_path() / "pm-template-check";
+        std::filesystem::remove_all(m_dir);
+        std::filesystem::create_directories(m_dir / "templates");
+        m_profile = makeProfile("cp-1", 120, 200, 10);
+        m_profile.name = "3p-m";
+        m_profile.templateSettings = {TemplateFormat::Png, false};
+        m_entry.path        = "templates/3p-m.png";
+        m_entry.format      = TemplateFormat::Png;
+        m_entry.fingerprint = Platemaker::Core::TemplateGenerator::canvasSignature(m_profile);
+        m_entry.sha256      = Platemaker::Core::TemplateGenerator{}.generate(
+            m_profile, {}, abs(), Platemaker::Core::TemplateGenerator::optionsFor(m_profile));
+        m_profile.templates = {m_entry};
+    }
+    void TearDown() override { std::filesystem::remove_all(m_dir); }
+
+    std::string abs() const { return (m_dir / m_entry.path).string(); }
+    TemplateCheck check(const std::vector<CanvasProfile>& palette) const
+    {
+        return Platemaker::Core::TemplateGenerator::check(palette, m_profile, m_entry, abs());
+    }
+
+    std::filesystem::path m_dir;
+    CanvasProfile         m_profile;
+    CanvasTemplateInfo    m_entry;
+};
+
+TEST_F(TemplateCheckTest, AFreshTemplateIsUpToDate)
+{
+    EXPECT_EQ(m_entry.sha256, Platemaker::Infrastructure::FileMetaData::computeFileSha256(abs()))
+        << "generate() returns the hash of exactly what it wrote";
+    EXPECT_TRUE(check({m_profile}).upToDate());
+}
+
+TEST_F(TemplateCheckTest, AMissingFileIsReported)
+{
+    std::filesystem::remove(m_dir / m_entry.path);
+    const auto c = check({m_profile});
+    EXPECT_TRUE(c.fileMissing);
+    EXPECT_FALSE(c.changedOutside) << "nothing to hash";
+}
+
+TEST_F(TemplateCheckTest, AFileChangedOutsideIsReported)
+{
+    { std::ofstream out(m_dir / m_entry.path, std::ios::binary | std::ios::app); out << "x"; }
+    EXPECT_TRUE(check({m_profile}).changedOutside);
+
+    // An entry migrated from before hashes has none to compare, so it cannot say so.
+    m_entry.sha256.clear();
+    EXPECT_FALSE(check({m_profile}).changedOutside);
+}
+
+TEST_F(TemplateCheckTest, AChangedFieldIsNamedWithBothValues)
+{
+    m_profile.dpi = 72.0;
+    m_profile.canvasSize.width = 140;
+    const auto c = check({m_profile});
+    ASSERT_EQ(c.differences.size(), 2u);
+    EXPECT_EQ(c.differences[0].field, "cw");
+    EXPECT_EQ(c.differences[0].was, "120");
+    EXPECT_EQ(c.differences[0].now, "140");
+    EXPECT_EQ(c.differences[1].field, "dpi");
+    EXPECT_EQ(c.differences[1].was, "300");
+    EXPECT_EQ(c.differences[1].now, "72");
+}
+
+TEST_F(TemplateCheckTest, AnEntryIsCheckedAsItsOwnFormat)
+{
+    // The profile now asks for a PSD; its PNG is still a correct PNG — that PSD is simply not there.
+    m_profile.templateSettings.format = TemplateFormat::Psd;
+    EXPECT_TRUE(check({m_profile}).upToDate());
+}
+
+TEST_F(TemplateCheckTest, ASharedPathMattersOnlyWhenTheFileWasOverwritten)
+{
+    // Two profiles of one name tracked one file while they were identical; then one changed. The file
+    // still holds the other's template, byte for byte — that one is up to date.
+    auto other = m_profile;
+    other.id = "cp-2";
+    other.canvasSize.height = 220;
+    EXPECT_TRUE(check({m_profile, other}).upToDate()) << "the file is still this template's";
+
+    // The changed one regenerates into the same path: now this file holds the other's content, which the
+    // hash shows — reported as the namesake's doing, not as an edit made elsewhere.
+    const std::string otherSha = Platemaker::Core::TemplateGenerator{}.generate(
+        other, {}, abs(), Platemaker::Core::TemplateGenerator::optionsFor(other));
+    other.templates[0].sha256 = otherSha;
+    const auto c = check({m_profile, other});
+    EXPECT_EQ(c.sharedWith, "3p-m");
+    EXPECT_FALSE(c.changedOutside);
+
+    // An identical one may share it — the file would be the same — and a path differing only in case or
+    // slash is the same file on Windows.
+    auto twin = m_profile;
+    twin.id = "cp-3";
+    twin.templates[0].path = "Templates\\3P-M.png";
+    EXPECT_EQ(check({m_profile, twin}).sharedWith, "");
+}
+
+TEST_F(TemplateCheckTest, WithoutAHashTheLaterWriterDecides)
+{
+    // An entry migrated from before hashes cannot ask the file. It was overwritten if a different profile
+    // wrote the path later, with a template other than the one this entry needs.
+    m_entry.sha256.clear();
+    m_entry.generatedAt = "2026-10-11T12:00:00Z";
+    auto other = m_profile;
+    other.id = "cp-2";
+    other.canvasSize.height = 220;
+    other.templates[0].generatedAt = "2026-10-11T12:30:00Z";
+
+    other.templates[0].fingerprint = Platemaker::Core::TemplateGenerator::canvasSignature(other);
+    EXPECT_EQ(check({m_profile, other}).sharedWith, "3p-m") << "later, and not this template";
+
+    other.templates[0].fingerprint = m_entry.fingerprint;
+    EXPECT_TRUE(check({m_profile, other}).upToDate()) << "later, but written while the two were alike";
+
+    other.templates[0].fingerprint = Platemaker::Core::TemplateGenerator::canvasSignature(other);
+    other.templates[0].generatedAt = "2026-10-11T11:00:00Z";
+    EXPECT_TRUE(check({m_profile, other}).upToDate()) << "earlier: this one wrote over it, the file is its own";
+}
+
 } // namespace Platemaker::Models

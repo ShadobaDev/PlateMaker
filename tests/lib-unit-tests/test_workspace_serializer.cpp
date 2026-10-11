@@ -61,7 +61,7 @@ Models::Workspace makeMinimalWorkspace()
     output.dpi             = 96.0;   // not the default
 
     Models::Workspace ws;
-    ws.version         = 2;
+    ws.version         = 3;   // the current schema
     ws.outputDirectory = "/tmp/out";
     ws.stripDirty      = true;
     WorkspaceEditor ed(ws);
@@ -138,6 +138,51 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesOutputProfile)
     EXPECT_EQ(loaded.outputProfiles()[0].outputFormat, original.outputProfiles()[0].outputFormat);
     EXPECT_EQ(loaded.outputProfiles()[0].startIndex,   original.outputProfiles()[0].startIndex);
     EXPECT_EQ(loaded.outputProfiles()[0].dpi,          96.0);
+
+    std::filesystem::remove(tmp);
+}
+
+TEST(WorkspaceSerializerTest, AVersion2TemplateBecomesOneEntryOfItsFormat)
+{
+    // Version 2 tracked one file per profile under "templateInfo", with a signature that predates the
+    // resolution and the format. It loads as one entry of the file's format, its signature finished
+    // with what that file really is: 25.4 DPI (libvips' 1 px/mm) and its extension. No hash.
+    const WorkspaceSerializer ser;
+    const std::filesystem::path tmp =
+        std::filesystem::temp_directory_path() / "pm_test_v2_template.platemaker.json";
+    ser.save(makeMinimalWorkspace(), tmp.string());
+    nlohmann::json j;
+    { std::ifstream in(tmp); in >> j; }
+    j["version"] = 2;
+    auto& cp = j["canvasProfiles"][0];
+    cp.erase("templates");
+    cp["templateInfo"] = {{"path", "templates/Webtoon_Standard.png"},
+                          {"fingerprint", "cw=1600;ch=10240;mt=100;mr=100;mb=100;ml=100;vc=255,105,180,128;bg=0,0,0,0"},
+                          {"generatedAt", "2026-09-01T10:00:00Z"}};
+    { std::ofstream out(tmp); out << j.dump(2); }
+
+    const auto loaded = ser.load(tmp.string());
+    EXPECT_EQ(loaded.version, 3);
+    ASSERT_EQ(loaded.canvasProfiles()[0].templates.size(), 1u);
+    const auto& t = loaded.canvasProfiles()[0].templates[0];
+    EXPECT_EQ(t.path, "templates/Webtoon_Standard.png");
+    EXPECT_EQ(t.format, Models::TemplateFormat::Png);
+    EXPECT_EQ(t.fingerprint,
+              "cw=1600;ch=10240;mt=100;mr=100;mb=100;ml=100;vc=255,105,180,128;bg=0,0,0,0;dpi=25.4;fmt=png");
+    EXPECT_TRUE(t.sha256.empty());
+    EXPECT_EQ(t.generatedAt, "2026-09-01T10:00:00Z");
+
+    // A PSD tracked in version 2 (after the resolution was) keeps its signature's dpi, gains its format.
+    cp["templateInfo"] = {{"path", "templates/x.PSD"}, {"fingerprint", "cw=1;dpi=300"}};
+    { std::ofstream out(tmp); out << j.dump(2); }
+    const auto psd = ser.load(tmp.string()).canvasProfiles()[0].templates.at(0);
+    EXPECT_EQ(psd.format, Models::TemplateFormat::Psd);
+    EXPECT_EQ(psd.fingerprint, "cw=1;dpi=300;fmt=psd");
+
+    // An empty record was "no template": nothing to carry.
+    cp["templateInfo"] = {{"path", ""}};
+    { std::ofstream out(tmp); out << j.dump(2); }
+    EXPECT_TRUE(ser.load(tmp.string()).canvasProfiles()[0].templates.empty());
 
     std::filesystem::remove(tmp);
 }

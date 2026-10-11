@@ -16,6 +16,7 @@
 
 #include "platemaker/platemaker_export.h"
 
+#include <cstddef>
 #include <string>
 
 namespace Platemaker::Infrastructure {
@@ -32,6 +33,10 @@ namespace Platemaker::Infrastructure {
 class PLATEMAKER_EXPORT FileMetaData {
 public:
     static std::string computeFileSha256(const std::string& filePath);
+
+    /// SHA-256 of \p size bytes at \p data, as lowercase hex — for bytes about to be written, where
+    /// reading the file back could see a stale copy (a synced folder).
+    static std::string computeSha256(const void* data, std::size_t size);
 
 public:
     FileMetaData() = delete;

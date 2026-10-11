@@ -76,7 +76,7 @@ public:
      *
      * The backing vector is private and mutated **only** through
      * \c Infrastructure::WorkspaceEditor, which enforces the palette invariants (unique ids,
-     * no duplicate identifiers surviving a load, \c templateInfo carried across a replace).
+     * no duplicate identifiers surviving a load, \c templates carried across a replace).
      * Direct mutation used to be possible from the CLI/GUI, which meant an in-session edit was
      * not validated the way a loaded file is — this accessor closes that hole while keeping
      * reads (\c .front() / \c .size() / iteration) as cheap as before.

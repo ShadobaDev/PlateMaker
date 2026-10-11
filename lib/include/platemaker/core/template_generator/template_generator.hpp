@@ -15,6 +15,7 @@
 #define PLATEMAKER_CORE_TEMPLATE_GENERATOR_HPP
 
 #include <string>
+#include <vector>
 
 #include "platemaker/platemaker_export.h"
 
@@ -38,6 +39,28 @@ struct TemplateOptions {
     TemplateFormat format = TemplateFormat::Png;
     /// PSD only: an empty layer named "Layer" above the template, ready to draw on. Ignored for PNG.
     bool emptyLayer = false;
+};
+
+/// One field of a template's signature that changed since the template was generated.
+struct TemplateDifference {
+    std::string field; //!< The signature's tag: cw, ch, mt, mr, mb, ml, vc, bg, dpi, fmt, layer.
+    std::string was;   //!< Its value in the template ("" when the template predates the field).
+    std::string now;   //!< Its value the profile asks for now.
+};
+
+/**
+ * \brief Why a tracked template is not up to date — every reason found, none when it is.
+ */
+struct TemplateCheck {
+    bool        fileMissing    = false; //!< The file is not on disk.
+    std::string sharedWith;             //!< A different profile (this name), tracking the same file, overwrote it with its own template.
+    bool        changedOutside = false; //!< The file's bytes are not the ones written, and no namesake explains it (only known when a hash was recorded).
+    std::vector<TemplateDifference> differences; //!< Signature fields that changed, in signature order.
+
+    [[nodiscard]] bool upToDate() const noexcept
+    {
+        return !fileMissing && sharedWith.empty() && !changedOutside && differences.empty();
+    }
 };
 
 /**
@@ -81,11 +104,15 @@ public:
      *                      extension. Parent directories must already exist.
      * \param options       How the file is written: resolution, format, an empty layer.
      *
+     * \return The SHA-256 (hex) of the bytes written — computed from them in memory, not by reading the
+     *         file back, which in a synced folder may still be the old copy. Record it in
+     *         CanvasTemplateInfo::sha256 so check() can tell a file changed outside the application.
+     *
      * \throws std::invalid_argument if the canvas size or margins are degenerate, the dpi is not positive,
      *                               or a PSD side exceeds 30000 px.
      * \throws std::runtime_error    if the image cannot be written to \p outputPath.
      */
-    void generate(
+    std::string generate(
         const Models::CanvasProfile& canvasProfile,
         const Models::OutputProfile& outputProfile,
         const std::string&           outputPath,
@@ -113,6 +140,27 @@ public:
      */
     [[nodiscard]] static std::string canvasSignature(
         const Models::CanvasProfile& canvasProfile);
+
+    /**
+     * \brief canvasSignature() of \p canvasProfile written as \p format — the signature a template file
+     *        of that format should carry, whatever format the profile asks for now.
+     */
+    [[nodiscard]] static std::string templateSignature(
+        const Models::CanvasProfile& canvasProfile, Models::TemplateFormat format);
+
+    /**
+     * \brief Checks one tracked template of \p canvasProfile against the profile and the file.
+     *
+     * \param palette       Every canvas profile of the workspace, to find a different profile tracking
+     *                      the same file (an identical one sharing it is fine — the file would be the same).
+     * \param canvasProfile The profile \p entry belongs to.
+     * \param entry         One of its CanvasProfile::templates.
+     * \param absolutePath  \p entry's file, resolved against the workspace folder (UTF-8).
+     */
+    [[nodiscard]] static TemplateCheck check(const std::vector<Models::CanvasProfile>& palette,
+                                             const Models::CanvasProfile&              canvasProfile,
+                                             const Models::CanvasTemplateInfo&         entry,
+                                             const std::string&                        absolutePath);
 };
 
 } // namespace Platemaker::Core

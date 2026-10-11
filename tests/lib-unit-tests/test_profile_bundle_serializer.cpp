@@ -2,7 +2,7 @@
  * \file
  * \brief Unit tests for ProfileBundleSerializer — the portable profile-set (.platemaker.profiles.json).
  *
- * Pins the round trip and the two bundle invariants applied on write (no templateInfo, no presets),
+ * Pins the round trip and the two bundle invariants applied on write (no templates, no presets),
  * plus version validation and the on-disk save/load path.
  *
  * \author ShadobaDev <shadobadev@gmail.com>
@@ -34,7 +34,11 @@ Models::CanvasProfile canvas(std::string id, std::string name, int w, int h,
     cp.name              = std::move(name);
     cp.canvasSize        = {w, h};
     cp.margins           = {10, 20, 30, 40};
-    cp.templateInfo.path = std::move(templatePath);
+    if (!templatePath.empty()) {
+        Models::CanvasTemplateInfo t;
+        t.path = std::move(templatePath);
+        cp.templates.push_back(std::move(t));
+    }
     return cp;
 }
 
@@ -83,7 +87,7 @@ TEST(ProfileBundleSerializerTest, RoundTripPreservesFields)
     EXPECT_EQ(b.outputProfiles[0].dpi, 150.0);
 }
 
-TEST(ProfileBundleSerializerTest, SerializeStripsTemplateInfo)
+TEST(ProfileBundleSerializerTest, SerializeStripsTemplates)
 {
     Infrastructure::ProfileBundleSerializer s;
 
@@ -92,7 +96,7 @@ TEST(ProfileBundleSerializerTest, SerializeStripsTemplateInfo)
     const auto b = s.deserialize(text);
 
     ASSERT_EQ(b.canvasProfiles.size(), 1u);
-    EXPECT_TRUE(b.canvasProfiles[0].templateInfo.path.empty()); // never carried in a bundle
+    EXPECT_TRUE(b.canvasProfiles[0].templates.empty()); // never carried in a bundle
 }
 
 TEST(ProfileBundleSerializerTest, SerializeDropsPresetOutputProfiles)

@@ -15,36 +15,38 @@
 #define PLATEMAKER_MODELS_CANVAS_PROFILE_HPP
 
 #include <string>
+#include <vector>
 #include "platemaker/platemaker_export.h"
 #include <platemaker/models/common_types.hpp>
 
 namespace Platemaker::Models {
 
-/**
- * \struct CanvasTemplateInfo
- * \brief Bookkeeping for the PNG template last generated from a CanvasProfile.
- *
- * Stored inside the workspace (per canvas profile) so a workspace tracks only its
- * own templates.  \c path is kept **relative to the workspace directory** so the
- * workspace folder stays portable.  An empty \c path means "no template generated
- * yet".
- *
- * \c fingerprint is the template's signature (see TemplateGenerator::canvasSignature()):
- * the canvas, its resolution and the template settings, captured at generation time.
- * Comparing it against the current profile's signature tells the GUI whether the
- * template is still up to date — the output profile is deliberately not part of a
- * template's identity.
- */
-struct CanvasTemplateInfo {
-    std::string path;        //!< Template PNG path, relative to the workspace dir (empty = none).
-    std::string fingerprint; //!< Template signature (canvas, dpi, template settings) at generation time.
-    std::string generatedAt; //!< ISO 8601 timestamp of the last generation.
-};
-
 /// The file a template is written as.
 enum class TemplateFormat {
     Png, //!< One flat image, to place on a canvas as a reference.
     Psd, //!< A layered document that opens as a canvas of exactly this size, with nothing to place.
+};
+
+/**
+ * \struct CanvasTemplateInfo
+ * \brief Bookkeeping for one template file generated from a CanvasProfile — one per format.
+ *
+ * Stored inside the workspace (per canvas profile) so a workspace tracks only its
+ * own templates.  \c path is kept **relative to the workspace directory** so the
+ * workspace folder stays portable.
+ *
+ * \c fingerprint is the template's signature (see TemplateGenerator::canvasSignature())
+ * — the canvas, its resolution and the template settings — captured at generation time;
+ * \c sha256 is the hash of the bytes written.  Against the current profile and the file on
+ * disk they tell whether the template is still up to date (TemplateGenerator::check()) — the
+ * output profile is deliberately not part of a template's identity.
+ */
+struct CanvasTemplateInfo {
+    std::string    path;                          //!< Template path, relative to the workspace dir.
+    TemplateFormat format = TemplateFormat::Png;  //!< What the file is; one entry per format.
+    std::string    fingerprint;                   //!< Template signature at generation time.
+    std::string    sha256;                        //!< Hash of the bytes written; empty = unknown (a migrated entry).
+    std::string    generatedAt;                   //!< ISO 8601 timestamp of the last generation.
 };
 
 /**
@@ -125,12 +127,13 @@ public:
     RGBA backgroundColour = {0, 0, 0, 0};
 
     /**
-     * \brief Bookkeeping for the template PNG generated from this profile.
+     * \brief Bookkeeping for the templates generated from this profile: at most one per format,
+     *        so a PNG and a PSD can live side by side.
      *
-     * An empty \c templateInfo.path means no template has been generated yet.
-     * Not used by the library itself — maintained by the GUI/CLI layer.
+     * Empty means no template has been generated yet. Maintained by the GUI/CLI layer; the
+     * library reads it to check a template (TemplateGenerator::check()) and to package it.
      */
-    CanvasTemplateInfo templateInfo;
+    std::vector<CanvasTemplateInfo> templates;
 
     CanvasTemplateSettings templateSettings; //!< How the template is written (format, an empty layer).
 
@@ -147,7 +150,45 @@ public:
      * \return Size The pixel dimensions of the safe drawing area.
      */
     [[nodiscard]] Size safeArea() const noexcept;
+
+    /// The tracked template in \p format, or \c nullptr when none was generated in it.
+    [[nodiscard]] const CanvasTemplateInfo* templateIn(TemplateFormat format) const noexcept;
 };
+
+// ---------------------------------------------------------------------------
+// Telling profiles apart
+// ---------------------------------------------------------------------------
+
+/// What a profile means besides its name, in the order that best tells two apart.
+enum class ProfileField {
+    CanvasSize,       //!< canvasSize
+    Margins,          //!< margins
+    Dpi,              //!< dpi
+    TemplateSettings, //!< templateSettings (format, empty layer)
+    Colours,          //!< visualColour, backgroundColour
+};
+
+/**
+ * \brief How a profile stands among others of the same name (names may repeat).
+ */
+struct ProfileDistinction {
+    bool duplicate = false;              //!< Identical to another profile of its name in every field.
+    std::vector<ProfileField> differs;   //!< Fields that set it apart from the others of its name, in enum order.
+};
+
+/**
+ * \brief Compares \p cp with the other profiles in \p palette that share its name.
+ *
+ * Names compare without case (ASCII), as files named after them do on Windows. "The others" are those
+ * with another id; a profile without an id (not saved yet) is compared with all. A unique name gives
+ * an empty result. Neither the id, the name nor templates nor hintUserSafeAreaSelect count — only what
+ * the profile means (ProfileField).
+ */
+[[nodiscard]] PLATEMAKER_EXPORT ProfileDistinction distinguishProfile(
+    const std::vector<CanvasProfile>& palette, const CanvasProfile& cp);
+
+/// True when \p a and \p b mean the same, whatever their names: equal in every ProfileField.
+[[nodiscard]] PLATEMAKER_EXPORT bool sameProfileContent(const CanvasProfile& a, const CanvasProfile& b);
 
 // ---------------------------------------------------------------------------
 // Render-relevant identity

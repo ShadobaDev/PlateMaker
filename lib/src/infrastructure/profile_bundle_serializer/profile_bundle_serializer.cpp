@@ -3,7 +3,7 @@
  * \brief ProfileBundleSerializer implementation — JSON round-trip for a portable profile set.
  *
  * Reuses the shared Models JSON codec (infrastructure/model_json) so a bundle and a workspace agree
- * on how a CanvasProfile / OutputProfile is written. The two bundle invariants (no templateInfo, no
+ * on how a CanvasProfile / OutputProfile is written. The two bundle invariants (no templates, no
  * presets) are applied here on write, so a file on disk always satisfies them.
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
@@ -46,10 +46,10 @@ std::string ProfileBundleSerializer::serialize(
     const std::vector<Models::OutputProfile>& outputProfiles) const
 {
     // Enforce the bundle invariants on write: a canvas profile loses its workspace-relative
-    // templateInfo, and any preset-id output profile is dropped (presets are code-defined).
+    // templates, and any preset-id output profile is dropped (presets are code-defined).
     std::vector<Models::CanvasProfile> canvas = canvasProfiles;
     for (auto& cp : canvas)
-        cp.templateInfo = {};
+        cp.templates.clear();
 
     std::vector<Models::OutputProfile> output;
     output.reserve(outputProfiles.size());

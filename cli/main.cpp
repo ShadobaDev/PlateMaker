@@ -691,7 +691,7 @@ static int cmdWorkspaceModProfile(const Opts& opts)
     }
 
     // The palette is edited through WorkspaceEditor, which owns its invariants; mutate a copy in
-    // place, then hand the whole list back via replaceCanvasProfiles (it preserves ids/templateInfo).
+    // place, then hand the whole list back via replaceCanvasProfiles (it preserves ids/templates).
     auto           profiles = ws.canvasProfiles(); // copy
     CanvasProfile* cp        = nullptr;
     for (auto& p : profiles)
@@ -990,7 +990,7 @@ static int cmdWorkspaceExportProfiles(const Opts& opts)
     }
 
     // Copy the palettes out of the workspace (the accessors return const views). Presets and
-    // templateInfo are stripped by the serializer, so nothing to clean up here.
+    // templates are stripped by the serializer, so nothing to clean up here.
     std::vector<CanvasProfile> canvas(ws.canvasProfiles().begin(), ws.canvasProfiles().end());
     std::vector<OutputProfile> output(ws.outputProfiles().begin(), ws.outputProfiles().end());
 

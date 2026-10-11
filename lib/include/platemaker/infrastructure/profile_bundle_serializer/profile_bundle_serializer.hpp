@@ -10,7 +10,7 @@
  * the consumer's concern — the library never chooses a location.
  *
  * Two invariants of a bundle, enforced on write:
- *  - \b No \c CanvasTemplateInfo. A template's path is relative to a specific workspace directory and
+ *  - \b No \c CanvasTemplateInfo (CanvasProfile::templates). A template's path is relative to a specific workspace directory and
  *    is meaningless outside it, so it is stripped — a bundle profile always reads as "no template".
  *  - \b No presets. Output presets are code-defined and resolved from the catalogue, never persisted,
  *    so any preset-id profile handed in is dropped (mirrors WorkspaceEditor::replaceOutputProfiles).
@@ -47,7 +47,7 @@ namespace Platemaker::Infrastructure {
  * \c WorkspaceEditor::importProfiles(). Nothing else is stored in a bundle.
  */
 struct ProfileBundle {
-    std::vector<Models::CanvasProfile> canvasProfiles; //!< Canvas profiles (templateInfo already stripped).
+    std::vector<Models::CanvasProfile> canvasProfiles; //!< Canvas profiles (templates already stripped).
     std::vector<Models::OutputProfile> outputProfiles; //!< Output profiles (presets already dropped).
 };
 
@@ -66,7 +66,7 @@ public:
     /**
      * \brief Serialises the given palettes to the canonical bundle JSON string.
      *
-     * Strips \c CanvasTemplateInfo from every canvas profile and drops any output profile carrying a
+     * Strips the templates from every canvas profile and drops any output profile carrying a
      * baked-in preset id, so the returned text already satisfies the bundle invariants.
      *
      * \return The pretty-printed JSON representation.
@@ -87,7 +87,7 @@ public:
     /**
      * \brief Saves the given palettes to a \c .platemaker.profiles.json file (atomic write).
      *
-     * \param canvasProfiles Canvas palette to write (templateInfo stripped).
+     * \param canvasProfiles Canvas palette to write (templates stripped).
      * \param outputProfiles Output palette to write (presets dropped).
      * \param filePath       Absolute path of the destination file; created or overwritten.
      * \throws std::runtime_error if the file cannot be written.

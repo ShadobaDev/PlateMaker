@@ -22,7 +22,7 @@ std::string FileMetaData::computeFileSha256(const std::string& filePath)
 {
     // Through utf8ToPath(): opening from the narrow string sent the bytes to fopen(), which
     // reads them in the ANSI code page, so any path with a non-ASCII character (a Polish
-    // "Mój dysk", an accented user name) failed to open and hashed to nothing.
+    // "Mój dysk") failed to open and hashed to nothing.
     std::ifstream file(utf8ToPath(filePath), std::ios::binary);
     if (!file) return {};
 
@@ -34,6 +34,15 @@ std::string FileMetaData::computeFileSha256(const std::string& filePath)
             static_cast<gssize>(file.gcount()));
         if (!file && !file.eof()) break; // IO error mid-file
     }
+    const std::string result = g_checksum_get_string(cs); // GLib owns the string
+    g_checksum_free(cs);
+    return result;
+}
+
+std::string FileMetaData::computeSha256(const void* data, std::size_t size)
+{
+    GChecksum* cs = g_checksum_new(G_CHECKSUM_SHA256);
+    g_checksum_update(cs, static_cast<const guchar*>(data), static_cast<gssize>(size));
     const std::string result = g_checksum_get_string(cs); // GLib owns the string
     g_checksum_free(cs);
     return result;

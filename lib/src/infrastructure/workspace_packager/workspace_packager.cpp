@@ -347,9 +347,12 @@ PackagePlan WorkspacePackager::plan(const Models::Workspace& workspace, const st
     }
 
     // Templates are named relative to the workspace folder already; a relative one is simply in it.
+    // Every format a profile has is packaged: a PNG and a PSD are both the user's.
     for (auto& profile : j["canvasProfiles"])
-        if (auto& info = profile["templateInfo"]; info.is_object() && !info.value("path", std::string{}).empty())
-            planner.refer(info["path"], k_externalDir, {});
+        if (auto& templates = profile["templates"]; templates.is_array())
+            for (auto& info : templates)
+                if (info.is_object() && !info.value("path", std::string{}).empty())
+                    planner.refer(info["path"], k_externalDir, {});
 
     planner.settle();
     plan.workspaceJson = j.dump(4);

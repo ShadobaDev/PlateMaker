@@ -46,7 +46,7 @@ namespace Platemaker::Infrastructure {
 
 namespace {
     /// Current on-disk schema version.  Increment on every breaking schema change.
-    constexpr int k_currentVersion = 2;
+    constexpr int k_currentVersion = 3;
 
 // The identifier-repair helpers (mintMissingProfileIds / deduplicateIds /
 // migrateOutputProfilePresets / relinkProfileId) that used to live here now belong to
@@ -361,6 +361,11 @@ void WorkspaceSerializer::migrate(
     //           added OutputProfile::id (back-compat: empty string for profiles missing it);
     //           added ProjectItem::canvasProfileIds and outputProfileId (default: empty).
     //           All handled in from_json with j.contains() guards — no in-place fixup needed.
+    // v2 → v3: CanvasProfile::templateInfo (one file) became templates (one entry per format), with
+    //           sha256 and format added. Handled in from_json (the "templateInfo" key, finished by
+    //           migratedTemplateInfo) — no in-place fixup needed.
+    if (fromVersion < 3)
+        workspace.version = k_currentVersion;
     if (fromVersion < 2) {
         workspace.version = k_currentVersion;
         // Ids for profiles deserialised without one are minted by mintMissingProfileIds()

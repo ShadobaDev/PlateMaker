@@ -344,7 +344,7 @@ TEST(WorkspacePackager, APlanPlacesEveryFileOnceAndCarriesNoRender)
         const std::string id = ed.addCanvasProfile(canvas);
         Models::CanvasTemplateInfo info;
         info.path = "templates/3p-m.png";             // relative to the workspace folder, as the GUI writes it
-        ed.setCanvasProfileTemplateInfo(id, info);
+        ed.setCanvasProfileTemplates(id, {info});
     }
 
     Models::ProjectItem one;
@@ -429,7 +429,7 @@ TEST(WorkspacePackager, APlanPlacesEveryFileOnceAndCarriesNoRender)
     EXPECT_EQ(p2.getInputImages()[0].filePath, g(root / "inputs" / "001 (2).png"));
     EXPECT_EQ(p2.getInputImages()[1].filePath, g(root / "inputs" / "001.png"));   // the shared page, once
 
-    EXPECT_EQ(copy.canvasProfiles().at(0).templateInfo.path, "templates/3p-m.png");
+    EXPECT_EQ(copy.canvasProfiles().at(0).templates.at(0).path, "templates/3p-m.png");
 }
 
 TEST(WorkspacePackager, APackageMirrorsTheWorkspaceFolderAndBringsTheRestIn)

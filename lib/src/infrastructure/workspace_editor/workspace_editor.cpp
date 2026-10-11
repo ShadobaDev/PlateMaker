@@ -171,12 +171,12 @@ bool WorkspaceEditor::removeCanvasProfile(const std::string& id)
 WorkspaceRepairReport WorkspaceEditor::replaceCanvasProfiles(
     std::vector<Models::CanvasProfile> incoming)
 {
-    // Carry templateInfo from the current profile of the same id — the workspace is the source
+    // Carry templates from the current profile of the same id — the workspace is the source
     // of truth (a manage dialog drops the field on its round trip, and may carry a stale copy).
     for (auto& p : incoming) {
         for (const auto& cur : m_ws.m_canvasProfiles) {
             if (!cur.id.empty() && cur.id == p.id) {
-                p.templateInfo = cur.templateInfo;
+                p.templates = cur.templates;
                 break;
             }
         }
@@ -193,12 +193,12 @@ WorkspaceRepairReport WorkspaceEditor::replaceCanvasProfiles(
     return report;
 }
 
-bool WorkspaceEditor::setCanvasProfileTemplateInfo(const std::string& id,
-                                                   Models::CanvasTemplateInfo info)
+bool WorkspaceEditor::setCanvasProfileTemplates(const std::string& id,
+                                                std::vector<Models::CanvasTemplateInfo> templates)
 {
     for (auto& cp : m_ws.m_canvasProfiles) {
         if (cp.id == id) {
-            cp.templateInfo = std::move(info);
+            cp.templates = std::move(templates);
             return true;
         }
     }
@@ -257,11 +257,11 @@ ImportProfilesReport WorkspaceEditor::importProfiles(std::vector<Models::CanvasP
 {
     ImportProfilesReport report;
 
-    // Canvas: templateInfo is workspace-local (a path relative to the source), so drop it — an
+    // Canvas: templates are workspace-local (paths relative to the source), so drop them — an
     // imported profile has no template here yet. addCanvasProfile mints a fresh unique id.
     report.canvasIds.reserve(canvas.size());
     for (auto& cp : canvas) {
-        cp.templateInfo = {};
+        cp.templates.clear();
         report.canvasIds.push_back(addCanvasProfile(std::move(cp)));
     }
 
@@ -431,13 +431,13 @@ void WorkspaceEditor::restoreMeta(const std::string& snapshot)
     const nlohmann::json j = nlohmann::json::parse(snapshot);
 
     // Reinstall the palettes through the validated setters: ids preserved, presets stripped, and
-    // (for canvas) templateInfo carried from the current profile of the same id. The carry heuristic
-    // is not exact, so re-apply each snapshot's templateInfo explicitly afterwards — this makes an
+    // (for canvas) templates carried from the current profile of the same id. The carry heuristic
+    // is not exact, so re-apply each snapshot's templates explicitly afterwards — this makes an
     // undo of template generation/deletion restore the exact recorded value.
     auto canvas = j.at("canvasProfiles").get<std::vector<Models::CanvasProfile>>();
     replaceCanvasProfiles(canvas);
     for (const auto& cp : canvas)
-        setCanvasProfileTemplateInfo(cp.id, cp.templateInfo);
+        setCanvasProfileTemplates(cp.id, cp.templates);
 
     replaceOutputProfiles(j.at("outputProfiles").get<std::vector<Models::OutputProfile>>());
 

@@ -11,6 +11,7 @@
  * \copyright Copyright (c) 2026 ShadobaDev
  */
 
+#include <cctype>
 #include "infrastructure/model_json/model_json.hpp"
 
 #include <stdexcept>
@@ -98,15 +99,46 @@ void from_json(const nlohmann::json& j, WebpOptions& v) {
 void to_json(nlohmann::json& j, const CanvasTemplateInfo& v) {
     j = nlohmann::json{
         {"path",        v.path},
+        {"format",      v.format},
         {"fingerprint", v.fingerprint},
+        {"sha256",      v.sha256},
         {"generatedAt", v.generatedAt}
     };
 }
 void from_json(const nlohmann::json& j, CanvasTemplateInfo& v) {
     if (j.contains("path"))        j.at("path").get_to(v.path);
     if (j.contains("fingerprint")) j.at("fingerprint").get_to(v.fingerprint);
+    if (j.contains("sha256"))      j.at("sha256").get_to(v.sha256);
     if (j.contains("generatedAt")) j.at("generatedAt").get_to(v.generatedAt);
+    if (j.contains("format")) {
+        j.at("format").get_to(v.format);
+    } else {
+        // A version-2 entry recorded no format: the file's extension says what it is.
+        const auto dot = v.path.find_last_of('.');
+        std::string ext = dot == std::string::npos ? std::string{} : v.path.substr(dot + 1);
+        for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        v.format = ext == "psd" ? TemplateFormat::Psd : TemplateFormat::Png;
+    }
 }
+
+namespace {
+
+// A version-2 workspace tracked one template per profile, under "templateInfo", with a signature that
+// may predate the fields added since. Finish it with what that file really is, so the template checks
+// as outdated for the right reason ("DPI 25.4 → 300") rather than a missing one: a file written before
+// the resolution was recorded is 25.4 DPI (libvips' 1 px/mm), and its extension names its format. A
+// PSD's empty layer was never recorded and stays missing — unknown, so that template is outdated too.
+CanvasTemplateInfo migratedTemplateInfo(CanvasTemplateInfo t)
+{
+    if (!t.fingerprint.empty()) {
+        if (t.fingerprint.find(";dpi=") == std::string::npos) t.fingerprint += ";dpi=25.4";
+        if (t.fingerprint.find(";fmt=") == std::string::npos)
+            t.fingerprint += t.format == TemplateFormat::Psd ? ";fmt=psd" : ";fmt=png";
+    }
+    return t;
+}
+
+} // namespace
 
 // --- CanvasTemplateSettings ---
 void to_json(nlohmann::json& j, const CanvasTemplateSettings& v) {
@@ -131,7 +163,7 @@ void to_json(nlohmann::json& j, const CanvasProfile& v) {
         {"visualColour",           v.visualColour},
         {"backgroundColour",       v.backgroundColour},
         {"hintUserSafeAreaSelect", v.hintUserSafeAreaSelect},
-        {"templateInfo",           v.templateInfo},
+        {"templates",              v.templates},
         {"templateSettings",       v.templateSettings}
     };
 }
@@ -150,8 +182,13 @@ void from_json(const nlohmann::json& j, CanvasProfile& v) {
         j.at("backgroundColour").get_to(v.backgroundColour);
     if (j.contains("hintUserSafeAreaSelect"))
         j.at("hintUserSafeAreaSelect").get_to(v.hintUserSafeAreaSelect);
-    if (j.contains("templateInfo"))
-        j.at("templateInfo").get_to(v.templateInfo);
+    if (j.contains("templates")) {
+        j.at("templates").get_to(v.templates);
+    } else if (j.contains("templateInfo")) {                  // version 2: one tracked file
+        const auto legacy = j.at("templateInfo").get<CanvasTemplateInfo>();
+        if (!legacy.path.empty())
+            v.templates.push_back(migratedTemplateInfo(legacy));
+    }
     if (j.contains("templateSettings"))                       // additive
         j.at("templateSettings").get_to(v.templateSettings);
 }

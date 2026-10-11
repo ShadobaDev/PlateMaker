@@ -14,18 +14,28 @@
  */
 
 #include <platemaker/core/template_generator/template_generator.hpp>
+#include <platemaker/infrastructure/file/file_meta_data.hpp>
+#include <platemaker/infrastructure/file/path_utf8.hpp>
 
 #include <vips/vips.h>
 
-// minipsd's functions stay private to this file: the lib exports none of them.
+// minipsd's functions stay private to this file: the lib exports none of them. The bytes go to memory
+// (to be hashed, then written), so its file writer is left out.
 #define MINIPSD_STATIC
+#define MINIPSD_NO_STDIO
 #define MINIPSD_IMPLEMENTATION
 #include "infrastructure/psd_writer/minipsd.h"
 
+#include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace Platemaker::Core {
 
@@ -57,8 +67,10 @@ void fillRect(VipsImage* img,
         vips_error_clear(); // non-fatal, best-effort
 }
 
-/// Writes the drawn canvas as a PSD: the template layer, and an empty one above it on request.
-void savePsd(VipsImage* canvas, const TemplateOptions& options, const std::string& outputPath)
+using Bytes = std::vector<std::uint8_t>;
+
+/// Encodes the drawn canvas as a PSD: the template layer, and an empty one above it on request.
+Bytes encodePsd(VipsImage* canvas, const TemplateOptions& options)
 {
     const minipsd_layer layers[2] = {
         {"Template", static_cast<const uint8_t*>(VIPS_IMAGE_ADDR(canvas, 0, 0)), 255, 0},
@@ -72,14 +84,65 @@ void savePsd(VipsImage* canvas, const TemplateOptions& options, const std::strin
     doc.layer_count = options.emptyLayer ? 2 : 1;
     doc.compression = MINIPSD_RLE;
 
-    const int rc = minipsd_write_file(&doc, outputPath.c_str());
+    Bytes bytes;
+    const auto append = [](void* user, const void* data, size_t size) -> int {
+        auto* out = static_cast<Bytes*>(user);
+        const auto* p = static_cast<const std::uint8_t*>(data);
+        out->insert(out->end(), p, p + size);
+        return 1;
+    };
+    const int rc = minipsd_write(&doc, append, &bytes);
     if (rc == MINIPSD_ERR_SIZE)
         throw std::invalid_argument(
             "TemplateGenerator: a PSD side cannot exceed " + std::to_string(MINIPSD_MAX_SIDE) + " px, got " +
             std::to_string(doc.width) + "x" + std::to_string(doc.height));
     if (rc != MINIPSD_OK)
-        throw std::runtime_error(
-            "TemplateGenerator: cannot save PSD to '" + outputPath + "': " + minipsd_error_string(rc));
+        throw std::runtime_error(std::string("TemplateGenerator: cannot encode the PSD: ") + minipsd_error_string(rc));
+    return bytes;
+}
+
+/// Encodes the drawn canvas as a PNG (lossless; alpha and the resolution kept).
+Bytes encodePng(VipsImage* canvas)
+{
+    void*  buf = nullptr;
+    size_t len = 0;
+    if (vips_pngsave_buffer(canvas, &buf, &len, nullptr) != 0) {
+        const std::string err = vips_error_buffer();
+        vips_error_clear();
+        throw std::runtime_error("TemplateGenerator: cannot encode the PNG: " + err);
+    }
+    Bytes bytes(static_cast<const std::uint8_t*>(buf), static_cast<const std::uint8_t*>(buf) + len);
+    g_free(buf);
+    return bytes;
+}
+
+/// "k=v;k=v" into its pairs, in order.
+std::vector<std::pair<std::string, std::string>> signatureFields(const std::string& signature)
+{
+    std::vector<std::pair<std::string, std::string>> fields;
+    std::size_t start = 0;
+    while (start < signature.size()) {
+        std::size_t end = signature.find(';', start);
+        if (end == std::string::npos) end = signature.size();
+        const std::string part = signature.substr(start, end - start);
+        const auto eq = part.find('=');
+        if (eq != std::string::npos) fields.emplace_back(part.substr(0, eq), part.substr(eq + 1));
+        start = end + 1;
+    }
+    return fields;
+}
+
+/// Two workspace-relative paths name the same file — as Windows sees them: either slash, any case.
+bool samePath(const std::string& a, const std::string& b)
+{
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        auto norm = [](char c) {
+            return c == '\\' ? '/' : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        };
+        if (norm(a[i]) != norm(b[i])) return false;
+    }
+    return true;
 }
 
 } // anonymous namespace
@@ -88,7 +151,7 @@ void savePsd(VipsImage* canvas, const TemplateOptions& options, const std::strin
 // TemplateGenerator::generate
 // ---------------------------------------------------------------------------
 
-void TemplateGenerator::generate(
+std::string TemplateGenerator::generate(
     const Models::CanvasProfile& canvasProfile,
     const Models::OutputProfile& outputProfile,
     const std::string&           outputPath,
@@ -226,24 +289,24 @@ void TemplateGenerator::generate(
 #endif
 
     // -----------------------------------------------------------------------
-    // 5. Save, losslessly with alpha: a layered PSD, or a PNG.
+    // 5. Save, losslessly with alpha: a layered PSD, or a PNG — encoded in memory, so the hash is of
+    //    exactly the bytes written.
     // -----------------------------------------------------------------------
-    if (options.format == TemplateFormat::Psd) {
-        try {
-            savePsd(canvas, options, outputPath);
-        } catch (...) {
-            g_object_unref(canvas);
-            throw;
-        }
-    } else if (vips_pngsave(canvas, outputPath.c_str(), nullptr) != 0) {
+    Bytes bytes;
+    try {
+        bytes = options.format == TemplateFormat::Psd ? encodePsd(canvas, options) : encodePng(canvas);
+    } catch (...) {
         g_object_unref(canvas);
-        const std::string err = vips_error_buffer();
-        vips_error_clear();
-        throw std::runtime_error(
-            "TemplateGenerator: cannot save PNG to '" + outputPath + "': " + err);
+        throw;
     }
-
     g_object_unref(canvas);
+
+    std::ofstream out(Infrastructure::utf8ToPath(outputPath), std::ios::binary | std::ios::trunc);
+    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    out.close();
+    if (!out)
+        throw std::runtime_error("TemplateGenerator: cannot write '" + outputPath + "'");
+    return Infrastructure::FileMetaData::computeSha256(bytes.data(), bytes.size());
 }
 
 #undef GUIDELINES_ENABLED
@@ -262,6 +325,11 @@ TemplateOptions TemplateGenerator::optionsFor(const Models::CanvasProfile& cp)
 // ---------------------------------------------------------------------------
 
 std::string TemplateGenerator::canvasSignature(const Models::CanvasProfile& cp)
+{
+    return templateSignature(cp, cp.templateSettings.format);
+}
+
+std::string TemplateGenerator::templateSignature(const Models::CanvasProfile& cp, Models::TemplateFormat format)
 {
     // Deterministic, human-inspectable concatenation of the fields that define
     // the rendered template. Field tags guard against ambiguous concatenations.
@@ -284,11 +352,62 @@ std::string TemplateGenerator::canvasSignature(const Models::CanvasProfile& cp)
     s += ";dpi=" + Models::signatureDecimal(cp.dpi);
     // How the file is written is part of what it is: a PNG is not the PSD the profile now asks for. The
     // empty layer only exists in a PSD, so a PNG's signature ignores that setting.
-    const bool psd = cp.templateSettings.format == Models::TemplateFormat::Psd;
+    const bool psd = format == Models::TemplateFormat::Psd;
     s += psd ? ";fmt=psd" : ";fmt=png";
     if (psd)
         s += cp.templateSettings.emptyLayer ? ";layer=1" : ";layer=0";
     return s;
+}
+
+// ---------------------------------------------------------------------------
+// check — is one tracked template still what the profile asks for?
+// ---------------------------------------------------------------------------
+
+TemplateCheck TemplateGenerator::check(const std::vector<Models::CanvasProfile>& palette,
+                                       const Models::CanvasProfile&              cp,
+                                       const Models::CanvasTemplateInfo&         entry,
+                                       const std::string&                        absolutePath)
+{
+    TemplateCheck c;
+
+    std::error_code ec;
+    c.fileMissing = !std::filesystem::exists(Infrastructure::utf8ToPath(absolutePath), ec);
+
+    // A path two profiles track is a problem only for the one whose file now holds the other's content:
+    // while both were identical — or before the other wrote — the bytes are still this template's.
+    //  - With a recorded hash the file says it itself: it is this entry's while the hash matches; if
+    //    not, and another profile tracks the path, that profile overwrote it (not an edit elsewhere).
+    //  - Without one (an entry migrated from before hashes), it was overwritten if another profile
+    //    wrote the path later, with a signature other than the one this entry needs.
+    const std::string fileHash = (!c.fileMissing && !entry.sha256.empty())
+        ? Infrastructure::FileMetaData::computeFileSha256(absolutePath) : std::string{};
+    const bool        ownBytes = !entry.sha256.empty() && fileHash == entry.sha256;
+    const std::string needed   = templateSignature(cp, entry.format);
+    for (const auto& other : palette) {
+        if (other.id == cp.id || Models::sameProfileContent(other, cp)) continue;
+        for (const auto& t : other.templates) {
+            if (!samePath(t.path, entry.path) || ownBytes) continue;
+            const bool overwritten = !entry.sha256.empty()
+                || (t.generatedAt > entry.generatedAt && t.fingerprint != needed);
+            if (overwritten) { c.sharedWith = other.name; break; }
+        }
+        if (!c.sharedWith.empty()) break;
+    }
+
+    // Only a recorded hash can say the file changed: an entry migrated from before hashes has none. A
+    // change already explained by a namesake overwriting the file is reported as that, not twice.
+    if (!c.fileMissing && !entry.sha256.empty() && c.sharedWith.empty())
+        c.changedOutside = fileHash != entry.sha256;
+
+    // Field by field, so a reason can name what changed: "dpi 25.4 → 300".
+    const auto was = signatureFields(entry.fingerprint);
+    for (const auto& [field, now] : signatureFields(templateSignature(cp, entry.format))) {
+        std::string old;
+        for (const auto& [f, v] : was)
+            if (f == field) { old = v; break; }
+        if (old != now) c.differences.push_back({field, old, now});
+    }
+    return c;
 }
 
 } // namespace Platemaker::Core

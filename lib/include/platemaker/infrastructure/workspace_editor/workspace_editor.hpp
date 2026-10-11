@@ -5,7 +5,7 @@
  *
  * \c Models::Workspace holds its canvas and output profiles in private vectors; the only way
  * to change them is through this facade.  That closes a long-standing hole: the invariant
- * rules (unique ids, no persisted presets, \c templateInfo carried across a bulk replace) used
+ * rules (unique ids, no persisted presets, \c templates carried across a bulk replace) used
  * to live only in \c WorkspaceSerializer::load(), reachable solely through a save→load round
  * trip, so an in-session edit made by the CLI or GUI was never validated the way a loaded file
  * was.  \c WorkspaceEditor and \c load() now run the *same* code — \c load() delegates the
@@ -89,7 +89,7 @@ public:
     /**
      * \brief Replaces the whole canvas palette (e.g. the result of a "manage profiles" dialog).
      *
-     * Carries \c templateInfo from the current profile of the same id onto the incoming one
+     * Carries \c templates from the current profile of the same id onto the incoming one
      * (the workspace is the source of truth — the manage dialog drops the field on its round
      * trip), mints ids for any profile that arrives without one, then deduplicates.
      *
@@ -99,18 +99,18 @@ public:
     WorkspaceRepairReport replaceCanvasProfiles(std::vector<Models::CanvasProfile> incoming);
 
     /**
-     * \brief Sets (or clears) the generated-template metadata of one canvas profile.
+     * \brief Sets (or clears) the generated-template bookkeeping of one canvas profile.
      *
-     * The precise counterpart to \c replaceCanvasProfiles's "carry templateInfo across a dialog
+     * The precise counterpart to \c replaceCanvasProfiles's "carry templates across a dialog
      * round trip": template generation and deletion need to write an *exact* value — including an
      * empty one to clear it — which a carry heuristic cannot express (a cleared field looks the same
-     * as a dropped one). Touches only \c templateInfo; every other field is left as-is.
+     * as a dropped one). Touches only \c templates; every other field is left as-is.
      *
-     * \param id   Profile to update.
-     * \param info The new template metadata (default-constructed to clear it).
+     * \param id        Profile to update.
+     * \param templates The new list, one entry per format (empty to clear it).
      * \return \c true if a profile with \p id was found and updated, \c false otherwise.
      */
-    bool setCanvasProfileTemplateInfo(const std::string& id, Models::CanvasTemplateInfo info);
+    bool setCanvasProfileTemplates(const std::string& id, std::vector<Models::CanvasTemplateInfo> templates);
 
     // -----------------------------------------------------------------------
     // Output profile palette
@@ -145,7 +145,7 @@ public:
      *
      * The transfer invariant, shared by the GUI and CLI so both obey the same rules:
      *  - each canvas profile is added with a **fresh id** (via \c addCanvasProfile), and its
-     *    \c templateInfo is **cleared** — a template's path is relative to the source workspace and
+     *    \c templates are **cleared** — a template's path is relative to the source workspace and
      *    is meaningless here, so an imported profile always starts with no template;
      *  - each output profile is added with a fresh user id (via \c addOutputProfile), and any
      *    profile carrying a **preset id is skipped** (presets are code-defined, resolved from the
@@ -275,7 +275,7 @@ public:
      * \brief Restores workspace-level metadata from a string produced by \c snapshotMeta().
      *
      * Reinstalls the profile palettes through the validated palette setters (ids preserved, presets
-     * stripped, \c templateInfo restored to the exact snapshot value) and restores each project's
+     * stripped, \c templates restored to the exact snapshot value) and restores each project's
      * \c name by uid. Project contents and the project roster (add/remove) are left untouched — undo
      * of add/remove is out of scope, so the set of projects a snapshot describes still exists.
      *
