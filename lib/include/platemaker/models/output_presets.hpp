@@ -57,6 +57,7 @@ struct OutputPresetDef {
     PngOptions       pngOptions;
     WebpOptions      webpOptions;
     int              startIndex;
+    double           dpi;
 };
 
 //! Canonical ids of the built-in presets. Stable across builds and sessions so a stored
@@ -75,13 +76,14 @@ inline constexpr std::string_view k_comicFuryPresetId       = "op-preset-comicfu
 //! setting a platform tolerates. Users who want to push size/quality do it in a custom profile. Most
 //! presets output JPEG (best compression at visually identical quality); WebP where the platform
 //! promotes it; PNG only where the per-chapter limit is so large that lossless is free (NAMICOMI).
+//! Every preset records 72 DPI: they are all screen platforms, which read pixels and ignore it.
 inline constexpr std::array<OutputPresetDef, 6> k_outputPresetDefs = {{
     { k_webtoonStandardPresetId, "Webtoon Standard", 800, 1280,
       LastSlicePolicy::KeepAsIs, OutputFormat::JPEG,
       JpegOptions{90, JpegSubsampling::YUV_444, true, false},
       PngOptions{6, false},
       WebpOptions{80, false, 4},
-      1 },
+      1, 72.0 },
     // Tapas requires 940px width (any height) with a 2 MB per-file limit. Slice height is 1504px so the
     // slice keeps Webtoon's 800:1280 (1:1.6) aspect ratio (940 × 1.6 = 1504); a q90 JPEG at this size
     // stays comfortably under 2 MB.
@@ -90,7 +92,7 @@ inline constexpr std::array<OutputPresetDef, 6> k_outputPresetDefs = {{
       JpegOptions{90, JpegSubsampling::YUV_444, true, false},
       PngOptions{6, false},
       WebpOptions{80, false, 4},
-      1 },
+      1, 72.0 },
     // NAMICOMI recommends 1200 × 1600 pages and allows a huge 250 MB per-chapter budget, so lossless
     // PNG is free here — the platform's creators prefer it. This is the one preset that is not lossy.
     { k_namicomiPresetId, "NAMICOMI", 1200, 1600,
@@ -98,7 +100,7 @@ inline constexpr std::array<OutputPresetDef, 6> k_outputPresetDefs = {{
       JpegOptions{90, JpegSubsampling::YUV_444, true, false},
       PngOptions{6, false},
       WebpOptions{80, false, 4},
-      1 },
+      1, 72.0 },
     // GlobalComix promotes HD (its reader upscales well on 4K/tablets) and fully supports WebP. WebP
     // keeps a tall HD slice (1280 × 2560, 3.3 MP) safely uploadable — smaller than the equivalent JPEG.
     { k_globalComixPresetId, "GlobalComix (HD)", 1280, 2560,
@@ -106,7 +108,7 @@ inline constexpr std::array<OutputPresetDef, 6> k_outputPresetDefs = {{
       JpegOptions{90, JpegSubsampling::YUV_444, true, false},
       PngOptions{6, false},
       WebpOptions{80, false, 4},
-      1 },
+      1, 72.0 },
     // Popjoy targets high-DPI phone screens. 1000 × 2000 (2 MP) q90 JPEG stays well under a typical
     // per-file limit while still giving crisp output on dense displays.
     { k_popjoyPresetId, "Popjoy", 1000, 2000,
@@ -114,7 +116,7 @@ inline constexpr std::array<OutputPresetDef, 6> k_outputPresetDefs = {{
       JpegOptions{90, JpegSubsampling::YUV_444, true, false},
       PngOptions{6, false},
       WebpOptions{80, false, 4},
-      1 },
+      1, 72.0 },
     // ComicFury / indie-web CMS: a layout-safe 950px width (won't overflow classic page templates).
     // Slice at 1500px (Google's alternative to publishing whole uncut pages); 1.4 MP q90 JPEG is tiny.
     { k_comicFuryPresetId, "ComicFury / Indie", 950, 1500,
@@ -122,7 +124,7 @@ inline constexpr std::array<OutputPresetDef, 6> k_outputPresetDefs = {{
       JpegOptions{90, JpegSubsampling::YUV_444, true, false},
       PngOptions{6, false},
       WebpOptions{80, false, 4},
-      1 },
+      1, 72.0 },
 }};
 
 //! Materialises a full OutputProfile from a compile-time definition.
@@ -139,6 +141,7 @@ inline constexpr std::array<OutputPresetDef, 6> k_outputPresetDefs = {{
     p.pngOptions      = d.pngOptions;
     p.webpOptions     = d.webpOptions;
     p.startIndex      = d.startIndex;
+    p.dpi             = d.dpi;
     return p;
 }
 

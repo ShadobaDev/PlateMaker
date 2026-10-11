@@ -18,6 +18,28 @@ released), which re-derives onto this baseline per the cascade rule.
 
 ### Changed
 
+- **A slice records its output profile's resolution, not its input's.** `OutputProfile` gains **`dpi`**
+  (default 72; every preset is 72 — they are all screen platforms). Before, a PNG slice carried the
+  resolution of whichever page it was cut from, and a JPEG or WebP slice none at all. Now `ImageIO`
+  writes the profile's value to every format — pHYs for PNG, EXIF for JPEG and WebP, the only place
+  they carry it — first stripping the slice of every EXIF field from its source, so camera data,
+  thumbnails and orientation still never reach an output. **Pixels are unchanged** (a golden render of
+  31 slices across PNG, JPEG and WebP decodes identically); the files' bytes are not, and `dpi` is part
+  of `outputProfileSignature()`, so **every previously rendered project reads as outdated once** and
+  re-renders.
+- **A canvas template's resolution is the profile's.** `CanvasProfile` gains **`dpi`** (default 300 —
+  the resolution the artist draws at) and **`templateSettings`** (`format`, default PSD; `emptyLayer`).
+  `TemplateGenerator::optionsFor(profile)` turns a profile into the options to write with, and
+  `canvasSignature()` now includes `dpi` — so templates generated before it (at 25.4 DPI) read as
+  outdated. The render never reads the canvas `dpi`, so `canvasRenderFingerprint()` ignores it.
+  `TemplateFormat` moves to `Models` (`Core::TemplateFormat` remains, as an alias). All new fields are
+  additive in JSON: older workspaces load with the defaults, and a profile bundle carries them.
+  - CLI: `add-`/`mod-canvas-profile` take **`--dpi N`**, **`--template-format png|psd`** and
+    **`--template-empty-layer [yes|no]`**; `add-`/`mod-output-profile` and an ad-hoc `process` take
+    **`--dpi N`**. `template` uses the profile's settings, its `--dpi`/`--empty-layer [yes|no]` override
+    them for that file only, and an `--output` without `.png`/`.psd` now gets the profile's format
+    appended (PSD by default) instead of always `.png`. The profile listings show the resolution.
+
 - **An overlay is placed in fractions of the target width, not in pixels.** `StripOverlay::x`/`y` become
   **`xFrac`/`yFrac`**, and a new **`wFrac`** carries the artwork's rendered width in the same unit
   (`0` = the asset's own pixel size). Pixels are meaningless without the width they were measured

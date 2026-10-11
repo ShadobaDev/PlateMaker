@@ -108,6 +108,18 @@ void from_json(const nlohmann::json& j, CanvasTemplateInfo& v) {
     if (j.contains("generatedAt")) j.at("generatedAt").get_to(v.generatedAt);
 }
 
+// --- CanvasTemplateSettings ---
+void to_json(nlohmann::json& j, const CanvasTemplateSettings& v) {
+    j = nlohmann::json{
+        {"format",     v.format},
+        {"emptyLayer", v.emptyLayer}
+    };
+}
+void from_json(const nlohmann::json& j, CanvasTemplateSettings& v) {
+    if (j.contains("format"))     j.at("format").get_to(v.format);
+    if (j.contains("emptyLayer")) j.at("emptyLayer").get_to(v.emptyLayer);
+}
+
 // --- CanvasProfile ---
 void to_json(nlohmann::json& j, const CanvasProfile& v) {
     j = nlohmann::json{
@@ -115,10 +127,12 @@ void to_json(nlohmann::json& j, const CanvasProfile& v) {
         {"name",                   v.name},
         {"canvasSize",             v.canvasSize},
         {"margins",                v.margins},
+        {"dpi",                    v.dpi},
         {"visualColour",           v.visualColour},
         {"backgroundColour",       v.backgroundColour},
         {"hintUserSafeAreaSelect", v.hintUserSafeAreaSelect},
-        {"templateInfo",           v.templateInfo}
+        {"templateInfo",           v.templateInfo},
+        {"templateSettings",       v.templateSettings}
     };
 }
 void from_json(const nlohmann::json& j, CanvasProfile& v) {
@@ -128,6 +142,8 @@ void from_json(const nlohmann::json& j, CanvasProfile& v) {
     j.at("name").get_to(v.name);
     j.at("canvasSize").get_to(v.canvasSize);
     j.at("margins").get_to(v.margins);
+    if (j.contains("dpi"))                                    // additive
+        j.at("dpi").get_to(v.dpi);
     if (j.contains("visualColour"))
         j.at("visualColour").get_to(v.visualColour);
     if (j.contains("backgroundColour"))
@@ -136,6 +152,8 @@ void from_json(const nlohmann::json& j, CanvasProfile& v) {
         j.at("hintUserSafeAreaSelect").get_to(v.hintUserSafeAreaSelect);
     if (j.contains("templateInfo"))
         j.at("templateInfo").get_to(v.templateInfo);
+    if (j.contains("templateSettings"))                       // additive
+        j.at("templateSettings").get_to(v.templateSettings);
 }
 
 // --- OutputProfile ---
@@ -150,7 +168,8 @@ void to_json(nlohmann::json& j, const OutputProfile& v) {
         {"jpegOptions",     v.jpegOptions},
         {"pngOptions",      v.pngOptions},
         {"webpOptions",     v.webpOptions},
-        {"startIndex",      v.startIndex}
+        {"startIndex",      v.startIndex},
+        {"dpi",             v.dpi}
     };
 }
 void from_json(const nlohmann::json& j, OutputProfile& v) {
@@ -164,6 +183,7 @@ void from_json(const nlohmann::json& j, OutputProfile& v) {
     if (j.contains("pngOptions"))  j.at("pngOptions").get_to(v.pngOptions);   // additive
     if (j.contains("webpOptions")) j.at("webpOptions").get_to(v.webpOptions); // additive
     j.at("startIndex").get_to(v.startIndex);
+    if (j.contains("dpi")) j.at("dpi").get_to(v.dpi);                         // additive
 }
 
 // --- CurvePoint ---

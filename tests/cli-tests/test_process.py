@@ -24,6 +24,7 @@ from helpers import (
     make_solid_png,
     make_solid_rgba_png,
     png_color_type,
+    png_dpi,
 )
 
 
@@ -181,6 +182,32 @@ def test_process_mixed_bands_jpeg_succeeds(
                           ["--input", str(input_dir), "--format", "jpg"])
     assert result.returncode == 0, f"mixed-band JPEG render aborted:\n{result.stderr}"
     assert sorted(output_dir.glob("output_*.jpg")), "no JPEG slices produced"
+
+
+@pytest.mark.parametrize("extra,expected", [([], 72.0), (["--dpi", "96"], 96.0)])
+def test_process_records_the_output_dpi(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+    extra:          list[str],
+    expected:       float,
+) -> None:
+    """
+    Slices record the output profile's resolution (72 by default, --dpi for an
+    ad-hoc profile), not whatever the input pages said.  pHYs stores whole pixels
+    per metre, so 96 DPI comes back as 96.012.
+    """
+    input_dir  = tmp_workspace / "input"
+    output_dir = tmp_workspace / "output"
+    input_dir.mkdir()
+    _make_pages(input_dir, 1, 800, 1280)
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+
+    result = _run_process(platemaker_bin, ws, output_dir, ["--input", str(input_dir), *extra])
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+    x_dpi, y_dpi = png_dpi(output_dir / "output_001.png")
+    assert x_dpi == pytest.approx(expected, abs=0.05)
+    assert y_dpi == pytest.approx(expected, abs=0.05)
 
 
 def test_process_start_index(

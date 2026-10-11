@@ -9,14 +9,15 @@
  *   Canvas profiles (selected by name):
  *   platemaker workspace add-canvas-profile   --workspace FILE --name NAME --canvas WxH --margins T,R,B,L
  *   platemaker workspace mod-canvas-profile   --workspace FILE --name NAME [--canvas WxH] [--margins T,R,B,L]
+ *                       (both: [--dpi N] [--template-format png|psd] [--template-empty-layer [yes|no]])
  *   platemaker workspace rm-canvas-profile    --workspace FILE --name NAME
  *   platemaker workspace list-canvas-profiles --workspace FILE
  *
  *   Output profiles (selected by id — names may repeat, ids do not):
  *   platemaker workspace list-presets         --workspace FILE
  *   platemaker workspace add-output-profile   --workspace FILE --name NAME
- *                       { --from-preset PRESET_ID | [--target-width N] [--slice-height N] [--format png|jpg|webp] }
- *   platemaker workspace mod-output-profile   --workspace FILE --output-profile ID [--name N] [--target-width N] [--slice-height N] [--format png|jpg|webp]
+ *                       { --from-preset PRESET_ID | [--target-width N] [--slice-height N] [--format png|jpg|webp] } [--dpi N]
+ *   platemaker workspace mod-output-profile   --workspace FILE --output-profile ID [--name N] [--target-width N] [--slice-height N] [--format png|jpg|webp] [--dpi N]
  *   platemaker workspace rm-output-profile    --workspace FILE --output-profile ID
  *   platemaker workspace list-output-profiles --workspace FILE
  *
@@ -43,7 +44,7 @@
  *                      [--no-profile] [--json]
  *   platemaker template --workspace FILE --profile NAME --output FILE
  *                       [--margins-tpl-color R,G,B[,A]] [--background-tpl-color R,G,B[,A]]
- *                       [--dpi N] [--empty-layer]
+ *                       [--dpi N] [--empty-layer [yes|no]]
  * 
  * Canvas profile matching during process:
  *   - If the workspace has canvas profiles, each input file's pixel width is
@@ -276,6 +277,68 @@ static std::optional<RGBA> parseColour(const std::string& s)
     };
 }
 
+/**
+ * \brief Reads --<flag> as a resolution in dots per inch into \p dpi; leaves it alone when absent.
+ *
+ * Unlike a colour, a wrong resolution is not cosmetic — a drawing app sizes the canvas by it — so a bad
+ * value is reported and the caller fails.
+ *
+ * \return false (after printing the error) when the value is not a positive number.
+ */
+static bool readDpi(const Opts& opts, const char* flag, double& dpi)
+{
+    if (!opts.has(flag)) return true;
+    const std::string text = opts.get(flag);
+    char* end = nullptr;
+    const double v = std::strtod(text.c_str(), &end);
+    if (text.empty() || *end != '\0' || !(v > 0.0)) {
+        std::cerr << "Error: --" << flag << " must be a positive number, got '" << text << "'\n";
+        return false;
+    }
+    dpi = v;
+    return true;
+}
+
+/// Reads a yes/no flag: bare (--flag) means yes; --flag yes|no|on|off|true|false|1|0 says which.
+static bool readYesNo(const Opts& opts, const char* flag, bool& value)
+{
+    if (!opts.has(flag)) return true;
+    std::string v = opts.get(flag);
+    for (auto& c : v) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (v == "1" || v == "yes" || v == "on" || v == "true")   { value = true;  return true; }
+    if (v == "0" || v == "no"  || v == "off" || v == "false") { value = false; return true; }
+    std::cerr << "Error: --" << flag << " takes yes or no, got '" << opts.get(flag) << "'\n";
+    return false;
+}
+
+/// The extension a template of \p format is written with.
+static const char* templateExtension(TemplateFormat format)
+{
+    return format == TemplateFormat::Psd ? ".psd" : ".png";
+}
+
+/**
+ * \brief Applies a canvas profile's resolution and template flags (add- and mod-canvas-profile):
+ *        --dpi N, --template-format png|psd, --template-empty-layer [yes|no].
+ * \return false (after printing the error) on a bad value.
+ */
+static bool applyCanvasTemplateFlags(const Opts& opts, CanvasProfile& cp)
+{
+    if (!readDpi(opts, "dpi", cp.dpi)) return false;
+    if (opts.has("template-format")) {
+        std::string f = opts.get("template-format");
+        for (auto& c : f) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if      (f == "psd") cp.templateSettings.format = TemplateFormat::Psd;
+        else if (f == "png") cp.templateSettings.format = TemplateFormat::Png;
+        else {
+            std::cerr << "Error: --template-format takes png or psd, got '"
+                      << opts.get("template-format") << "'\n";
+            return false;
+        }
+    }
+    return readYesNo(opts, "template-empty-layer", cp.templateSettings.emptyLayer);
+}
+
 /// Scans \p dir for image files and returns them sorted by filename.
 static std::vector<fs::path> scanImageDir(const fs::path& dir)
 {
@@ -364,6 +427,10 @@ static int cmdHelp(const std::string& prog)
         << "  workspace add-canvas-profile / mod-canvas-profile also accept:\n"
         << "    --margins-tpl-color R,G,B[,A]    Margin overlay colour for templates.\n"
         << "    --background-tpl-color R,G,B[,A] Background fill colour for templates.\n"
+        << "    --dpi N                          Resolution the artist draws at (default 300);\n"
+        << "                                     the template records it. The render ignores it.\n"
+        << "    --template-format png|psd        How the template is written (default psd).\n"
+        << "    --template-empty-layer [yes|no]  PSD: an empty layer above the template (default no).\n"
         << "\n"
         << "  workspace mod-canvas-profile --workspace FILE --name NAME\n"
         << "      [--canvas WxH | --canvas-safe-area WxH]  [--margins T,R,B,L]\n"
@@ -376,9 +443,11 @@ static int cmdHelp(const std::string& prog)
         << "      List the built-in output-profile presets.\n"
         << "  workspace add-output-profile --workspace FILE --name NAME\n"
         << "      { --from-preset PRESET_ID | [--target-width N] [--slice-height N] [--format png|jpg|webp] }\n"
+        << "      [--dpi N]\n"
         << "      Add an output profile — a copy of a preset, or one from scratch. Prints its id.\n"
+        << "      --dpi N: resolution written into every slice (default 72; screens ignore it).\n"
         << "  workspace mod-output-profile --workspace FILE --output-profile ID\n"
-        << "      [--name N] [--target-width N] [--slice-height N] [--format png|jpg|webp]\n"
+        << "      [--name N] [--target-width N] [--slice-height N] [--format png|jpg|webp] [--dpi N]\n"
         << "  workspace rm-output-profile   --workspace FILE --output-profile ID\n"
         << "  workspace list-output-profiles --workspace FILE\n"
         << "      (Presets are read-only; copy one with add-output-profile --from-preset.)\n"
@@ -404,7 +473,7 @@ static int cmdHelp(const std::string& prog)
         << "          { --input DIR | --project NAME }  [--output DIR]\n"
         << "          [--output-profile ID]\n"
         << "          [--format png|jpg|webp]  [--start-index N]\n"
-        << "          [--target-width N]  [--slice-height N]\n"
+        << "          [--target-width N]  [--slice-height N]  [--dpi N]\n"
         << "          [--json]\n"
         << "      Scale and slice all pages in the workspace.\n"
         << "      Output profile: --output-profile ID (or the project's assigned one) is used as\n"
@@ -417,13 +486,14 @@ static int cmdHelp(const std::string& prog)
         << "\n"
         << "  template --workspace FILE --profile NAME --output FILE\n"
         << "           [--margins-tpl-color R,G,B[,A]]  [--background-tpl-color R,G,B[,A]]\n"
-        << "           [--dpi N] [--empty-layer]\n"
+        << "           [--dpi N] [--empty-layer [yes|no]]\n"
         << "      Generate a canvas template for Procreate: the canvas background and margin zones.\n"
-        << "      The --output extension picks the format: .psd opens as a canvas of exactly this\n"
-        << "        size (template as a layer); .png is a flat image to place. Any other extension\n"
-        << "        gets .png appended. A PSD side is capped at 30000 px.\n"
-        << "      --dpi N: resolution recorded in the file (default 300); pixels are unchanged.\n"
-        << "      --empty-layer: PSD only, adds an empty layer named 'Layer' above the template.\n"
+        << "      The profile's resolution and template settings apply; the flags override them for\n"
+        << "        this file only. The --output extension picks the format: .psd opens as a canvas\n"
+        << "        of exactly this size (template as a layer); .png is a flat image to place. Any\n"
+        << "        other extension gets the profile's format appended. A PSD side is capped at 30000 px.\n"
+        << "      --dpi N: resolution recorded in the file; pixels are unchanged.\n"
+        << "      --empty-layer: PSD only, an empty layer named 'Layer' above the template.\n"
         << "      Colour resolution order (most to least specific):\n"
         << "        1. --margins-tpl-color / --background-tpl-color CLI arguments\n"
         << "        2. Colours stored in the named canvas profile (workspace JSON)\n"
@@ -581,6 +651,7 @@ static int cmdWorkspaceAddProfile(const Opts& opts)
             std::cerr << "Warning: ignoring bad --background-tpl-color value '"
                       << opts.get("background-tpl-color") << "'\n";
     }
+    if (!applyCanvasTemplateFlags(opts, cp)) return 1;
 
     WorkspaceEditor(ws).addCanvasProfile(std::move(cp)); // mints a fresh unique id
 
@@ -687,6 +758,7 @@ static int cmdWorkspaceModProfile(const Opts& opts)
             std::cerr << "Warning: ignoring bad --background-tpl-color value '"
                       << opts.get("background-tpl-color") << "'\n";
     }
+    if (!applyCanvasTemplateFlags(opts, *cp)) return 1;
 
     WorkspaceEditor(ws).replaceCanvasProfiles(std::move(profiles));
 
@@ -773,6 +845,10 @@ static void printCanvasProfilesSection(const Workspace& ws)
                                   << cp.margins.bottom << ','
                                   << cp.margins.left
                   << "  safe-area=" << safeW << 'x' << safeH
+                  << "  dpi=" << cp.dpi
+                  << "  template=" << (templateExtension(cp.templateSettings.format) + 1)
+                  << (cp.templateSettings.format == TemplateFormat::Psd && cp.templateSettings.emptyLayer
+                          ? "+layer" : "")
                   << '\n';
     }
 }
@@ -806,6 +882,7 @@ static void printOutputProfile(const OutputProfile& op, const char* tag)
               << "  \"" << op.name << "\""
               << "  " << op.targetWidth << 'x' << op.sliceHeight
               << "  " << outputFormatExtension(op.outputFormat).substr(1)
+              << "  " << op.dpi << "dpi"
               << "  " << tag << '\n';
 }
 
@@ -1081,6 +1158,7 @@ static int cmdWorkspaceAddOutputProfile(const Opts& opts)
             catch (const std::exception& e) { std::cerr << "Error: " << e.what() << '\n'; return 1; }
         }
     }
+    if (!readDpi(opts, "dpi", op.dpi)) return 1;   // also over a preset copy: it is the user's own now
     op.name = opts.get("name");
     // The editor mints a fresh user id (never a preset id) and appends it to the palette.
     const std::string newId = WorkspaceEditor(ws).addOutputProfile(std::move(op));
@@ -1133,6 +1211,7 @@ static int cmdWorkspaceModOutputProfile(const Opts& opts)
         try { op->outputFormat = parseFormat(opts.get("format")); }
         catch (const std::exception& e) { std::cerr << "Error: " << e.what() << '\n'; return 1; }
     }
+    if (!readDpi(opts, "dpi", op->dpi)) return 1;
 
     WorkspaceEditor(ws).replaceOutputProfiles(std::move(profiles));
 
@@ -1446,11 +1525,12 @@ static int cmdProcess(const Opts& opts)
     }
 
     const bool hasInlineOverrides = opts.has("format") || opts.has("start-index")
-                                 || opts.has("target-width") || opts.has("slice-height");
+                                 || opts.has("target-width") || opts.has("slice-height")
+                                 || opts.has("dpi");
 
     if (selected) {
         if (hasInlineOverrides)
-            std::cerr << "Note: --format/--start-index/--target-width/--slice-height ignored — an "
+            std::cerr << "Note: --format/--start-index/--target-width/--slice-height/--dpi ignored — an "
                          "output profile is selected. Edit that profile, or omit it to render ad-hoc.\n";
         outProfile = *selected;
     } else {
@@ -1463,6 +1543,7 @@ static int cmdProcess(const Opts& opts)
         if (opts.has("start-index"))  outProfile.startIndex   = opts.getInt("start-index", 1);
         if (opts.has("target-width")) outProfile.targetWidth  = opts.getInt("target-width", 800);
         if (opts.has("slice-height")) outProfile.sliceHeight  = opts.getInt("slice-height", 1280);
+        if (!readDpi(opts, "dpi", outProfile.dpi)) return 1;
     }
 
     if (project.getInputImages().empty()) {
@@ -2225,36 +2306,7 @@ static int cmdTemplate(const Opts& opts)
     const std::string wsFile      = opts.get("workspace");
     const std::string profileName = opts.get("profile");
 
-    // The extension picks the format: .psd or .png. Any other (or none) gets .png appended, so the
-    // output file is recognised correctly by all tools.
-    TemplateOptions options;
     std::string outputPath = opts.get("output");
-    {
-        const fs::path p(outputPath);
-        std::string ext = p.extension().string();
-        for (auto& c : ext)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        if (ext == ".psd") {
-            options.format = TemplateFormat::Psd;
-        } else if (ext != ".png") {
-            outputPath += ".png";
-            std::cerr << "Note: '.png' extension appended; output: " << outputPath << '\n';
-        }
-    }
-
-    // Unlike the colours, a wrong resolution is not cosmetic — the drawing app sizes the canvas by it.
-    if (opts.has("dpi")) {
-        const std::string text = opts.get("dpi");
-        char* end = nullptr;
-        options.dpi = std::strtod(text.c_str(), &end);
-        if (text.empty() || *end != '\0' || !(options.dpi > 0.0)) {
-            std::cerr << "Error: --dpi must be a positive number, got '" << text << "'\n";
-            return 1;
-        }
-    }
-    options.emptyLayer = opts.has("empty-layer");
-    if (options.emptyLayer && options.format != TemplateFormat::Psd)
-        std::cerr << "Warning: --empty-layer applies to a .psd output only; ignored for PNG\n";
 
     // --- Load workspace ---
     Workspace ws;
@@ -2285,6 +2337,29 @@ static int cmdTemplate(const Opts& opts)
     // --- Apply optional CLI colour overrides (priority: CLI > profile > default) ---
     // We copy the profile so we can modify colours without touching the workspace.
     CanvasProfile cp = *profilePtr;
+
+    // --- How the file is written: the profile's settings, which the flags override for this file ---
+    // The extension picks the format: .psd or .png. Any other (or none) gets the profile's format's
+    // extension appended, so the output file is recognised correctly by all tools.
+    TemplateOptions options = TemplateGenerator::optionsFor(cp);
+    {
+        std::string ext = fs::path(outputPath).extension().string();
+        for (auto& c : ext)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (ext == ".psd") {
+            options.format = TemplateFormat::Psd;
+        } else if (ext == ".png") {
+            options.format = TemplateFormat::Png;
+        } else {
+            outputPath += templateExtension(options.format);
+            std::cerr << "Note: '" << templateExtension(options.format)
+                      << "' extension appended (the profile's template format); output: " << outputPath << '\n';
+        }
+    }
+    if (!readDpi(opts, "dpi", options.dpi)) return 1;
+    if (!readYesNo(opts, "empty-layer", options.emptyLayer)) return 1;
+    if (opts.has("empty-layer") && options.emptyLayer && options.format != TemplateFormat::Psd)
+        std::cerr << "Warning: --empty-layer applies to a .psd output only; ignored for PNG\n";
 
     if (opts.has("margins-tpl-color")) {
         if (const auto col = parseColour(opts.get("margins-tpl-color")))

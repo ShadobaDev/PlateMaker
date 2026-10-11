@@ -49,6 +49,11 @@ NLOHMANN_JSON_SERIALIZE_ENUM(OutputFormat, {
     {OutputFormat::WebP, "WebP"}
 })
 
+NLOHMANN_JSON_SERIALIZE_ENUM(TemplateFormat, {
+    {TemplateFormat::Png, "PNG"},
+    {TemplateFormat::Psd, "PSD"}
+})
+
 NLOHMANN_JSON_SERIALIZE_ENUM(JpegSubsampling, {
     {JpegSubsampling::YUV_444, "YUV_444"},
     {JpegSubsampling::YUV_422, "YUV_422"},
@@ -97,6 +102,8 @@ void from_json(const nlohmann::json& j, WebpOptions& v);
 
 void to_json(nlohmann::json& j, const CanvasTemplateInfo& v);
 void from_json(const nlohmann::json& j, CanvasTemplateInfo& v);
+void to_json(nlohmann::json& j, const CanvasTemplateSettings& v);
+void from_json(const nlohmann::json& j, CanvasTemplateSettings& v);
 
 void to_json(nlohmann::json& j, const CanvasProfile& v);
 void from_json(const nlohmann::json& j, CanvasProfile& v);

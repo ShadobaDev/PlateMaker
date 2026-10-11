@@ -576,6 +576,18 @@ TEST_F(TemplatePsdTest, EmptyLayerAndDpiAreApplied)
     EXPECT_DOUBLE_EQ(p.dpiX, 72.0);
 }
 
+TEST(TemplateOptionsTest, OptionsForReadsTheProfile)
+{
+    // The profile's resolution and template settings are the options; nothing else decides them.
+    Platemaker::Models::CanvasProfile cp;
+    cp.dpi              = 144.0;
+    cp.templateSettings = {Platemaker::Models::TemplateFormat::Psd, true};
+    const TemplateOptions o = TemplateGenerator::optionsFor(cp);
+    EXPECT_EQ(o.dpi, 144.0);
+    EXPECT_EQ(o.format, TemplateFormat::Psd);
+    EXPECT_TRUE(o.emptyLayer);
+}
+
 TEST_F(TemplatePsdTest, OversizePsdIsAnInvalidArgument)
 {
     TemplateOptions o;

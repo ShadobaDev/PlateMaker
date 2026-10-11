@@ -15,6 +15,7 @@
 
 #include <gtest/gtest.h>
 
+#include <platemaker/core/template_generator/template_generator.hpp>
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/output_profile.hpp>
@@ -194,6 +195,19 @@ TEST(CanvasRenderFingerprintTest, IgnoresTemplateOnlyColours)
     b.backgroundColour = RGBA{5, 6, 7, 8};
 
     EXPECT_EQ(canvasRenderFingerprint(a), canvasRenderFingerprint(b));
+}
+
+TEST(CanvasRenderFingerprintTest, IgnoresDpiButTheTemplateDoesNot)
+{
+    // The canvas DPI is written into the template only; the render works in pixels. So it leaves the
+    // render fingerprint alone but makes a template generated at another resolution outdated.
+    auto a = makeProfile("p1", 1600, 10240, 100);
+    auto b = makeProfile("p1", 1600, 10240, 100);
+    b.dpi = 72.0;
+
+    EXPECT_EQ(canvasRenderFingerprint(a), canvasRenderFingerprint(b));
+    EXPECT_NE(Platemaker::Core::TemplateGenerator::canvasSignature(a), Platemaker::Core::TemplateGenerator::canvasSignature(b));
+    EXPECT_NE(Platemaker::Core::TemplateGenerator::canvasSignature(a).find(";dpi=300"), std::string::npos);
 }
 
 TEST(CanvasRenderFingerprintTest, IsUnambiguousAcrossFieldBoundaries)

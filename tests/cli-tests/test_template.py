@@ -24,7 +24,7 @@ import subprocess
 
 import pytest
 
-from helpers import create_workspace, add_profile
+from helpers import create_workspace, add_profile, png_dpi
 
 
 # ---------------------------------------------------------------------------
@@ -76,32 +76,6 @@ def _png_bands(path: pathlib.Path) -> int:
     colour_type = data[25]
     mapping = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
     return mapping.get(colour_type, -1)
-
-
-def _png_dpi(path: pathlib.Path) -> tuple[float, float]:
-    """
-    Read the resolution from a PNG file's pHYs chunk, in dots per inch.
-
-    pHYs holds pixels per unit X and Y (4 bytes each, big-endian) and a unit byte,
-    where 1 means metres.
-
-    :param path: Path to a valid PNG file.
-    :returns:    ``(x_dpi, y_dpi)``.
-    :raises ValueError: If there is no pHYs chunk, or its unit is not metres.
-    """
-    data = path.read_bytes()
-    pos = 8                                   # past the signature
-    while pos + 8 <= len(data):
-        length, tag = struct.unpack(">I4s", data[pos:pos + 8])
-        if tag == b"pHYs":
-            x, y, unit = struct.unpack(">IIB", data[pos + 8:pos + 17])
-            if unit != 1:
-                raise ValueError(f"pHYs unit is not metres: {unit}")
-            return x * 0.0254, y * 0.0254
-        if tag == b"IDAT":
-            break                             # pHYs must come before the image data
-        pos += 12 + length                    # length + tag + data + CRC
-    raise ValueError(f"No pHYs chunk in {path}")
 
 
 def _psd_summary(path: pathlib.Path) -> dict:
@@ -239,7 +213,7 @@ class TestTemplateBasic:
             capture_output=True,
             check=True,
         )
-        x_dpi, y_dpi = _png_dpi(out)
+        x_dpi, y_dpi = png_dpi(out)
         assert x_dpi == pytest.approx(300, abs=0.01), f"Expected 300 DPI, got {x_dpi}"
         assert y_dpi == pytest.approx(300, abs=0.01), f"Expected 300 DPI, got {y_dpi}"
 
@@ -314,18 +288,41 @@ class TestTemplateBasic:
         )
         assert out.exists()
 
-    def test_template_png_extension_auto_appended(
+    def test_template_extension_follows_the_profile(
         self,
         platemaker_bin: pathlib.Path,
         ws: pathlib.Path,
         tmp_workspace: pathlib.Path,
     ) -> None:
         """
-        When --output has no .png extension the tool appends it and creates a
-        valid PNG file.  The path *without* the extension must NOT exist, and
-        the path *with* .png appended must be a valid PNG.
+        When --output has neither .png nor .psd, the tool appends the profile's
+        template format: PSD by default, PNG once the profile asks for it.  The
+        path *without* the extension must NOT exist.
         """
         out_no_ext = tmp_workspace / "template_no_ext"
+        result = subprocess.run(
+            [
+                str(platemaker_bin),
+                "template",
+                "--workspace", str(ws),
+                "--profile",   "WebtoonTest",
+                "--output",    str(out_no_ext),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert not out_no_ext.exists()
+        assert pathlib.Path(str(out_no_ext) + ".psd").read_bytes()[:4] == b"8BPS"
+
+        subprocess.run(
+            [
+                str(platemaker_bin), "workspace", "mod-canvas-profile",
+                "--workspace", str(ws), "--name", "WebtoonTest", "--template-format", "png",
+            ],
+            capture_output=True,
+            check=True,
+        )
         out_with_ext = pathlib.Path(str(out_no_ext) + ".png")
         result = subprocess.run(
             [
@@ -418,7 +415,7 @@ class TestTemplatePsd:
         out = tmp_workspace / name
         result = _template(platemaker_bin, ws, out, "--dpi", "72")
         assert result.returncode == 0, f"stderr: {result.stderr}"
-        dpi = _png_dpi(out)[0] if name.endswith(".png") else _psd_summary(out)["dpi"]
+        dpi = png_dpi(out)[0] if name.endswith(".png") else _psd_summary(out)["dpi"]
         assert dpi == pytest.approx(72, abs=0.01)
 
     @pytest.mark.parametrize("value", ["0", "-5", "abc", "300dpi"])
@@ -431,6 +428,93 @@ class TestTemplatePsd:
         assert result.returncode == 1
         assert "--dpi" in result.stderr
         assert not out.exists()
+
+
+class TestTemplateSettingsFromProfile:
+    """The profile's resolution and template settings drive the template; flags override them."""
+
+    def _add(self, platemaker_bin: pathlib.Path, ws_path: pathlib.Path, *extra: str):
+        create_workspace(platemaker_bin, ws_path)
+        return subprocess.run(
+            [
+                str(platemaker_bin), "workspace", "add-canvas-profile",
+                "--workspace", str(ws_path), "--name", "P",
+                "--canvas", "400x600", "--margins", "10,10,10,10", *extra,
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+    def test_profile_settings_are_stored_and_used(
+        self, platemaker_bin: pathlib.Path, tmp_workspace: pathlib.Path,
+    ) -> None:
+        """--dpi and --template-empty-layer on the profile reach the JSON and the template."""
+        ws_path = tmp_workspace / "project.platemaker.json"
+        result = self._add(platemaker_bin, ws_path, "--dpi", "150", "--template-empty-layer")
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+
+        cp = json.loads(ws_path.read_text())["canvasProfiles"][0]
+        assert cp["dpi"] == 150
+        assert cp["templateSettings"] == {"format": "PSD", "emptyLayer": True}
+
+        out = tmp_workspace / "t"
+        result = subprocess.run(
+            [str(platemaker_bin), "template", "--workspace", str(ws_path), "--profile", "P",
+             "--output", str(out)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        psd = _psd_summary(pathlib.Path(str(out) + ".psd"))
+        assert psd["dpi"] == pytest.approx(150)
+        assert psd["layers"] == 2
+
+    def test_flags_override_the_profile_for_one_file(
+        self, platemaker_bin: pathlib.Path, tmp_workspace: pathlib.Path,
+    ) -> None:
+        """--dpi / --empty-layer no change this file only; the profile is left as it was."""
+        ws_path = tmp_workspace / "project.platemaker.json"
+        assert self._add(platemaker_bin, ws_path, "--dpi", "150", "--template-empty-layer").returncode == 0
+        before = ws_path.read_text()
+
+        out = tmp_workspace / "t.psd"
+        result = subprocess.run(
+            [str(platemaker_bin), "template", "--workspace", str(ws_path), "--profile", "P",
+             "--output", str(out), "--dpi", "600", "--empty-layer", "no"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        psd = _psd_summary(out)
+        assert psd["dpi"] == pytest.approx(600)
+        assert psd["layers"] == 1
+        assert ws_path.read_text() == before, "a template run does not edit the workspace"
+
+    @pytest.mark.parametrize("flag,value", [("--dpi", "0"), ("--dpi", "x"),
+                                            ("--template-format", "tiff"),
+                                            ("--template-empty-layer", "maybe")])
+    def test_bad_profile_values_are_errors(
+        self, platemaker_bin: pathlib.Path, tmp_workspace: pathlib.Path, flag: str, value: str,
+    ) -> None:
+        """A bad resolution or template setting fails the command and adds nothing."""
+        ws_path = tmp_workspace / "project.platemaker.json"
+        result = self._add(platemaker_bin, ws_path, flag, value)
+        assert result.returncode == 1
+        assert flag in result.stderr
+        assert json.loads(ws_path.read_text()).get("canvasProfiles", []) == []
+
+    def test_mod_canvas_profile_changes_the_settings(
+        self, platemaker_bin: pathlib.Path, tmp_workspace: pathlib.Path,
+    ) -> None:
+        """mod-canvas-profile takes the same flags, and leaves the others alone."""
+        ws_path = tmp_workspace / "project.platemaker.json"
+        assert self._add(platemaker_bin, ws_path, "--template-empty-layer").returncode == 0
+        subprocess.run(
+            [str(platemaker_bin), "workspace", "mod-canvas-profile", "--workspace", str(ws_path),
+             "--name", "P", "--dpi", "72", "--template-format", "png"],
+            capture_output=True, check=True,
+        )
+        cp = json.loads(ws_path.read_text())["canvasProfiles"][0]
+        assert cp["dpi"] == 72
+        assert cp["templateSettings"] == {"format": "PNG", "emptyLayer": True}
 
 
 # ---------------------------------------------------------------------------

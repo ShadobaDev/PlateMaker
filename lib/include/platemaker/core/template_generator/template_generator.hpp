@@ -23,14 +23,13 @@
 
 namespace Platemaker::Core {
 
-/// The file a template is written as.
-enum class TemplateFormat {
-    Png, //!< One flat image, to place on a canvas as a reference.
-    Psd, //!< A layered document that opens as a canvas of exactly this size, with nothing to place.
-};
+using Models::TemplateFormat;
 
 /**
  * \brief How a template file is written, as opposed to what it shows (the canvas profile).
+ *
+ * A profile stores its own (CanvasProfile::dpi, CanvasProfile::templateSettings); optionsFor() reads
+ * them, and a caller overrides a field only for a one-off file (the CLI's flags).
  */
 struct TemplateOptions {
     /// Resolution recorded in the file, in dots per inch. Pixels are unaffected; a drawing app reads it
@@ -93,12 +92,17 @@ public:
         const TemplateOptions&       options = {}) const;
 
     /**
+     * \brief The options a profile asks for: its dpi and its template settings.
+     */
+    [[nodiscard]] static TemplateOptions optionsFor(const Models::CanvasProfile& canvasProfile);
+
+    /**
      * \brief Computes a canvas-only signature identifying a template's content.
      *
      * The signature is a deterministic string built from exactly the fields that
-     * define a template's appearance: canvas size, margins, and the visual and
-     * background colours.  The output profile is intentionally excluded — slice
-     * guide lines are a cosmetic aid, not part of a template's identity.
+     * define a template: canvas size, margins, the visual and background colours,
+     * and the resolution recorded in it.  The output profile is intentionally
+     * excluded — slice guide lines are a cosmetic aid, not part of a template's identity.
      *
      * Comparing a stored signature against a freshly computed one tells a caller
      * whether a previously generated template is still up to date.

@@ -208,3 +208,29 @@ def add_profile(
         f"workspace add-canvas-profile failed (rc={result.returncode}):\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
+
+
+def png_dpi(path: pathlib.Path) -> tuple[float, float]:
+    """
+    Read the resolution from a PNG file's pHYs chunk, in dots per inch.
+
+    pHYs holds pixels per unit X and Y (4 bytes each, big-endian) and a unit byte,
+    where 1 means metres.
+
+    :param path: Path to a valid PNG file.
+    :returns:    ``(x_dpi, y_dpi)``.
+    :raises ValueError: If there is no pHYs chunk, or its unit is not metres.
+    """
+    data = path.read_bytes()
+    pos = 8                                   # past the signature
+    while pos + 8 <= len(data):
+        length, tag = struct.unpack(">I4s", data[pos:pos + 8])
+        if tag == b"pHYs":
+            x, y, unit = struct.unpack(">IIB", data[pos + 8:pos + 17])
+            if unit != 1:
+                raise ValueError(f"pHYs unit is not metres: {unit}")
+            return x * 0.0254, y * 0.0254
+        if tag == b"IDAT":
+            break                             # pHYs must come before the image data
+        pos += 12 + length                    # length + tag + data + CRC
+    raise ValueError(f"No pHYs chunk in {path}")

@@ -113,7 +113,7 @@ TEST(OutputPresetTest, DefinitionIsPinnedIndependentlyOfStructDefaults)
     EXPECT_EQ(preset.id,   Models::k_webtoonStandardPresetId);
     EXPECT_EQ(preset.name, "Webtoon Standard");
     EXPECT_EQ(Models::outputProfileSignature(preset),
-              "w800h1280p2f1i1;jpeg90,0,1,0;png6,0;webp80,0,4");
+              "w800h1280p2f1i1;jpeg90,0,1,0;png6,0;webp80,0,4;dpi72");
 }
 
 TEST(OutputPresetTest, ByIdIsTheMembershipTest)
@@ -144,6 +144,7 @@ TEST(OutputPresetTest, EveryCatalogueEntryResolvesById)
         const auto found = Models::outputProfilePresetById(preset.id);
         ASSERT_TRUE(found.has_value());
         EXPECT_EQ(Models::outputProfileSignature(*found), Models::outputProfileSignature(preset));
+        EXPECT_EQ(preset.dpi, 72.0) << preset.name << ": every preset is a screen platform";
     }
 }
 

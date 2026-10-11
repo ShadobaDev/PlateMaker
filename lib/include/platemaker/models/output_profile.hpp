@@ -15,6 +15,7 @@
 #define PLATEMAKER_MODELS_OUTPUT_PROFILE_HPP
 
 #include <array>
+#include <charconv>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -83,6 +84,10 @@ public:
     PngOptions       pngOptions;                                  //!< PNG-specific encoding parameters (used when outputFormat == PNG).
     WebpOptions      webpOptions;                                 //!< WebP-specific encoding parameters (used when outputFormat == WebP).
     int              startIndex      = 1;                         //!< First output file number, e.g. 1 → output_001.png, 5 → output_005.png.
+    /// Resolution written into every slice, in dots per inch (PNG pHYs; EXIF for JPEG and WebP).
+    /// Pixels are unaffected; screens ignore it. Set here so the files say the same whatever the
+    /// inputs said.
+    double           dpi             = 72.0;
 };
 
 /**
@@ -110,6 +115,16 @@ public:
  *
  * \note Does not yet include linked canvas-profile margins (separate follow-up).
  */
+/**
+ * \brief A decimal for a signature: shortest round-trip form ("72", "72.5"), never locale-dependent.
+ */
+[[nodiscard]] inline std::string signatureDecimal(double v)
+{
+    char buf[32];
+    const auto r = std::to_chars(buf, buf + sizeof buf, v);
+    return std::string(buf, r.ptr);
+}
+
 [[nodiscard]] inline std::string outputProfileSignature(const OutputProfile& p)
 {
     using std::to_string;
@@ -127,7 +142,8 @@ public:
            "," + to_string(p.pngOptions.interlaced) +
            ";webp" + to_string(p.webpOptions.quality) +
            "," + to_string(p.webpOptions.lossless) +
-           "," + to_string(p.webpOptions.effort);
+           "," + to_string(p.webpOptions.effort) +
+           ";dpi" + signatureDecimal(p.dpi);
 }
 
 } // namespace Platemaker::Models

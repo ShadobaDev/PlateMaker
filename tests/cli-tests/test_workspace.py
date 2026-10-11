@@ -641,3 +641,49 @@ def test_mod_output_profile_on_a_preset_id_is_rejected(
     )
     assert result.returncode != 0, "modifying a preset must be refused by the CLI"
     assert "preset" in result.stderr.lower()
+
+
+def test_output_profile_dpi_is_stored_and_listed(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """add-output-profile --dpi stores the resolution; mod-output-profile changes it; lists show it."""
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+    added = subprocess.run(
+        [str(platemaker_bin), "workspace", "add-output-profile", "--workspace", str(ws),
+         "--name", "Print", "--dpi", "300"],
+        capture_output=True, text=True,
+    )
+    assert added.returncode == 0, added.stderr
+    op = json.loads(ws.read_text())["outputProfiles"][0]
+    assert op["dpi"] == 300
+
+    subprocess.run(
+        [str(platemaker_bin), "workspace", "mod-output-profile", "--workspace", str(ws),
+         "--output-profile", op["id"], "--dpi", "150"],
+        capture_output=True, check=True,
+    )
+    assert json.loads(ws.read_text())["outputProfiles"][0]["dpi"] == 150
+
+    listed = subprocess.run(
+        [str(platemaker_bin), "workspace", "list-output-profiles", "--workspace", str(ws)],
+        capture_output=True, text=True,
+    )
+    assert "150dpi  (yours)" in listed.stdout
+    assert "72dpi  (preset)" in listed.stdout
+
+
+def test_canvas_profile_listing_shows_dpi_and_template(
+    platemaker_bin: pathlib.Path,
+    tmp_workspace:  pathlib.Path,
+) -> None:
+    """list-canvas-profiles shows the resolution and how the template is written."""
+    ws = tmp_workspace / "project.platemaker.json"
+    create_workspace(platemaker_bin, ws)
+    add_profile(platemaker_bin, ws, name="P", canvas="400x600", margins="0,0,0,0")
+    listed = subprocess.run(
+        [str(platemaker_bin), "workspace", "list-canvas-profiles", "--workspace", str(ws)],
+        capture_output=True, text=True,
+    )
+    assert "dpi=300  template=psd" in listed.stdout

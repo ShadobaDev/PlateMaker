@@ -15,6 +15,7 @@
 
 #include <vips/vips.h>
 
+#include <cstring>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -79,6 +80,37 @@ Core::PixelBuffer ImageIO::decode(const std::string& filePath, bool convertToSRG
 // save
 // ---------------------------------------------------------------------------
 
+namespace {
+
+/**
+ * \brief A view of \p in that records \p dpi and carries none of the source's EXIF.
+ *
+ * Slices inherit the header of whichever input they were cut from, so without this a PNG says that
+ * input's resolution (or none), and keeping EXIF to write a resolution would also keep the source's
+ * camera data, thumbnail and orientation. libvips writes EXIF from the header's fields, so removing
+ * them leaves only what it generates: the resolution, and an Orientation of 1 — true of a slice.
+ */
+VipsImage* stamped(VipsImage* in, double dpi)
+{
+    if (!(dpi > 0.0))
+        throw std::invalid_argument("ImageIO::encode() — output dpi must be positive, got " + std::to_string(dpi));
+    const double pxPerMm = dpi / 25.4;   // libvips keeps resolution in pixels per millimetre
+    VipsImage* out = nullptr;
+    if (vips_copy(in, &out, "xres", pxPerMm, "yres", pxPerMm, nullptr) != 0) {
+        const std::string err = vips_error_buffer();
+        vips_error_clear();
+        throw std::runtime_error("ImageIO::encode() — cannot set the output resolution: " + err);
+    }
+    gchar** fields = vips_image_get_fields(out);
+    for (gchar** f = fields; *f; ++f)
+        if (g_str_has_prefix(*f, "exif-") || std::strcmp(*f, VIPS_META_ORIENTATION) == 0)
+            vips_image_remove(out, *f);
+    g_strfreev(fields);
+    return out;
+}
+
+} // namespace
+
 void ImageIO::encode(
     const Core::PixelBuffer&     buffer,
     const std::string&           outputPath,
@@ -104,13 +136,18 @@ void ImageIO::encode(
     // The *save calls are format-explicit, so the ".pmtmp" extension does not affect the encoder.
     const std::string tmpPath = outputPath + ".pmtmp";
 
+    // The resolution is the profile's. PNG carries it in pHYs; JPEG and WebP only in EXIF, which is
+    // therefore kept — stamped() has emptied it of everything from the source.
+    VipsImage* const image = stamped(buffer.vipsImage(), profile.dpi);
+    const int keep = VIPS_FOREIGN_KEEP_ICC | VIPS_FOREIGN_KEEP_EXIF;
+
     int result = -1;
 
     switch (profile.outputFormat) {
 
         // --- PNG (lossless) ---
         case Models::OutputFormat::PNG:
-            result = vips_pngsave(buffer.vipsImage(), tmpPath.c_str(),
+            result = vips_pngsave(image, tmpPath.c_str(),
                 "compression", profile.pngOptions.compression,
                 "interlace",   profile.pngOptions.interlaced ? 1 : 0,
                 "keep",        VIPS_FOREIGN_KEEP_ICC, // rendered slice: drop source EXIF/XMP/IPTC, keep colour
@@ -136,7 +173,7 @@ void ImageIO::encode(
             // dictated by the format, not our assembly. White matches the PadWhite/EXTEND_WHITE tail
             // convention; for the promoted, fully-opaque regions the composite is pixel-identical
             // regardless of background, so only genuinely-transparent pixels are affected.
-            VipsImage* encodeSrc = buffer.vipsImage();
+            VipsImage* encodeSrc = image;
             VipsImage* flattened = nullptr; // owned only if we flatten
             if (vips_image_hasalpha(encodeSrc)) {
                 double bg[3] = { 255.0, 255.0, 255.0 };
@@ -145,6 +182,7 @@ void ImageIO::encode(
                 vips_area_unref(VIPS_AREA(white));
                 if (frc != 0) {
                     const std::string err = vips_error_buffer();
+                    g_object_unref(image);
                     std::error_code rmEc;
                     fs::remove(utf8ToPath(tmpPath), rmEc);
                     throw std::runtime_error(
@@ -159,7 +197,7 @@ void ImageIO::encode(
                 "optimize_coding", profile.jpegOptions.optimize   ? 1 : 0,
                 "interlace",       profile.jpegOptions.progressive ? 1 : 0,
                 "subsample_mode",  subsampleMode,
-                "keep",            VIPS_FOREIGN_KEEP_ICC, // drop source EXIF (orientation/camera/thumbnail), keep colour
+                "keep",            keep,  // colour, and EXIF for the resolution (the source's was removed)
                 nullptr);
 
             if (flattened) g_object_unref(flattened);
@@ -168,14 +206,15 @@ void ImageIO::encode(
 
         // --- WebP ---
         case Models::OutputFormat::WebP:
-            result = vips_webpsave(buffer.vipsImage(), tmpPath.c_str(),
+            result = vips_webpsave(image, tmpPath.c_str(),
                 "Q",        profile.webpOptions.quality,
                 "lossless", profile.webpOptions.lossless ? 1 : 0,
                 "effort",   profile.webpOptions.effort,
-                "keep",     VIPS_FOREIGN_KEEP_ICC, // rendered slice: drop source EXIF/XMP/IPTC, keep colour
+                "keep",     keep,  // colour, and EXIF for the resolution (the source's was removed)
                 nullptr);
             break;
     }
+    g_object_unref(image);
 
     if (result != 0) {
         const std::string err = vips_error_buffer();

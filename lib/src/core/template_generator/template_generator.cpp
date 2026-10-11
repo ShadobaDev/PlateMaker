@@ -248,6 +248,15 @@ void TemplateGenerator::generate(
 
 #undef GUIDELINES_ENABLED
 
+TemplateOptions TemplateGenerator::optionsFor(const Models::CanvasProfile& cp)
+{
+    TemplateOptions o;
+    o.dpi        = cp.dpi;
+    o.format     = cp.templateSettings.format;
+    o.emptyLayer = cp.templateSettings.emptyLayer;
+    return o;
+}
+
 // ---------------------------------------------------------------------------
 // signature — canvas-only template identity
 // ---------------------------------------------------------------------------
@@ -272,6 +281,7 @@ std::string TemplateGenerator::canvasSignature(const Models::CanvasProfile& cp)
                   std::to_string(cp.backgroundColour.g) + ',' +
                   std::to_string(cp.backgroundColour.b) + ',' +
                   std::to_string(cp.backgroundColour.a);
+    s += ";dpi=" + Models::signatureDecimal(cp.dpi);
     return s;
 }
 

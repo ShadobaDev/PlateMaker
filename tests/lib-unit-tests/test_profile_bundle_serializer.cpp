@@ -58,9 +58,12 @@ TEST(ProfileBundleSerializerTest, RoundTripPreservesFields)
 {
     Infrastructure::ProfileBundleSerializer s;
 
-    const std::string text = s.serialize(
-        {canvas("cp-1", "Manga B4", 1600, 10240)},
-        {output("op-1", "My Output", 1000, 2000)});
+    auto cp = canvas("cp-1", "Manga B4", 1600, 10240);
+    cp.dpi              = 600.0;
+    cp.templateSettings = {Models::TemplateFormat::Png, true};
+    auto op = output("op-1", "My Output", 1000, 2000);
+    op.dpi = 150.0;
+    const std::string text = s.serialize({cp}, {op});
 
     const Infrastructure::ProfileBundle b = s.deserialize(text);
 
@@ -69,11 +72,15 @@ TEST(ProfileBundleSerializerTest, RoundTripPreservesFields)
     EXPECT_EQ(b.canvasProfiles[0].canvasSize.width, 1600);
     EXPECT_EQ(b.canvasProfiles[0].margins.top, 10);
     EXPECT_EQ(b.canvasProfiles[0].margins.left, 40);
+    EXPECT_EQ(b.canvasProfiles[0].dpi, 600.0) << "part of the profile, not a local path: it travels";
+    EXPECT_EQ(b.canvasProfiles[0].templateSettings.format, Models::TemplateFormat::Png);
+    EXPECT_TRUE(b.canvasProfiles[0].templateSettings.emptyLayer);
 
     ASSERT_EQ(b.outputProfiles.size(), 1u);
     EXPECT_EQ(b.outputProfiles[0].name, "My Output");
     EXPECT_EQ(b.outputProfiles[0].targetWidth, 1000);
     EXPECT_EQ(b.outputProfiles[0].sliceHeight, 2000);
+    EXPECT_EQ(b.outputProfiles[0].dpi, 150.0);
 }
 
 TEST(ProfileBundleSerializerTest, SerializeStripsTemplateInfo)

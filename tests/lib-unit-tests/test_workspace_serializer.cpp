@@ -22,6 +22,8 @@
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/project_item.hpp>
 
+#include <nlohmann/json.hpp>
+
 #include <utility>
 
 #include <filesystem>
@@ -43,6 +45,8 @@ Models::Workspace makeMinimalWorkspace()
     canvas.canvasSize   = {1600, 10240};
     canvas.margins      = {100, 100, 100, 100};
     canvas.visualColour = {255, 105, 180, 128}; // hot pink @ 50 % alpha
+    canvas.dpi          = 350.5;                // not the default, so a lost field shows
+    canvas.templateSettings = {Models::TemplateFormat::Png, true};
 
     // A genuine user profile — deliberately *not* preset-shaped (WebP, not the preset's PNG), so it
     // is not collapsed into a catalogue reference on load.
@@ -54,6 +58,7 @@ Models::Workspace makeMinimalWorkspace()
     output.lastSlicePolicy = Models::LastSlicePolicy::KeepAsIs;
     output.outputFormat    = Models::OutputFormat::WebP;
     output.startIndex      = 1;
+    output.dpi             = 96.0;   // not the default
 
     Models::Workspace ws;
     ws.version         = 2;
@@ -106,6 +111,9 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesCanvasProfile)
     EXPECT_EQ(loaded.canvasProfiles()[0].canvasSize.height, original.canvasProfiles()[0].canvasSize.height);
     EXPECT_EQ(loaded.canvasProfiles()[0].margins.top,       original.canvasProfiles()[0].margins.top);
     EXPECT_EQ(loaded.canvasProfiles()[0].visualColour.r,    original.canvasProfiles()[0].visualColour.r);
+    EXPECT_EQ(loaded.canvasProfiles()[0].dpi,               350.5);
+    EXPECT_EQ(loaded.canvasProfiles()[0].templateSettings.format, Models::TemplateFormat::Png);
+    EXPECT_TRUE(loaded.canvasProfiles()[0].templateSettings.emptyLayer);
 
     std::filesystem::remove(tmp);
 }
@@ -129,6 +137,30 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesOutputProfile)
     EXPECT_EQ(loaded.outputProfiles()[0].sliceHeight,  original.outputProfiles()[0].sliceHeight);
     EXPECT_EQ(loaded.outputProfiles()[0].outputFormat, original.outputProfiles()[0].outputFormat);
     EXPECT_EQ(loaded.outputProfiles()[0].startIndex,   original.outputProfiles()[0].startIndex);
+    EXPECT_EQ(loaded.outputProfiles()[0].dpi,          96.0);
+
+    std::filesystem::remove(tmp);
+}
+
+TEST(WorkspaceSerializerTest, ProfilesWrittenBeforeDpiLoadWithTheDefaults)
+{
+    // Strip the new fields from a saved file, as a pre-DPI build wrote it: they are additive.
+    const WorkspaceSerializer ser;
+    const std::filesystem::path tmp =
+        std::filesystem::temp_directory_path() / "pm_test_pre_dpi.platemaker.json";
+    ser.save(makeMinimalWorkspace(), tmp.string());
+    nlohmann::json j;
+    { std::ifstream in(tmp); in >> j; }
+    for (auto& cp : j["canvasProfiles"]) { cp.erase("dpi"); cp.erase("templateSettings"); }
+    for (auto& op : j["outputProfiles"]) op.erase("dpi");
+    { std::ofstream out(tmp); out << j.dump(2); }
+
+    const auto loaded = ser.load(tmp.string());
+    const Models::CanvasProfile defaults;
+    EXPECT_EQ(loaded.canvasProfiles()[0].dpi, 300.0);
+    EXPECT_EQ(loaded.canvasProfiles()[0].templateSettings.format, defaults.templateSettings.format);
+    EXPECT_FALSE(loaded.canvasProfiles()[0].templateSettings.emptyLayer);
+    EXPECT_EQ(loaded.outputProfiles()[0].dpi, 72.0);
 
     std::filesystem::remove(tmp);
 }

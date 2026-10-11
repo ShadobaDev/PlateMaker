@@ -40,6 +40,23 @@ struct CanvasTemplateInfo {
     std::string generatedAt; //!< ISO 8601 timestamp of the last generation.
 };
 
+/// The file a template is written as.
+enum class TemplateFormat {
+    Png, //!< One flat image, to place on a canvas as a reference.
+    Psd, //!< A layered document that opens as a canvas of exactly this size, with nothing to place.
+};
+
+/**
+ * \struct CanvasTemplateSettings
+ * \brief How this profile's template is written — what the canvas itself does not say.
+ *
+ * Its resolution is not here: a template is an image of the canvas, so it takes CanvasProfile::dpi.
+ */
+struct CanvasTemplateSettings {
+    TemplateFormat format     = TemplateFormat::Psd; //!< Opens in Procreate as the canvas itself.
+    bool           emptyLayer = false;               //!< PSD only: an empty "Layer" above the template.
+};
+
 /**
  * \class CanvasProfile
  * \brief A named canvas configuration that captures the full canvas size, margin
@@ -70,6 +87,14 @@ public:
 
     Size    canvasSize;   //!< Full canvas dimensions including all margin zones, in pixels.
     Margins margins;      //!< Margin widths on each side, in pixels.
+
+    /**
+     * \brief The resolution the artist draws at, in dots per inch.
+     *
+     * Recorded in the template, so a drawing app sizes its canvas physically as intended. The render
+     * works in pixels and never reads it.
+     */
+    double dpi = 300.0;
 
     /**
      * \brief GUI hint: the user entered dimensions as safe-area (content zone) rather
@@ -105,6 +130,8 @@ public:
      * Not used by the library itself — maintained by the GUI/CLI layer.
      */
     CanvasTemplateInfo templateInfo;
+
+    CanvasTemplateSettings templateSettings; //!< How the template is written (format, an empty layer).
 
     // ---------------------------------------------------------------------------
     // Computed properties
