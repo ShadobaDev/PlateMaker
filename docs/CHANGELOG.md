@@ -256,6 +256,14 @@ released), which re-derives onto this baseline per the cascade rule.
   (`--out FILE`, optional `--only NAME,…` by name); import into a workspace from either a bundle or
   another `.platemaker.json` workspace (`--from SOURCE`, optional `--only`).
 
+### Fixed
+
+- **A canvas template records 300 DPI instead of 25.4.** `TemplateGenerator` created its image at one
+  pixel per millimetre — libvips' unit — and the PNG carried that as 25.4 DPI, a value nobody chose. A
+  drawing app that sizes a canvas physically could then resample the template on import and shift its
+  edges by a pixel. `generate()` takes a new **`TemplateOptions`** (defaulted, so existing calls compile
+  unchanged) whose `dpi` defaults to 300; pixels are untouched.
+
 ## [0.5.1] — 23.08.2026
 
 Packaging only — no source, API, or behaviour change; code built against 0.5.0 is unaffected. Windows now

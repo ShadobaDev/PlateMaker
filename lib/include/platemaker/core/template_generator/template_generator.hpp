@@ -24,6 +24,15 @@
 namespace Platemaker::Core {
 
 /**
+ * \brief How a template file is written, as opposed to what it shows (the canvas profile).
+ */
+struct TemplateOptions {
+    /// Resolution recorded in the file, in dots per inch. Pixels are unaffected; a drawing app reads it
+    /// to size the canvas physically, and one that disagrees with it may resample the image on import.
+    double dpi = 300.0;
+};
+
+/**
  * \class TemplateGenerator
  * \brief Generates a PNG canvas template image that an artist imports into Procreate
  *        as a reference layer before drawing.
@@ -43,7 +52,7 @@ namespace Platemaker::Core {
  * TemplateGenerator is stateless and thread-safe.
  *
  * \note The template is always saved as a lossless PNG regardless of the
- *       OutputProfile::outputFormat setting.
+ *       OutputProfile::outputFormat setting, at the resolution in TemplateOptions::dpi.
  */
 class PLATEMAKER_EXPORT TemplateGenerator {
 public:
@@ -60,14 +69,16 @@ public:
      *                      width and slice height. Ignored while the guides are compiled out.
      * \param outputPath    Absolute path where the PNG template file will be written.
      *                      Parent directories must already exist.
+     * \param options       How the file is written (its resolution).
      *
-     * \throws std::invalid_argument if the canvas size or margins are degenerate.
+     * \throws std::invalid_argument if the canvas size or margins are degenerate, or the dpi is not positive.
      * \throws std::runtime_error    if the image cannot be written to \p outputPath.
      */
     void generate(
         const Models::CanvasProfile& canvasProfile,
         const Models::OutputProfile& outputProfile,
-        const std::string&           outputPath) const;
+        const std::string&           outputPath,
+        const TemplateOptions&       options = {}) const;
 
     /**
      * \brief Computes a canvas-only signature identifying a template's content.

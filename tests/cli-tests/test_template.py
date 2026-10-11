@@ -4,6 +4,7 @@ test_template.py — CLI integration tests for ``platemaker template``.
 Covers:
   - Basic template generation (exit code 0, file created).
   - PNG dimensions match the canvas profile's canvasSize.
+  - The PNG records 300 DPI (its pHYs chunk), so a drawing app does not resample it.
   - Missing required arguments produce exit code 1.
   - Non-existent profile produces exit code 1 with a useful message.
   - --margins-tpl-color / --background-tpl-color override colours at runtime
@@ -73,6 +74,32 @@ def _png_bands(path: pathlib.Path) -> int:
     colour_type = data[25]
     mapping = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
     return mapping.get(colour_type, -1)
+
+
+def _png_dpi(path: pathlib.Path) -> tuple[float, float]:
+    """
+    Read the resolution from a PNG file's pHYs chunk, in dots per inch.
+
+    pHYs holds pixels per unit X and Y (4 bytes each, big-endian) and a unit byte,
+    where 1 means metres.
+
+    :param path: Path to a valid PNG file.
+    :returns:    ``(x_dpi, y_dpi)``.
+    :raises ValueError: If there is no pHYs chunk, or its unit is not metres.
+    """
+    data = path.read_bytes()
+    pos = 8                                   # past the signature
+    while pos + 8 <= len(data):
+        length, tag = struct.unpack(">I4s", data[pos:pos + 8])
+        if tag == b"pHYs":
+            x, y, unit = struct.unpack(">IIB", data[pos + 8:pos + 17])
+            if unit != 1:
+                raise ValueError(f"pHYs unit is not metres: {unit}")
+            return x * 0.0254, y * 0.0254
+        if tag == b"IDAT":
+            break                             # pHYs must come before the image data
+        pos += 12 + length                    # length + tag + data + CRC
+    raise ValueError(f"No pHYs chunk in {path}")
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +181,32 @@ class TestTemplateBasic:
         width, height = _png_dimensions(out)
         assert width  == 1600,  f"Expected width 1600, got {width}"
         assert height == 10240, f"Expected height 10240, got {height}"
+
+    def test_template_png_records_300_dpi(
+        self,
+        platemaker_bin: pathlib.Path,
+        ws: pathlib.Path,
+        tmp_workspace: pathlib.Path,
+    ) -> None:
+        """
+        The PNG records 300 DPI. pHYs stores whole pixels per metre (11811), so
+        allow the rounding that brings back 299.9994.
+        """
+        out = tmp_workspace / "template.png"
+        subprocess.run(
+            [
+                str(platemaker_bin),
+                "template",
+                "--workspace", str(ws),
+                "--profile",   "WebtoonTest",
+                "--output",    str(out),
+            ],
+            capture_output=True,
+            check=True,
+        )
+        x_dpi, y_dpi = _png_dpi(out)
+        assert x_dpi == pytest.approx(300, abs=0.01), f"Expected 300 DPI, got {x_dpi}"
+        assert y_dpi == pytest.approx(300, abs=0.01), f"Expected 300 DPI, got {y_dpi}"
 
     def test_template_png_is_rgba(
         self,

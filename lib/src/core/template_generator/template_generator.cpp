@@ -61,7 +61,8 @@ void fillRect(VipsImage* img,
 void TemplateGenerator::generate(
     const Models::CanvasProfile& canvasProfile,
     const Models::OutputProfile& outputProfile,
-    const std::string&           outputPath) const
+    const std::string&           outputPath,
+    const TemplateOptions&       options) const
 {
     using namespace Models;
 
@@ -93,6 +94,12 @@ void TemplateGenerator::generate(
         throw std::invalid_argument(
             "TemplateGenerator: margins exceed canvas dimensions");
 
+    if (!(options.dpi > 0.0))
+        throw std::invalid_argument(
+            "TemplateGenerator: dpi must be positive, got " + std::to_string(options.dpi));
+    // libvips keeps resolution in pixels per millimetre; pngsave writes it to the pHYs chunk.
+    const double pxPerMm = options.dpi / 25.4;
+
     // -----------------------------------------------------------------------
     // Create a writable 4-band (RGBA) image in memory.
     //
@@ -114,7 +121,7 @@ void TemplateGenerator::generate(
         VIPS_FORMAT_UCHAR,
         VIPS_CODING_NONE,
         VIPS_INTERPRETATION_sRGB,
-        1.0, 1.0);
+        pxPerMm, pxPerMm);
 
     if (vips_image_write_prepare(canvas) != 0) {
         g_object_unref(canvas);
