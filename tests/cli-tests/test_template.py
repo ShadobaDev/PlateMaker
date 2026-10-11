@@ -5,6 +5,8 @@ Covers:
   - Basic template generation (exit code 0, file created).
   - PNG dimensions match the canvas profile's canvasSize.
   - The PNG records 300 DPI (its pHYs chunk), so a drawing app does not resample it.
+  - A .psd output writes a layered PSD (header, 300 DPI, one "Template" layer); --empty-layer adds
+    one; --dpi sets the resolution in either format and rejects a bad value.
   - Missing required arguments produce exit code 1.
   - Non-existent profile produces exit code 1 with a useful message.
   - --margins-tpl-color / --background-tpl-color override colours at runtime
@@ -100,6 +102,39 @@ def _png_dpi(path: pathlib.Path) -> tuple[float, float]:
             break                             # pHYs must come before the image data
         pos += 12 + length                    # length + tag + data + CRC
     raise ValueError(f"No pHYs chunk in {path}")
+
+
+def _psd_summary(path: pathlib.Path) -> dict:
+    """
+    Read a PSD's header, resolution (resource 1005) and layer count.
+
+    Layout: 26-byte header ("8BPS", version, 6 reserved, channels, height, width, depth, mode);
+    colour-mode data (length-prefixed); image resources (length-prefixed "8BIM" blocks); then the
+    layer and mask section, whose layer info opens with a signed layer count.
+
+    :param path: Path to a PSD file.
+    :returns:    ``{"width", "height", "channels", "dpi", "layers"}``.
+    """
+    data = path.read_bytes()
+    if data[:4] != b"8BPS":
+        raise ValueError(f"Not a PSD file: {path}")
+    channels, height, width = struct.unpack(">HII", data[12:22])
+    pos = 26
+    pos += 4 + struct.unpack(">I", data[pos:pos + 4])[0]        # colour mode data
+    res_len = struct.unpack(">I", data[pos:pos + 4])[0]
+    pos += 4
+    res_end, dpi = pos + res_len, None
+    while pos < res_end:
+        rid = struct.unpack(">H", data[pos + 4:pos + 6])[0]
+        name_len = data[pos + 6]
+        pos += 6 + 1 + name_len + ((1 + name_len) & 1)
+        size = struct.unpack(">I", data[pos:pos + 4])[0]
+        pos += 4
+        if rid == 1005:
+            dpi = struct.unpack(">I", data[pos:pos + 4])[0] / 65536.0
+        pos += size + (size & 1)
+    layers = abs(struct.unpack(">h", data[pos + 8:pos + 10])[0])  # past both section lengths
+    return {"width": width, "height": height, "channels": channels, "dpi": dpi, "layers": layers}
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +353,84 @@ class TestTemplateBasic:
         with out_with_ext.open("rb") as f:
             sig = f.read(8)
         assert sig == b"\x89PNG\r\n\x1a\n", "File does not start with a PNG signature."
+
+
+# ---------------------------------------------------------------------------
+# PSD output and resolution
+# ---------------------------------------------------------------------------
+
+def _template(platemaker_bin: pathlib.Path, ws: pathlib.Path, out: pathlib.Path, *extra: str):
+    return subprocess.run(
+        [
+            str(platemaker_bin),
+            "template",
+            "--workspace", str(ws),
+            "--profile",   "WebtoonTest",
+            "--output",    str(out),
+            *extra,
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+
+class TestTemplatePsd:
+    """A .psd output and the --dpi / --empty-layer flags."""
+
+    def test_psd_extension_writes_a_layered_psd(
+        self, platemaker_bin: pathlib.Path, ws: pathlib.Path, tmp_workspace: pathlib.Path,
+    ) -> None:
+        """A .psd output is a PSD at the canvas size, 300 DPI, holding one layer."""
+        out = tmp_workspace / "template.psd"
+        result = _template(platemaker_bin, ws, out)
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert not pathlib.Path(str(out) + ".png").exists(), "a .psd output must not get .png appended"
+        psd = _psd_summary(out)
+        assert (psd["width"], psd["height"]) == (1600, 10240)
+        assert psd["channels"] == 4, "RGB plus transparency"
+        assert psd["dpi"] == pytest.approx(300)
+        assert psd["layers"] == 1
+
+    def test_empty_layer_adds_a_layer(
+        self, platemaker_bin: pathlib.Path, ws: pathlib.Path, tmp_workspace: pathlib.Path,
+    ) -> None:
+        """--empty-layer puts a second, empty layer in the PSD."""
+        out = tmp_workspace / "template.psd"
+        result = _template(platemaker_bin, ws, out, "--empty-layer")
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert _psd_summary(out)["layers"] == 2
+
+    def test_empty_layer_with_png_warns(
+        self, platemaker_bin: pathlib.Path, ws: pathlib.Path, tmp_workspace: pathlib.Path,
+    ) -> None:
+        """--empty-layer on a PNG is ignored with a warning, not an error."""
+        out = tmp_workspace / "template.png"
+        result = _template(platemaker_bin, ws, out, "--empty-layer")
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert "--empty-layer" in result.stderr
+        assert out.exists()
+
+    @pytest.mark.parametrize("name", ["template.png", "template.psd"])
+    def test_dpi_flag_sets_the_resolution(
+        self, platemaker_bin: pathlib.Path, ws: pathlib.Path, tmp_workspace: pathlib.Path, name: str,
+    ) -> None:
+        """--dpi 72 is recorded in either format."""
+        out = tmp_workspace / name
+        result = _template(platemaker_bin, ws, out, "--dpi", "72")
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        dpi = _png_dpi(out)[0] if name.endswith(".png") else _psd_summary(out)["dpi"]
+        assert dpi == pytest.approx(72, abs=0.01)
+
+    @pytest.mark.parametrize("value", ["0", "-5", "abc", "300dpi"])
+    def test_bad_dpi_is_an_error(
+        self, platemaker_bin: pathlib.Path, ws: pathlib.Path, tmp_workspace: pathlib.Path, value: str,
+    ) -> None:
+        """A resolution sizes the canvas, so a bad one fails rather than being ignored."""
+        out = tmp_workspace / "template.psd"
+        result = _template(platemaker_bin, ws, out, "--dpi", value)
+        assert result.returncode == 1
+        assert "--dpi" in result.stderr
+        assert not out.exists()
 
 
 # ---------------------------------------------------------------------------

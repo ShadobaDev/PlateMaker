@@ -1,6 +1,6 @@
 /**
  * \file lib/include/platemaker/core/template_generator/template_generator.hpp
- * \brief TemplateGenerator — renders a canvas template PNG for use as a Procreate guide layer.
+ * \brief TemplateGenerator — renders a canvas template (PNG or PSD) for use as a Procreate guide layer.
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
  * 
@@ -23,6 +23,12 @@
 
 namespace Platemaker::Core {
 
+/// The file a template is written as.
+enum class TemplateFormat {
+    Png, //!< One flat image, to place on a canvas as a reference.
+    Psd, //!< A layered document that opens as a canvas of exactly this size, with nothing to place.
+};
+
 /**
  * \brief How a template file is written, as opposed to what it shows (the canvas profile).
  */
@@ -30,12 +36,15 @@ struct TemplateOptions {
     /// Resolution recorded in the file, in dots per inch. Pixels are unaffected; a drawing app reads it
     /// to size the canvas physically, and one that disagrees with it may resample the image on import.
     double dpi = 300.0;
+    TemplateFormat format = TemplateFormat::Png;
+    /// PSD only: an empty layer named "Layer" above the template, ready to draw on. Ignored for PNG.
+    bool emptyLayer = false;
 };
 
 /**
  * \class TemplateGenerator
- * \brief Generates a PNG canvas template image that an artist imports into Procreate
- *        as a reference layer before drawing.
+ * \brief Generates a canvas template image that an artist opens in Procreate (PSD) or imports into
+ *        it as a reference layer (PNG) before drawing.
  *
  * The generated template is a full-resolution image at the canvas size defined by
  * the supplied CanvasProfile.  It currently renders:
@@ -51,8 +60,10 @@ struct TemplateOptions {
  *
  * TemplateGenerator is stateless and thread-safe.
  *
- * \note The template is always saved as a lossless PNG regardless of the
- *       OutputProfile::outputFormat setting, at the resolution in TemplateOptions::dpi.
+ * \note The template is saved losslessly as PNG or PSD (TemplateOptions::format), regardless of the
+ *       OutputProfile::outputFormat setting, at the resolution in TemplateOptions::dpi. A PSD holds the
+ *       template as a layer named "Template", plus an empty "Layer" above it on request; PSD caps each
+ *       side at 30000 px.
  */
 class PLATEMAKER_EXPORT TemplateGenerator {
 public:
@@ -67,11 +78,12 @@ public:
      * \param canvasProfile The canvas profile defining canvas size, margins, and overlay colour.
      * \param outputProfile Reserved for the (currently disabled) slice-guide lines — their target
      *                      width and slice height. Ignored while the guides are compiled out.
-     * \param outputPath    Absolute path where the PNG template file will be written.
-     *                      Parent directories must already exist.
-     * \param options       How the file is written (its resolution).
+     * \param outputPath    Absolute path (UTF-8) where the template file will be written, whatever its
+     *                      extension. Parent directories must already exist.
+     * \param options       How the file is written: resolution, format, an empty layer.
      *
-     * \throws std::invalid_argument if the canvas size or margins are degenerate, or the dpi is not positive.
+     * \throws std::invalid_argument if the canvas size or margins are degenerate, the dpi is not positive,
+     *                               or a PSD side exceeds 30000 px.
      * \throws std::runtime_error    if the image cannot be written to \p outputPath.
      */
     void generate(

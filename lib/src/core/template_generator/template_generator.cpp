@@ -1,9 +1,9 @@
 /**
  * \file lib/src/core/template_generator/template_generator.cpp
- * \brief TemplateGenerator implementation — renders a canvas template PNG.
+ * \brief TemplateGenerator implementation — renders a canvas template PNG or PSD.
  *
- * Uses libvips draw operations on an in-memory RGBA image.  The image is
- * always saved as a lossless PNG regardless of the workspace output format.
+ * Uses libvips draw operations on an in-memory RGBA image, saved losslessly as PNG (libvips) or as a
+ * layered PSD (minipsd), regardless of the workspace output format.
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
  *
@@ -16,6 +16,11 @@
 #include <platemaker/core/template_generator/template_generator.hpp>
 
 #include <vips/vips.h>
+
+// minipsd's functions stay private to this file: the lib exports none of them.
+#define MINIPSD_STATIC
+#define MINIPSD_IMPLEMENTATION
+#include "infrastructure/psd_writer/minipsd.h"
 
 #include <cmath>
 #include <cstring>
@@ -50,6 +55,31 @@ void fillRect(VipsImage* img,
     toInk(col, ink);
     if (vips_draw_rect(img, ink, 4, left, top, width, height, "fill", 1, nullptr) != 0)
         vips_error_clear(); // non-fatal, best-effort
+}
+
+/// Writes the drawn canvas as a PSD: the template layer, and an empty one above it on request.
+void savePsd(VipsImage* canvas, const TemplateOptions& options, const std::string& outputPath)
+{
+    const minipsd_layer layers[2] = {
+        {"Template", static_cast<const uint8_t*>(VIPS_IMAGE_ADDR(canvas, 0, 0)), 255, 0},
+        {"Layer",    nullptr,                                                   255, 0},
+    };
+    minipsd_doc doc{};
+    doc.width       = static_cast<uint32_t>(canvas->Xsize);
+    doc.height      = static_cast<uint32_t>(canvas->Ysize);
+    doc.dpi         = options.dpi;
+    doc.layers      = layers;
+    doc.layer_count = options.emptyLayer ? 2 : 1;
+    doc.compression = MINIPSD_RLE;
+
+    const int rc = minipsd_write_file(&doc, outputPath.c_str());
+    if (rc == MINIPSD_ERR_SIZE)
+        throw std::invalid_argument(
+            "TemplateGenerator: a PSD side cannot exceed " + std::to_string(MINIPSD_MAX_SIDE) + " px, got " +
+            std::to_string(doc.width) + "x" + std::to_string(doc.height));
+    if (rc != MINIPSD_OK)
+        throw std::runtime_error(
+            "TemplateGenerator: cannot save PSD to '" + outputPath + "': " + minipsd_error_string(rc));
 }
 
 } // anonymous namespace
@@ -196,9 +226,16 @@ void TemplateGenerator::generate(
 #endif
 
     // -----------------------------------------------------------------------
-    // 5. Save as PNG (always lossless; alpha preserved).
+    // 5. Save, losslessly with alpha: a layered PSD, or a PNG.
     // -----------------------------------------------------------------------
-    if (vips_pngsave(canvas, outputPath.c_str(), nullptr) != 0) {
+    if (options.format == TemplateFormat::Psd) {
+        try {
+            savePsd(canvas, options, outputPath);
+        } catch (...) {
+            g_object_unref(canvas);
+            throw;
+        }
+    } else if (vips_pngsave(canvas, outputPath.c_str(), nullptr) != 0) {
         g_object_unref(canvas);
         const std::string err = vips_error_buffer();
         vips_error_clear();

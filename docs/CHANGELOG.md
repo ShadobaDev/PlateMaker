@@ -111,6 +111,18 @@ released), which re-derives onto this baseline per the cascade rule.
 
 ### Added
 
+- **A canvas template can be a layered PSD.** `TemplateOptions` gains **`format`** (`TemplateFormat::Png`,
+  the default, or `::Psd`) and **`emptyLayer`**. A PSD opens in Procreate as a canvas of exactly the
+  profile's size, the template as a layer named "Template" — nothing to place, so nothing for the app
+  to resample — with an empty "Layer" above it on request. PSD caps a side at 30000 px; a larger canvas
+  is an `invalid_argument`.
+  - Written by **minipsd**, a header-only C99 PSD writer in `lib/src/infrastructure/psd_writer/` (MIT,
+    no dependencies, compiled privately into the lib — it exports nothing). It is meant to move to a
+    repository of its own once proven in the drawing apps.
+  - `platemaker template` picks the format from the `--output` extension (`.psd` or `.png`; anything
+    else still gets `.png` appended), and gains **`--dpi N`** (a bad value is an error: the app sizes
+    the canvas by it) and **`--empty-layer`** (PSD only; a PNG ignores it with a warning).
+
 - **Workspace packages — `WorkspacePackager` and `platemaker workspace export`.** One zip that holds a
   workspace and every file it uses, and opens on another machine as is.
   - `plan()` gives every referenced file (pages, overlay assets, templates) one place in the package and

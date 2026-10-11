@@ -43,6 +43,7 @@
  *                      [--no-profile] [--json]
  *   platemaker template --workspace FILE --profile NAME --output FILE
  *                       [--margins-tpl-color R,G,B[,A]] [--background-tpl-color R,G,B[,A]]
+ *                       [--dpi N] [--empty-layer]
  * 
  * Canvas profile matching during process:
  *   - If the workspace has canvas profiles, each input file's pixel width is
@@ -416,8 +417,13 @@ static int cmdHelp(const std::string& prog)
         << "\n"
         << "  template --workspace FILE --profile NAME --output FILE\n"
         << "           [--margins-tpl-color R,G,B[,A]]  [--background-tpl-color R,G,B[,A]]\n"
-        << "      Generate a canvas template PNG for use as a Procreate guide layer.\n"
-        << "      The template shows the canvas background and margin zones.\n"
+        << "           [--dpi N] [--empty-layer]\n"
+        << "      Generate a canvas template for Procreate: the canvas background and margin zones.\n"
+        << "      The --output extension picks the format: .psd opens as a canvas of exactly this\n"
+        << "        size (template as a layer); .png is a flat image to place. Any other extension\n"
+        << "        gets .png appended. A PSD side is capped at 30000 px.\n"
+        << "      --dpi N: resolution recorded in the file (default 300); pixels are unchanged.\n"
+        << "      --empty-layer: PSD only, adds an empty layer named 'Layer' above the template.\n"
         << "      Colour resolution order (most to least specific):\n"
         << "        1. --margins-tpl-color / --background-tpl-color CLI arguments\n"
         << "        2. Colours stored in the named canvas profile (workspace JSON)\n"
@@ -2193,7 +2199,7 @@ static int cmdProjectStatus(const Opts& opts)
 // ===========================================================================
 
 /**
- * \brief Renders a canvas template PNG from a named canvas profile.
+ * \brief Renders a canvas template (PNG or PSD, by the --output extension) from a named canvas profile.
  *
  * Colour resolution priority (most to least specific):
  *   1. \c --margins-tpl-color / \c --background-tpl-color CLI arguments.
@@ -2219,20 +2225,36 @@ static int cmdTemplate(const Opts& opts)
     const std::string wsFile      = opts.get("workspace");
     const std::string profileName = opts.get("profile");
 
-    // Templates are always saved as PNG.  If the caller omits the .png
-    // extension (or uses a different one), append it so the output file is
-    // recognised correctly by all tools.
+    // The extension picks the format: .psd or .png. Any other (or none) gets .png appended, so the
+    // output file is recognised correctly by all tools.
+    TemplateOptions options;
     std::string outputPath = opts.get("output");
     {
         const fs::path p(outputPath);
         std::string ext = p.extension().string();
         for (auto& c : ext)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        if (ext != ".png") {
+        if (ext == ".psd") {
+            options.format = TemplateFormat::Psd;
+        } else if (ext != ".png") {
             outputPath += ".png";
             std::cerr << "Note: '.png' extension appended; output: " << outputPath << '\n';
         }
     }
+
+    // Unlike the colours, a wrong resolution is not cosmetic — the drawing app sizes the canvas by it.
+    if (opts.has("dpi")) {
+        const std::string text = opts.get("dpi");
+        char* end = nullptr;
+        options.dpi = std::strtod(text.c_str(), &end);
+        if (text.empty() || *end != '\0' || !(options.dpi > 0.0)) {
+            std::cerr << "Error: --dpi must be a positive number, got '" << text << "'\n";
+            return 1;
+        }
+    }
+    options.emptyLayer = opts.has("empty-layer");
+    if (options.emptyLayer && options.format != TemplateFormat::Psd)
+        std::cerr << "Warning: --empty-layer applies to a .psd output only; ignored for PNG\n";
 
     // --- Load workspace ---
     Workspace ws;
@@ -2292,7 +2314,7 @@ static int cmdTemplate(const Opts& opts)
 
     // --- Generate ---
     try {
-        TemplateGenerator{}.generate(cp, outProfile, outputPath);
+        TemplateGenerator{}.generate(cp, outProfile, outputPath, options);
     } catch (const std::invalid_argument& e) {
         std::cerr << "Error: invalid profile parameters: " << e.what() << '\n';
         return 1;
@@ -2305,6 +2327,7 @@ static int cmdTemplate(const Opts& opts)
     std::cerr << "  Profile    : " << cp.name << '\n';
     std::cerr << "  Canvas     : " << cp.canvasSize.width << 'x' << cp.canvasSize.height << '\n';
     std::cerr << "  Safe area  : " << cp.safeArea().width << 'x' << cp.safeArea().height << '\n';
+    std::cerr << "  Resolution : " << options.dpi << " dpi\n";
     return 0;
 }
 

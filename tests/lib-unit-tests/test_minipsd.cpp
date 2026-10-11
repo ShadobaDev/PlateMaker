@@ -1,7 +1,9 @@
 /**
  * \file tests/lib-unit-tests/test_minipsd.cpp
- * \brief Tests for minipsd.h, the PSD writer: files are read back with a small reader that follows the
- *        format description, so a field written wrong fails here rather than in a drawing app.
+ * \brief Tests for minipsd.h, the PSD writer, and for the PSD templates TemplateGenerator writes with it:
+ *        files are read back with a small reader that follows the format description, so a field
+ *        written wrong fails here rather than in a drawing app.  (The reader shares the writer's reading
+ *        of the format, so a new kind of field also needs one look with an independent reader.)
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
  *
@@ -12,7 +14,10 @@
 #define MINIPSD_IMPLEMENTATION
 #include "minipsd.h"
 
+#include <platemaker/core/template_generator/template_generator.hpp>
+
 #include <gtest/gtest.h>
+#include <vips/vips.h>
 
 #include <cstdint>
 #include <cstring>
@@ -487,4 +492,95 @@ TEST(MinipsdTest, CompiledAsCItWritesTheSameBytes)
     for (std::size_t i = 0; i < px.size(); ++i) px[i] = static_cast<std::uint8_t>(i * 17);
     const minipsd_layer layers[2] = {{"Template", px.data(), 255, 0}, {"Layer", nullptr, 255, 0}};
     EXPECT_EQ(Bytes(buf, buf + size), write(docOf(3, 2, layers, 2)));
+}
+
+// ---------------------------------------------------------------------------------------------------
+// TemplateGenerator writing PSD
+// ---------------------------------------------------------------------------------------------------
+
+namespace {
+
+using Platemaker::Core::TemplateFormat;
+using Platemaker::Core::TemplateGenerator;
+using Platemaker::Core::TemplateOptions;
+
+Platemaker::Models::CanvasProfile templateProfile(int w, int h)
+{
+    Platemaker::Models::CanvasProfile cp;
+    cp.name       = "T";
+    cp.canvasSize = {w, h};
+    cp.margins    = {10, 12, 14, 16};
+    return cp;
+}
+
+Bytes readFile(const std::filesystem::path &file)
+{
+    std::ifstream in(file, std::ios::binary);
+    return Bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
+class TemplatePsdTest : public ::testing::Test {
+protected:
+    void SetUp() override
+    {
+        m_dir = std::filesystem::temp_directory_path() / "pm-template-psd";
+        std::filesystem::create_directories(m_dir);
+    }
+    void TearDown() override { std::filesystem::remove_all(m_dir); }
+
+    std::string path(const char *name) const { return (m_dir / name).string(); }
+
+    std::filesystem::path m_dir;
+};
+
+} // namespace
+
+TEST_F(TemplatePsdTest, PsdLayerHoldsThePngPixels)
+{
+    const auto cp = templateProfile(64, 48);
+    const Platemaker::Models::OutputProfile op;
+    TemplateOptions png;
+    TemplateOptions psd;
+    psd.format = TemplateFormat::Psd;
+    TemplateGenerator{}.generate(cp, op, path("t.png"), png);
+    TemplateGenerator{}.generate(cp, op, path("t.psd"), psd);
+
+    VipsImage *im = vips_image_new_from_file(path("t.png").c_str(), nullptr);
+    ASSERT_NE(im, nullptr) << vips_error_buffer();
+    size_t size = 0;
+    void *mem = vips_image_write_to_memory(im, &size);
+    const Bytes pngPixels(static_cast<std::uint8_t *>(mem), static_cast<std::uint8_t *>(mem) + size);
+    g_free(mem);
+    g_object_unref(im);
+
+    const Psd p = read(readFile(m_dir / "t.psd"));
+    EXPECT_EQ(p.width, 64u);
+    EXPECT_EQ(p.height, 48u);
+    EXPECT_DOUBLE_EQ(p.dpiX, 300.0);
+    ASSERT_EQ(p.layers.size(), 1u) << "no empty layer unless asked";
+    EXPECT_EQ(p.layers[0].pascalName, "Template");
+    EXPECT_EQ(p.layers[0].rgba, pngPixels) << "the same template, in either format";
+}
+
+TEST_F(TemplatePsdTest, EmptyLayerAndDpiAreApplied)
+{
+    TemplateOptions o;
+    o.format     = TemplateFormat::Psd;
+    o.emptyLayer = true;
+    o.dpi        = 72.0;
+    TemplateGenerator{}.generate(templateProfile(40, 40), {}, path("t.psd"), o);
+    const Psd p = read(readFile(m_dir / "t.psd"));
+    ASSERT_EQ(p.layers.size(), 2u);
+    EXPECT_EQ(p.layers[1].unicodeName, u"Layer");
+    EXPECT_TRUE(p.layers[1].rgba.empty());
+    EXPECT_DOUBLE_EQ(p.dpiX, 72.0);
+}
+
+TEST_F(TemplatePsdTest, OversizePsdIsAnInvalidArgument)
+{
+    TemplateOptions o;
+    o.format = TemplateFormat::Psd;
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(100, MINIPSD_MAX_SIDE + 1), {}, path("t.psd"), o),
+                 std::invalid_argument);
+    EXPECT_FALSE(std::filesystem::exists(m_dir / "t.psd")) << "refused before the file is opened";
 }
