@@ -6,7 +6,7 @@
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
  *
- * \copyright Copyright (c) 2026 ShadobaDev
+ * \copyright Copyright (c) 2026 Bartlomiej Mucha <shadobadev@gmail.com>
  */
 
 #include <minipsd.h>   // MINIPSD_MAX_SIDE only; the implementation is compiled into the lib

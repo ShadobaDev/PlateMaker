@@ -13,7 +13,7 @@
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-14
  *
- * \copyright Copyright (c) 2026 ShadobaDev
+ * \copyright Copyright (c) 2026 Bartlomiej Mucha <shadobadev@gmail.com>
  */
 
 #ifndef PLATEMAKER_CORE_CANVAS_PROFILE_MATCHER_HPP

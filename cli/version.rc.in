@@ -20,7 +20,7 @@ BEGIN
             VALUE "FileDescription",  "Platemaker command-line tool"
             VALUE "FileVersion",      "@PROJECT_VERSION@"
             VALUE "InternalName",     "platemaker-cli"
-            VALUE "LegalCopyright",   "Copyright (C) 2026 ShadobaDev (Bartlomiej Mucha) - GPL-3.0-or-later"
+            VALUE "LegalCopyright",   "Copyright (C) 2026 Bartlomiej Mucha - GPL-3.0-or-later"
             VALUE "OriginalFilename", "platemaker-cli.exe"
             VALUE "ProductName",      "platemaker-cli"
             VALUE "ProductVersion",   "@PROJECT_VERSION@"

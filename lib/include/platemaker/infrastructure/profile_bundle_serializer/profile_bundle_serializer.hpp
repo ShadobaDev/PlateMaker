@@ -23,7 +23,7 @@
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-08-27
  *
- * \copyright Copyright (c) 2026 ShadobaDev
+ * \copyright Copyright (c) 2026 Bartlomiej Mucha <shadobadev@gmail.com>
  */
 
 #ifndef PLATEMAKER_INFRASTRUCTURE_PROFILE_BUNDLE_SERIALIZER_HPP

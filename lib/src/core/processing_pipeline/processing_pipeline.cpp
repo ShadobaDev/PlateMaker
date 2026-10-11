@@ -17,7 +17,7 @@
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-20
  *
- * \copyright Copyright (c) 2026 ShadobaDev
+ * \copyright Copyright (c) 2026 Bartlomiej Mucha <shadobadev@gmail.com>
  */
 
 #include <platemaker/core/processing_pipeline/processing_pipeline.hpp>

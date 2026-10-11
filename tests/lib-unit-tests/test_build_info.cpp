@@ -11,7 +11,7 @@
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-07-25
  *
- * \copyright Copyright (c) 2026 ShadobaDev
+ * \copyright Copyright (c) 2026 Bartlomiej Mucha <shadobadev@gmail.com>
  */
 
 #include <gtest/gtest.h>
@@ -19,7 +19,10 @@
 #include <platemaker/infrastructure/build_info/build_info.hpp>
 #include <platemaker/version.hpp>
 
+#include <minipsd.h>
+
 #include <algorithm>
+#include <filesystem>
 #include <string>
 
 namespace Platemaker::Infrastructure {
@@ -85,11 +88,34 @@ TEST(LinkedComponents, ReportsNlohmannJsonWithMitLicence)
     EXPECT_EQ(json->licence, "MIT");
 }
 
+TEST(LinkedComponents, ReportsMinipsdWithMitLicence)
+{
+    // Compiled into the lib, so it is the lib's to name — at the version of the header it was built with.
+    const auto components = linkedComponents();
+    const LinkedComponent* psd = find(components, "minipsd");
+    ASSERT_NE(psd, nullptr);
+    EXPECT_EQ(psd->version, MINIPSD_VERSION_STRING);
+    EXPECT_EQ(psd->licence, "MIT");
+}
+
 TEST(LinkedComponents, DoesNotReportTestOnlyGoogleTest)
 {
     // GoogleTest is never shipped, so it must not appear in a licence/About report.
     EXPECT_EQ(find(linkedComponents(), "GoogleTest"), nullptr);
     EXPECT_EQ(find(linkedComponents(), "gtest"), nullptr);
+}
+
+TEST(LinkedComponents, EveryLicenceFileIsInTheCredits)
+{
+    // The GUI opens credits/licenses/<licenceFile> as given, so every name must be a file the build
+    // actually wrote there — a name and a file that drift apart would show "not bundled" for a licence
+    // that is.
+    const std::filesystem::path licences = std::filesystem::path(PLATEMAKER_CREDITS_DIR) / "licenses";
+    for (const LinkedComponent& c : linkedComponents()) {
+        ASSERT_FALSE(c.licenceFile.empty()) << c.name << " names no licence file";
+        EXPECT_TRUE(std::filesystem::is_regular_file(licences / c.licenceFile))
+            << c.name << ": " << (licences / c.licenceFile).string() << " is not in the credits";
+    }
 }
 
 TEST(LinkedComponents, EveryUrlIsGitHub)

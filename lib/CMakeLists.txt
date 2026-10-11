@@ -213,6 +213,17 @@ file(MAKE_DIRECTORY "${_pm_credits_dir}/licenses")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/cmake/licenses/"
      DESTINATION "${_pm_credits_dir}/licenses")
 
+# minipsd's licence carries its own copyright, so it ships as its own text — taken from minipsd itself
+# rather than vendored here: its source tree when fetched, its installed doc dir when found.
+if(minipsd_SOURCE_DIR AND EXISTS "${minipsd_SOURCE_DIR}/LICENSE.MIT")
+    set(_pm_minipsd_licence_file "${minipsd_SOURCE_DIR}/LICENSE.MIT")
+elseif(minipsd_DIR AND EXISTS "${minipsd_DIR}/../../doc/minipsd/LICENSE.MIT")
+    set(_pm_minipsd_licence_file "${minipsd_DIR}/../../doc/minipsd/LICENSE.MIT")   # share/cmake/minipsd
+else()
+    message(FATAL_ERROR "minipsd's LICENSE.MIT was not found (fetched source or installed share/doc/minipsd)")
+endif()
+file(COPY_FILE "${_pm_minipsd_licence_file}" "${_pm_credits_dir}/licenses/minipsd.MIT.txt" ONLY_IF_DIFFERENT)
+
 # Third-party NOTICES + the bundled-dependency SBOM fragments (@_pm_extra_packages@ /
 # @_pm_extra_relationships@ below). Only meaningful on Windows, where we bundle the libvips DLL graph and
 # the compiler runtime; on Linux libvips is a system package and nothing is bundled, so the SBOM stays

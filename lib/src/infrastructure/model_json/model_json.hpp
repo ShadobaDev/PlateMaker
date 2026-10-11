@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later
  *
  * \author ShadobaDev <shadobadev@gmail.com>
- * \copyright Copyright (c) 2026 ShadobaDev
+ * \copyright Copyright (c) 2026 Bartlomiej Mucha <shadobadev@gmail.com>
  */
 
 #ifndef PLATEMAKER_INFRASTRUCTURE_MODEL_JSON_HPP

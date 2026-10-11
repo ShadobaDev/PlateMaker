@@ -12,7 +12,7 @@
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-07-25
  *
- * \copyright Copyright (c) 2026 ShadobaDev
+ * \copyright Copyright (c) 2026 Bartlomiej Mucha <shadobadev@gmail.com>
  */
 
 #include <platemaker/infrastructure/build_info/build_info.hpp>
@@ -23,6 +23,7 @@
 #include <string>
 
 #include <nlohmann/json.hpp> // NLOHMANN_JSON_VERSION_* (build-time)
+#include <minipsd.h>          // MINIPSD_VERSION_STRING — the header compiled into the lib (build-time)
 #include <vips/vips.h>       // vips_version() (runtime)
 #include <archive.h>         // archive_version_number() (runtime)
 
@@ -121,11 +122,13 @@ std::vector<LinkedComponent> linkedComponents()
 
     return {
         LinkedComponent{"libvips", vipsVersion, "LGPL-2.1-or-later",
-                        "https://github.com/libvips/libvips"},
+                        "https://github.com/libvips/libvips", "LGPL-2.1-or-later.txt"},
         LinkedComponent{"libarchive", archiveVersion, "BSD-2-Clause",
-                        "https://github.com/libarchive/libarchive"},
+                        "https://github.com/libarchive/libarchive", "BSD-2-Clause.txt"},
         LinkedComponent{"nlohmann/json", jsonVersion, "MIT",
-                        "https://github.com/nlohmann/json"},
+                        "https://github.com/nlohmann/json", "nlohmann_json.MIT.txt"},
+        LinkedComponent{"minipsd", MINIPSD_VERSION_STRING, "MIT",
+                        "https://github.com/ShadobaDev/minipsd", "minipsd.MIT.txt"},
     };
 }
 

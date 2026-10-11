@@ -7,7 +7,7 @@
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-14
  *
- * \copyright Copyright (c) 2026 ShadobaDev
+ * \copyright Copyright (c) 2026 Bartlomiej Mucha <shadobadev@gmail.com>
  */
 
 #include "platemaker/core/canvas_profile_matcher/canvas_profile_matcher.hpp"

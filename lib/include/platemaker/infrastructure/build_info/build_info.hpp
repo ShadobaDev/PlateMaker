@@ -30,7 +30,7 @@
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-07-25
  *
- * \copyright Copyright (c) 2026 ShadobaDev
+ * \copyright Copyright (c) 2026 Bartlomiej Mucha <shadobadev@gmail.com>
  */
 
 
@@ -76,15 +76,20 @@ struct LinkedComponent {
     std::string version;  //!< Runtime version where available, else build-time.
     std::string licence;  //!< SPDX identifier, e.g. \c "LGPL-2.1-or-later".
     std::string url;      //!< Upstream project, always a \c https://github.com/ URL.
+    /// The file in the lib's \c credits/licenses/ that holds this component's licence text, e.g.
+    /// \c "minipsd.MIT.txt" — the lib writes that directory, so only it can name the file. An MIT or
+    /// BSD text carries its holder's copyright, so such a component has a file of its own.
+    std::string licenceFile;
 };
 
 /**
  * \brief The third-party components this build links, with versions and SPDX licences.
  *
  * Reports **libvips** (LGPL-2.1-or-later, runtime version via \c vips_version()),
- * **libarchive** (BSD-2-Clause, runtime version via \c archive_version_number()) and
- * **nlohmann/json** (MIT, build-time version).  GoogleTest is test-only and never shipped, so it
- * is not listed.
+ * **libarchive** (BSD-2-Clause, runtime version via \c archive_version_number()),
+ * **nlohmann/json** (MIT, build-time version) and **minipsd** (MIT, the version of the header compiled
+ * in — the one actually used, which an installed 0.1.x can make newer than the pin).  GoogleTest is
+ * test-only and never shipped, so it is not listed.
  */
 [[nodiscard]] PLATEMAKER_EXPORT std::vector<LinkedComponent> linkedComponents();
 

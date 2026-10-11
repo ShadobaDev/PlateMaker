@@ -12,7 +12,7 @@
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-09-05
  *
- * \copyright Copyright (c) 2026 ShadobaDev
+ * \copyright Copyright (c) 2026 Bartlomiej Mucha <shadobadev@gmail.com>
  */
 
 #ifndef PLATEMAKER_MODELS_COLOUR_CORRECTION_HPP

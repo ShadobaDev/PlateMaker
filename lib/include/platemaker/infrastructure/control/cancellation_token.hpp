@@ -11,7 +11,7 @@
  * \author ShadobaDev <shadobadev@gmail.com>
  * \date 2026-06-01
  *
- * \copyright Copyright (c) 2026 ShadobaDev
+ * \copyright Copyright (c) 2026 Bartlomiej Mucha <shadobadev@gmail.com>
  */
 
 

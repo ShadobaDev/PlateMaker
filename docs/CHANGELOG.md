@@ -190,6 +190,12 @@ released), which re-derives onto this baseline per the cascade rule.
     says the lettering may not be editable, since fonts and the pictures behind lettered pictures are
     the GUI's to add.
 - `linkedComponents()` now also reports **libarchive** (BSD-2-Clause, runtime version).
+- `linkedComponents()` also reports **minipsd** (MIT, the version of the header compiled in), and
+  **`LinkedComponent::licenceFile`** names each component's licence text in the lib's
+  `credits/licenses/` (`minipsd.MIT.txt`, `nlohmann_json.MIT.txt`, …). The lib writes that directory, so
+  a consumer opens the file it is given instead of mapping SPDX ids to names it cannot know — an MIT
+  text carries its holder's copyright, so two MIT components never share one. minipsd's text is copied
+  from minipsd itself at configure time.
 - **libarchive** is now linked (BSD-2-Clause) for the package archive. On Windows it already shipped
   inside the libvips package and is in the SBOM; only its two public headers are fetched at configure
   time, for the version libvips pins, each checked against a known SHA256. Linux uses the system package.
