@@ -24,7 +24,7 @@
 #define MINIPSD_STATIC
 #define MINIPSD_NO_STDIO
 #define MINIPSD_IMPLEMENTATION
-#include "infrastructure/psd_writer/minipsd.h"
+#include <minipsd.h>
 
 #include <cctype>
 #include <cmath>

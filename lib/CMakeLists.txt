@@ -96,12 +96,15 @@ target_include_directories(platemaker-lib
 #
 # PRIVATE: neither VipsImage nor nlohmann types appear in the public API headers,
 # so consumers of the installed package do not need these headers or import libs.
+# minipsd is a header compiled into one source file with its functions static (MINIPSD_STATIC): the lib
+# exports every symbol it defines on Windows, and none of these may be among them.
 # ---------------------------------------------------------------------------
 target_link_libraries(platemaker-lib
     PRIVATE
         VIPS::vips-cpp
         nlohmann_json::nlohmann_json
         LibArchive::LibArchive
+        minipsd::minipsd
 )
 
 # ---------------------------------------------------------------------------
@@ -178,6 +181,26 @@ if(DEFINED nlohmann_json_VERSION)
 else()
     set(_pm_json_version "${PLATEMAKER_JSON_VERSION}")      # pinned tag (root CMakeLists.txt)
 endif()
+
+# minipsd, as its own SPDX fragment describes it: the minipsd actually used (an installed 0.1.x may be
+# newer than the pin), with its licence, PURL and header hash — taken whole, not copied field by field.
+# The property is set the same way whether minipsd was fetched or found.
+get_target_property(_pm_minipsd_sbom minipsd::minipsd MINIPSD_SBOM_FILE)
+if(NOT _pm_minipsd_sbom OR NOT EXISTS "${_pm_minipsd_sbom}")
+    message(FATAL_ERROR "minipsd provides no SBOM fragment (target property MINIPSD_SBOM_FILE)")
+endif()
+file(READ "${_pm_minipsd_sbom}" _pm_minipsd_doc)
+string(JSON _pm_minipsd_package GET "${_pm_minipsd_doc}" packages 0)
+string(JSON _pm_minipsd_name    GET "${_pm_minipsd_package}" name)
+if(NOT _pm_minipsd_name STREQUAL "minipsd")
+    message(FATAL_ERROR "minipsd's SBOM fragment does not describe minipsd first (found '${_pm_minipsd_name}')")
+endif()
+string(JSON _pm_minipsd_version   GET "${_pm_minipsd_package}" versionInfo)
+string(JSON _pm_minipsd_homepage  GET "${_pm_minipsd_package}" homepage)
+string(JSON _pm_minipsd_copyright GET "${_pm_minipsd_package}" copyrightText)
+string(JSON _pm_minipsd_licence   GET "${_pm_minipsd_package}" licenseDeclared)
+set(_pm_minipsd_package ",\n    ${_pm_minipsd_package}")   # spliced after nlohmann-json in the template
+message(STATUS "SBOM: minipsd ${_pm_minipsd_version} (${_pm_minipsd_sbom})")
 
 set(_pm_credits_dir "${CMAKE_CURRENT_BINARY_DIR}/credits")
 file(MAKE_DIRECTORY "${_pm_credits_dir}/licenses")

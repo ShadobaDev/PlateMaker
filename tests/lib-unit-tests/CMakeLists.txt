@@ -28,9 +28,6 @@ endif()
 # ---------------------------------------------------------------------------
 # Test executable
 # ---------------------------------------------------------------------------
-# minipsd.h is a C99 header; one test file compiles it as C.
-enable_language(C)
-
 add_executable(platemaker-lib-tests
     test_pixel_buffer.cpp
     test_log.cpp
@@ -58,12 +55,11 @@ add_executable(platemaker-lib-tests
     test_implicit_render.cpp
     test_page_preview.cpp
     test_build_info.cpp
-    test_minipsd.cpp
-    minipsd_c_smoke.c   # minipsd.h compiled as C, compared byte for byte with the C++ build
+    test_template_psd.cpp
 )
 
-# minipsd.h lives with the lib's private sources until it moves to its own repository.
-target_include_directories(platemaker-lib-tests PRIVATE ${PROJECT_SOURCE_DIR}/lib/src/infrastructure/psd_writer)
+# minipsd for MINIPSD_MAX_SIDE in the template tests; its own tests live in its repository.
+target_link_libraries(platemaker-lib-tests PRIVATE minipsd::minipsd)
 
 # libvips is PRIVATE on platemaker-lib (VipsImage never appears in the public API),
 # but tests are part of this project rather than consumers: they need VIPS_INIT and

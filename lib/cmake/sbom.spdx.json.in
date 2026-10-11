@@ -65,7 +65,7 @@
           "referenceLocator": "pkg:github/nlohmann/json@@_pm_json_version@"
         }
       ]
-    }@_pm_extra_packages@
+    }@_pm_minipsd_package@@_pm_extra_packages@
   ],
   "relationships": [
     {
@@ -82,6 +82,11 @@
       "spdxElementId": "SPDXRef-Package-libplatemaker",
       "relationshipType": "DEPENDS_ON",
       "relatedSpdxElement": "SPDXRef-Package-nlohmann-json"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-libplatemaker",
+      "relationshipType": "STATIC_LINK",
+      "relatedSpdxElement": "SPDXRef-Package-minipsd"
     }@_pm_extra_relationships@
   ]
 }
