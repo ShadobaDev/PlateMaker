@@ -29,14 +29,15 @@ namespace Platemaker::Models {
  * workspace folder stays portable.  An empty \c path means "no template generated
  * yet".
  *
- * \c fingerprint is a canvas-only signature (see TemplateGenerator::canvasSignature())
- * captured at generation time.  Comparing it against the current profile's
- * signature tells the GUI whether the template is still up to date — the output
- * profile is deliberately not part of a template's identity.
+ * \c fingerprint is the template's signature (see TemplateGenerator::canvasSignature()):
+ * the canvas, its resolution and the template settings, captured at generation time.
+ * Comparing it against the current profile's signature tells the GUI whether the
+ * template is still up to date — the output profile is deliberately not part of a
+ * template's identity.
  */
 struct CanvasTemplateInfo {
     std::string path;        //!< Template PNG path, relative to the workspace dir (empty = none).
-    std::string fingerprint; //!< Canvas-only signature at generation time.
+    std::string fingerprint; //!< Template signature (canvas, dpi, template settings) at generation time.
     std::string generatedAt; //!< ISO 8601 timestamp of the last generation.
 };
 

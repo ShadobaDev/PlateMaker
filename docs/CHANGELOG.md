@@ -30,8 +30,9 @@ released), which re-derives onto this baseline per the cascade rule.
 - **A canvas template's resolution is the profile's.** `CanvasProfile` gains **`dpi`** (default 300 —
   the resolution the artist draws at) and **`templateSettings`** (`format`, default PSD; `emptyLayer`).
   `TemplateGenerator::optionsFor(profile)` turns a profile into the options to write with, and
-  `canvasSignature()` now includes `dpi` — so templates generated before it (at 25.4 DPI) read as
-  outdated. The render never reads the canvas `dpi`, so `canvasRenderFingerprint()` ignores it.
+  `canvasSignature()` now includes `dpi` and the template settings (the format, and the empty layer
+  for a PSD — a PNG ignores that setting) — so templates generated before it (at 25.4 DPI, as PNG)
+  read as outdated, and so does one whose profile now asks for the other format. The render never reads the canvas `dpi`, so `canvasRenderFingerprint()` ignores it.
   `TemplateFormat` moves to `Models` (`Core::TemplateFormat` remains, as an alias). All new fields are
   additive in JSON: older workspaces load with the defaults, and a profile bundle carries them.
   - CLI: `add-`/`mod-canvas-profile` take **`--dpi N`**, **`--template-format png|psd`** and

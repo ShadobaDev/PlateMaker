@@ -101,8 +101,9 @@ public:
      *
      * The signature is a deterministic string built from exactly the fields that
      * define a template: canvas size, margins, the visual and background colours,
-     * and the resolution recorded in it.  The output profile is intentionally
-     * excluded — slice guide lines are a cosmetic aid, not part of a template's identity.
+     * the resolution recorded in it, and how it is written — the format and, for a
+     * PSD, the empty layer.  The output profile is intentionally excluded — slice
+     * guide lines are a cosmetic aid, not part of a template's identity.
      *
      * Comparing a stored signature against a freshly computed one tells a caller
      * whether a previously generated template is still up to date.

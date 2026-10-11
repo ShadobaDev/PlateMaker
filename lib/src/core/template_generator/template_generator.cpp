@@ -282,6 +282,12 @@ std::string TemplateGenerator::canvasSignature(const Models::CanvasProfile& cp)
                   std::to_string(cp.backgroundColour.b) + ',' +
                   std::to_string(cp.backgroundColour.a);
     s += ";dpi=" + Models::signatureDecimal(cp.dpi);
+    // How the file is written is part of what it is: a PNG is not the PSD the profile now asks for. The
+    // empty layer only exists in a PSD, so a PNG's signature ignores that setting.
+    const bool psd = cp.templateSettings.format == Models::TemplateFormat::Psd;
+    s += psd ? ";fmt=psd" : ";fmt=png";
+    if (psd)
+        s += cp.templateSettings.emptyLayer ? ";layer=1" : ";layer=0";
     return s;
 }
 

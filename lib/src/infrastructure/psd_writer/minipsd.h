@@ -9,7 +9,8 @@
  *       #define MINIPSD_IMPLEMENTATION
  *       #include "minipsd.h"
  *   Everywhere else include it plainly.  Define MINIPSD_STATIC as well to make every function static
- *   (private to that file).  Define MINIPSD_MALLOC / MINIPSD_FREE to replace malloc / free.
+ *   (private to that file).  Define MINIPSD_MALLOC / MINIPSD_FREE to replace malloc / free.  Define
+ *   MINIPSD_NO_STDIO to leave out minipsd_write_file (and <stdio.h>) when bytes only go to a callback.
  *
  *       minipsd_layer layers[2] = {
  *           { "Template", rgba, 255, 0 },     // bottom
@@ -95,8 +96,10 @@ typedef struct minipsd_doc {
 typedef int (*minipsd_write_fn)(void *user, const void *data, size_t size);
 
 MINIPSDDEF int minipsd_write(const minipsd_doc *doc, minipsd_write_fn fn, void *user);
+#ifndef MINIPSD_NO_STDIO
 /* path is UTF-8 on every platform. */
 MINIPSDDEF int minipsd_write_file(const minipsd_doc *doc, const char *path);
+#endif
 MINIPSDDEF const char *minipsd_error_string(int code);
 
 #endif /* MINIPSD_H */
@@ -107,10 +110,12 @@ MINIPSDDEF const char *minipsd_error_string(int code);
 #ifndef MINIPSD_IMPLEMENTATION_DONE
 #define MINIPSD_IMPLEMENTATION_DONE
 
-#include <stdio.h>
 #include <string.h>
-#ifdef _WIN32
-#  include <wchar.h>
+#ifndef MINIPSD_NO_STDIO
+#  include <stdio.h>
+#  ifdef _WIN32
+#    include <wchar.h>
+#  endif
 #endif
 
 #if !defined(MINIPSD_MALLOC) || !defined(MINIPSD_FREE)
@@ -468,6 +473,7 @@ MINIPSDDEF int minipsd_write(const minipsd_doc *d, minipsd_write_fn fn, void *us
     return s.failed ? MINIPSD_ERR_WRITE : MINIPSD_OK;
 }
 
+#ifndef MINIPSD_NO_STDIO
 static int mpsd__file_out(void *user, const void *data, size_t size)
 {
     return fwrite(data, 1, size, (FILE *)user) == size;
@@ -511,6 +517,7 @@ MINIPSDDEF int minipsd_write_file(const minipsd_doc *doc, const char *path)
     if (fclose(f) != 0 && rc == MINIPSD_OK) rc = MINIPSD_ERR_OPEN;
     return rc;
 }
+#endif /* MINIPSD_NO_STDIO */
 
 MINIPSDDEF const char *minipsd_error_string(int code)
 {

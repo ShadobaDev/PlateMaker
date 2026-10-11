@@ -210,6 +210,31 @@ TEST(CanvasRenderFingerprintTest, IgnoresDpiButTheTemplateDoesNot)
     EXPECT_NE(Platemaker::Core::TemplateGenerator::canvasSignature(a).find(";dpi=300"), std::string::npos);
 }
 
+TEST(CanvasRenderFingerprintTest, TemplateSettingsMakeTheTemplateOutdatedButNotTheRender)
+{
+    // A PNG on disk is not the PSD the profile now asks for; the empty layer only exists in a PSD.
+    using Platemaker::Core::TemplateGenerator;
+    auto psd = makeProfile("p1", 1600, 10240, 100);
+    psd.templateSettings = {TemplateFormat::Psd, false};
+    auto png = psd;
+    png.templateSettings.format = TemplateFormat::Png;
+    auto psdLayer = psd;
+    psdLayer.templateSettings.emptyLayer = true;
+    auto pngLayer = png;
+    pngLayer.templateSettings.emptyLayer = true;
+
+    EXPECT_NE(TemplateGenerator::canvasSignature(psd), TemplateGenerator::canvasSignature(png));
+    EXPECT_NE(TemplateGenerator::canvasSignature(psd), TemplateGenerator::canvasSignature(psdLayer));
+    EXPECT_EQ(TemplateGenerator::canvasSignature(png), TemplateGenerator::canvasSignature(pngLayer))
+        << "a PNG has no layers: the setting cannot make it outdated";
+    EXPECT_EQ(canvasRenderFingerprint(psd), canvasRenderFingerprint(pngLayer)) << "the render never reads them";
+
+    // The settings close the signature, so one stored before they were part of it (ending at the dpi)
+    // no longer matches: such a template is outdated once.
+    const std::string sig = TemplateGenerator::canvasSignature(psd);
+    EXPECT_EQ(sig.substr(sig.find(";dpi=")), ";dpi=300;fmt=psd;layer=0");
+}
+
 TEST(CanvasRenderFingerprintTest, IsUnambiguousAcrossFieldBoundaries)
 {
     // Tagged fields must keep "16,0" from colliding with "1,60" and friends.
