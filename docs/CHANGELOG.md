@@ -31,7 +31,8 @@ released), which re-derives onto this baseline per the cascade rule.
     `templateSignature(profile, format)` is the signature a file of that format should carry.
   - **`generate()` returns the SHA-256 of the bytes it wrote**, hashed in memory before the write —
     never by reading the file back, which in a synced folder can return the old copy
-    (`FileMetaData::computeSha256()`), with minipsd built under `MINIPSD_NO_STDIO`.
+    (`FileMetaData::computeSha256()`), with minipsd's pull writer filling one buffer of the file's exact
+    size (built under `MINIPSD_NO_MALLOC`: minipsd allocates nothing).
   - **Profiles that share a name are told apart.** `distinguishProfile()` says whether a profile is
     identical to another of its name (*duplicate*) and which fields (`ProfileField`) set it apart;
     `sameProfileContent()` compares what two profiles mean, whatever their names. Names compare
@@ -158,9 +159,9 @@ released), which re-derives onto this baseline per the cascade rule.
   profile's size, the template as a layer named "Template" — nothing to place, so nothing for the app
   to resample — with an empty "Layer" above it on request. PSD caps a side at 30000 px; a larger canvas
   is an `invalid_argument`.
-  - Written by **[minipsd](https://github.com/ShadobaDev/minipsd)** 0.1, a single-header C99 PSD writer
+  - Written by **[minipsd](https://github.com/ShadobaDev/minipsd)** 0.2, a single-header C99 PSD writer
     (MIT, no dependencies) — a new build dependency, fetched by CMake at the pinned tag unless an installed
-    0.1.x is found (`FIND_PACKAGE_ARGS`). It is compiled privately into the lib with its functions static,
+    0.2.x is found (`FIND_PACKAGE_ARGS`). It is compiled privately into the lib with its functions static,
     so the DLL exports none of them and the installed package does not depend on it. The SBOM takes
     minipsd's own SPDX fragment (the version actually used, its licence, PURL and header hash), and the
     third-party notices list it.

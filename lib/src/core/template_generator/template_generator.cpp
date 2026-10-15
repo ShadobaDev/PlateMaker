@@ -20,9 +20,9 @@
 #include <vips/vips.h>
 
 // minipsd's functions stay private to this file: the lib exports none of them. The bytes go to memory
-// (to be hashed, then written), so its file writer is left out.
+// (to be hashed, then written) through its pull writer, so minipsd allocates nothing of its own.
 #define MINIPSD_STATIC
-#define MINIPSD_NO_STDIO
+#define MINIPSD_NO_MALLOC
 #define MINIPSD_IMPLEMENTATION
 #include <minipsd.h>
 
@@ -84,14 +84,21 @@ Bytes encodePsd(VipsImage* canvas, const TemplateOptions& options)
     doc.layer_count = options.emptyLayer ? 2 : 1;
     doc.compression = MINIPSD_RLE;
 
-    Bytes bytes;
-    const auto append = [](void* user, const void* data, size_t size) -> int {
-        auto* out = static_cast<Bytes*>(user);
-        const auto* p = static_cast<const std::uint8_t*>(data);
-        out->insert(out->end(), p, p + size);
-        return 1;
-    };
-    const int rc = minipsd_write(&doc, append, &bytes);
+    // The pull writer knows the file's exact size before the first byte: one buffer, filled in one call.
+    size_t wsSize = 0;
+    int    rc     = minipsd_writer_workspace_size(&doc, &wsSize);
+    Bytes  workspace;
+    Bytes  bytes;
+    if (rc == MINIPSD_OK) {
+        workspace.resize(wsSize);
+        minipsd_writer* writer = nullptr;
+        rc = minipsd_writer_init(&writer, &doc, workspace.data(), workspace.size());
+        if (rc == MINIPSD_OK) {
+            bytes.resize(static_cast<size_t>(minipsd_writer_total(writer)));
+            size_t produced = 0;
+            rc = minipsd_writer_fill(writer, bytes.data(), bytes.size(), &produced);
+        }
+    }
     if (rc == MINIPSD_ERR_SIZE)
         throw std::invalid_argument(
             "TemplateGenerator: a PSD side cannot exceed " + std::to_string(MINIPSD_MAX_SIDE) + " px, got " +

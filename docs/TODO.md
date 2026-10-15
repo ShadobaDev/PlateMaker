@@ -487,6 +487,25 @@ layer of indirection on top of the facade, and there is no use case for it today
 
 Investigations and test/dev work that ships no change in the library itself.
 
+### minipsd from its release assets, not the tag — when minipsd 0.3.0 is out
+
+Today minipsd is a FetchContent of the git tag (the whole repository), for three things the release
+did not carry: the SPDX fragment (`MINIPSD_SBOM_FILE`), `LICENSE.MIT` and the `minipsd::minipsd`
+target. The single-file `minipsd.h` asset already carries the full MIT text; from **0.3.0** minipsd
+also publishes **`minipsd.h.spdx.json`**, a fragment describing that one file. Its download location
+is the asset, and `minipsd.h.sha256` covers both files. Then:
+
+- `file(DOWNLOAD … EXPECTED_HASH SHA256=…)` both assets, both hashes pinned in `CMakeLists.txt`.
+  Pinning is what gives the trust, so Platemaker never reads `.sha256`.
+- `FATAL_ERROR` unless the fragment's checksum of `minipsd.h` equals `file(SHA256)` of the
+  downloaded header, so the SBOM describes exactly what is compiled.
+- `lib/CMakeLists.txt` reads `packages 0` from the downloaded fragment as it reads the property now.
+  `minipsd.MIT.txt` is cut from the end of the header.
+- `minipsd::minipsd` becomes a small INTERFACE target over the download directory.
+  - The installed-package `find_package` goes, because the pinned hash fixes the version.
+  - `FETCHCONTENT_SOURCE_DIR_MINIPSD` goes too. Its replacement is one cache variable, e.g.
+    `PLATEMAKER_MINIPSD_DIR`: a local amalgamated header and fragment, used without the hash check.
+
 ### Crash handler for hard faults (segfault / SEH) — deferred, likely not worth it yet
 
 0.4.0 added a Layer-A safety net for **C++ exceptions** (the `ProcessingPipeline::run()` guard + the CLI
