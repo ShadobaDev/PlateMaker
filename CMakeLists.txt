@@ -177,10 +177,10 @@ endif()
 
 # minipsd — single-header PSD writer (MIT), compiled privately into the lib by template_generator.cpp.
 # FIND_PACKAGE_ARGS: an installed minipsd is used first — its version file (SameMinorVersion) accepts any
-# 0.2.x from this one up and refuses 0.3 — and only otherwise is the tag fetched. This is the version
+# 0.3.x from this one up and refuses 0.4 — and only otherwise is the tag fetched. This is the version
 # *required*, not necessarily the one used: the SBOM reads minipsd's own fragment (lib/CMakeLists.txt).
 # Working on both repositories: -DFETCHCONTENT_SOURCE_DIR_MINIPSD=<your minipsd checkout>.
-set(PLATEMAKER_MINIPSD_VERSION "0.2.0")
+set(PLATEMAKER_MINIPSD_VERSION "0.3.1")
 FetchContent_Declare(
     minipsd
     GIT_REPOSITORY    https://github.com/ShadobaDev/minipsd.git

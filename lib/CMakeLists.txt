@@ -182,7 +182,7 @@ else()
     set(_pm_json_version "${PLATEMAKER_JSON_VERSION}")      # pinned tag (root CMakeLists.txt)
 endif()
 
-# minipsd, as its own SPDX fragment describes it: the minipsd actually used (an installed 0.2.x may be
+# minipsd, as its own SPDX fragment describes it: the minipsd actually used (an installed 0.3.x may be
 # newer than the pin), with its licence, PURL and header hash — taken whole, not copied field by field.
 # The property is set the same way whether minipsd was fetched or found.
 get_target_property(_pm_minipsd_sbom minipsd::minipsd MINIPSD_SBOM_FILE)

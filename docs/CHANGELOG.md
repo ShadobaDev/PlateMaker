@@ -159,9 +159,9 @@ released), which re-derives onto this baseline per the cascade rule.
   profile's size, the template as a layer named "Template" — nothing to place, so nothing for the app
   to resample — with an empty "Layer" above it on request. PSD caps a side at 30000 px; a larger canvas
   is an `invalid_argument`.
-  - Written by **[minipsd](https://github.com/ShadobaDev/minipsd)** 0.2, a single-header C99 PSD writer
+  - Written by **[minipsd](https://github.com/ShadobaDev/minipsd)** 0.3, a single-header C99 PSD writer
     (MIT, no dependencies) — a new build dependency, fetched by CMake at the pinned tag unless an installed
-    0.2.x is found (`FIND_PACKAGE_ARGS`). It is compiled privately into the lib with its functions static,
+    0.3.x is found (`FIND_PACKAGE_ARGS`). It is compiled privately into the lib with its functions static,
     so the DLL exports none of them and the installed package does not depend on it. The SBOM takes
     minipsd's own SPDX fragment (the version actually used, its licence, PURL and header hash), and the
     third-party notices list it.

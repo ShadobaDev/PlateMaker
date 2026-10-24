@@ -20,9 +20,11 @@
 #include <vips/vips.h>
 
 // minipsd's functions stay private to this file: the lib exports none of them. The bytes go to memory
-// (to be hashed, then written) through its pull writer, so minipsd allocates nothing of its own.
+// (to be hashed, then written) through its pull writer, so minipsd allocates nothing of its own; the
+// lib only writes PSDs, so the reader is left out.
 #define MINIPSD_STATIC
 #define MINIPSD_NO_MALLOC
+#define MINIPSD_NO_READER
 #define MINIPSD_IMPLEMENTATION
 #include <minipsd.h>
 
@@ -72,10 +74,13 @@ using Bytes = std::vector<std::uint8_t>;
 /// Encodes the drawn canvas as a PSD: the template layer, and an empty one above it on request.
 Bytes encodePsd(VipsImage* canvas, const TemplateOptions& options)
 {
-    const minipsd_layer layers[2] = {
-        {"Template", static_cast<const uint8_t*>(VIPS_IMAGE_ADDR(canvas, 0, 0)), 255, 0},
-        {"Layer",    nullptr,                                                   255, 0},
-    };
+    // Field by field: minipsd_layer grows at its end, and -Wextra flags any initialiser that stops short.
+    minipsd_layer layers[2]{};
+    layers[0].name    = "Template";
+    layers[0].pixels  = static_cast<const uint8_t*>(VIPS_IMAGE_ADDR(canvas, 0, 0));
+    layers[0].opacity = 255;
+    layers[1].name    = "Layer";   // empty, above the template
+    layers[1].opacity = 255;
     minipsd_doc doc{};
     doc.width       = static_cast<uint32_t>(canvas->Xsize);
     doc.height      = static_cast<uint32_t>(canvas->Ysize);
@@ -86,13 +91,13 @@ Bytes encodePsd(VipsImage* canvas, const TemplateOptions& options)
 
     // The pull writer knows the file's exact size before the first byte: one buffer, filled in one call.
     size_t wsSize = 0;
-    int    rc     = minipsd_writer_workspace_size(&doc, &wsSize);
+    int    rc     = minipsd_writer_workspace_size(&doc, nullptr, &wsSize);
     Bytes  workspace;
     Bytes  bytes;
     if (rc == MINIPSD_OK) {
         workspace.resize(wsSize);
         minipsd_writer* writer = nullptr;
-        rc = minipsd_writer_init(&writer, &doc, workspace.data(), workspace.size());
+        rc = minipsd_writer_init(&writer, &doc, nullptr, workspace.data(), workspace.size());
         if (rc == MINIPSD_OK) {
             bytes.resize(static_cast<size_t>(minipsd_writer_total(writer)));
             size_t produced = 0;

@@ -487,13 +487,14 @@ layer of indirection on top of the facade, and there is no use case for it today
 
 Investigations and test/dev work that ships no change in the library itself.
 
-### minipsd from its release assets, not the tag — when minipsd 0.3.0 is out
+### minipsd from its release assets, not the tag — once minipsd publishes its SBOM asset
 
 Today minipsd is a FetchContent of the git tag (the whole repository), for three things the release
 did not carry: the SPDX fragment (`MINIPSD_SBOM_FILE`), `LICENSE.MIT` and the `minipsd::minipsd`
-target. The single-file `minipsd.h` asset already carries the full MIT text; from **0.3.0** minipsd
-also publishes **`minipsd.h.spdx.json`**, a fragment describing that one file. Its download location
-is the asset, and `minipsd.h.sha256` covers both files. Then:
+target. The single-file `minipsd.h` asset already carries the full MIT text. minipsd is to publish
+**`minipsd.h.spdx.json`** too, a fragment describing that one file (0.3.1 still ships only
+`minipsd.h` and `minipsd.h.sha256`). Its download location is the asset, and `minipsd.h.sha256`
+covers both files. Then:
 
 - `file(DOWNLOAD … EXPECTED_HASH SHA256=…)` both assets, both hashes pinned in `CMakeLists.txt`.
   Pinning is what gives the trust, so Platemaker never reads `.sha256`.
