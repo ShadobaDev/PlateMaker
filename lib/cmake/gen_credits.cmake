@@ -109,15 +109,15 @@ foreach(_i RANGE 0 ${_tp_last})
     endif()
 endforeach()
 
-# minipsd is compiled into libplatemaker rather than bundled beside it, and describes itself: its entry
-# comes from its SBOM fragment (read in lib/CMakeLists.txt), not from the table above, and its licence
-# text from minipsd's own LICENSE.MIT (copied there as minipsd.MIT.txt).
+# minipsd-vips is compiled into libplatemaker rather than bundled beside it, and describes itself: its
+# entry comes from its SBOM fragment (read in lib/CMakeLists.txt), not from the table above, and its
+# licence text from the LICENSE.MIT in its zip (copied there as minipsd-vips.MIT.txt).
 if(DEFINED _pm_minipsd_version)
     string(APPEND _notices "\n------------------------------------------------------------\n")
-    string(APPEND _notices "minipsd  ${_pm_minipsd_version}  (compiled into libplatemaker)\n")
+    string(APPEND _notices "minipsd-vips  ${_pm_minipsd_version}  (compiled into libplatemaker)\n")
     string(APPEND _notices "  ${_pm_minipsd_homepage}\n")
     string(APPEND _notices "  ${_pm_minipsd_copyright}\n")
-    string(APPEND _notices "  Licence: ${_pm_minipsd_licence}  (full text: licenses/minipsd.MIT.txt)\n")
+    string(APPEND _notices "  Licence: ${_pm_minipsd_licence}  (full text: licenses/minipsd-vips.MIT.txt)\n")
 endif()
 
 file(WRITE "${_pm_credits_dir}/THIRD-PARTY-NOTICES.txt" "${_notices}")

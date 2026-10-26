@@ -23,7 +23,7 @@
 #include <string>
 
 #include <nlohmann/json.hpp> // NLOHMANN_JSON_VERSION_* (build-time)
-#include <minipsd.h>          // MINIPSD_VERSION_STRING — the header compiled into the lib (build-time)
+#include <minipsd.h>          // MINIPSD_VERSION_STRING — the header compiled into the plugin (build-time)
 #include <vips/vips.h>       // vips_version() (runtime)
 #include <archive.h>         // archive_version_number() (runtime)
 
@@ -127,8 +127,8 @@ std::vector<LinkedComponent> linkedComponents()
                         "https://github.com/libarchive/libarchive", "BSD-2-Clause.txt"},
         LinkedComponent{"nlohmann/json", jsonVersion, "MIT",
                         "https://github.com/nlohmann/json", "nlohmann_json.MIT.txt"},
-        LinkedComponent{"minipsd", MINIPSD_VERSION_STRING, "MIT",
-                        "https://github.com/ShadobaDev/minipsd", "minipsd.MIT.txt"},
+        LinkedComponent{"minipsd-vips", MINIPSD_VERSION_STRING, "MIT",
+                        "https://github.com/ShadobaDev/minipsd", "minipsd-vips.MIT.txt"},
     };
 }
 

@@ -19,14 +19,10 @@
 
 #include <vips/vips.h>
 
-// minipsd's functions stay private to this file: the lib exports none of them. The bytes go to memory
-// (to be hashed, then written) through its pull writer, so minipsd allocates nothing of its own; the
-// lib only writes PSDs, so the reader is left out.
-#define MINIPSD_STATIC
-#define MINIPSD_NO_MALLOC
-#define MINIPSD_NO_READER
-#define MINIPSD_IMPLEMENTATION
+// PSDs through minipsd's libvips plugin (psdsave_layers): minipsd is compiled into the plugin, private
+// to it, and only its header is read here, for MINIPSD_MAX_SIDE.
 #include <minipsd.h>
+#include <minipsd_vips.h>
 
 #include <cctype>
 #include <cmath>
@@ -74,42 +70,40 @@ using Bytes = std::vector<std::uint8_t>;
 /// Encodes the drawn canvas as a PSD: the template layer, and an empty one above it on request.
 Bytes encodePsd(VipsImage* canvas, const TemplateOptions& options)
 {
-    // Field by field: minipsd_layer grows at its end, and -Wextra flags any initialiser that stops short.
-    minipsd_layer layers[2]{};
-    layers[0].name    = "Template";
-    layers[0].pixels  = static_cast<const uint8_t*>(VIPS_IMAGE_ADDR(canvas, 0, 0));
-    layers[0].opacity = 255;
-    layers[1].name    = "Layer";   // empty, above the template
-    layers[1].opacity = 255;
-    minipsd_doc doc{};
-    doc.width       = static_cast<uint32_t>(canvas->Xsize);
-    doc.height      = static_cast<uint32_t>(canvas->Ysize);
-    doc.dpi         = options.dpi;
-    doc.layers      = layers;
-    doc.layer_count = options.emptyLayer ? 2 : 1;
-    doc.compression = MINIPSD_RLE;
-
-    // The pull writer knows the file's exact size before the first byte: one buffer, filled in one call.
-    size_t wsSize = 0;
-    int    rc     = minipsd_writer_workspace_size(&doc, nullptr, &wsSize);
-    Bytes  workspace;
-    Bytes  bytes;
-    if (rc == MINIPSD_OK) {
-        workspace.resize(wsSize);
-        minipsd_writer* writer = nullptr;
-        rc = minipsd_writer_init(&writer, &doc, nullptr, workspace.data(), workspace.size());
-        if (rc == MINIPSD_OK) {
-            bytes.resize(static_cast<size_t>(minipsd_writer_total(writer)));
-            size_t produced = 0;
-            rc = minipsd_writer_fill(writer, bytes.data(), bytes.size(), &produced);
-        }
-    }
-    if (rc == MINIPSD_ERR_SIZE)
+    // The plugin would write a larger canvas as a PSB; a template stays a PSD, which every drawing app opens.
+    if (canvas->Xsize > MINIPSD_MAX_SIDE || canvas->Ysize > MINIPSD_MAX_SIDE)
         throw std::invalid_argument(
             "TemplateGenerator: a PSD side cannot exceed " + std::to_string(MINIPSD_MAX_SIDE) + " px, got " +
-            std::to_string(doc.width) + "x" + std::to_string(doc.height));
-    if (rc != MINIPSD_OK)
-        throw std::runtime_error(std::string("TemplateGenerator: cannot encode the PSD: ") + minipsd_error_string(rc));
+            std::to_string(canvas->Xsize) + "x" + std::to_string(canvas->Ysize));
+
+    minipsd_vips_init();   // registers psdsave_layers once; later calls do nothing
+
+    // Each image is a layer, bottom first, named by its psd-layer-* fields. The canvas carries the
+    // resolution (its xres) and is also the composite: the empty layer above it changes nothing.
+    VipsImage* empty = nullptr;
+    if (vips_copy(canvas, &empty, nullptr) != 0) {
+        const std::string err = vips_error_buffer();
+        vips_error_clear();
+        throw std::runtime_error("TemplateGenerator: cannot encode the PSD: " + err);
+    }
+    vips_image_set_string(canvas, "psd-layer-name", "Template");
+    vips_image_set_string(empty, "psd-layer-name", "Layer");
+    vips_image_set_int(empty, "psd-layer-empty", 1);
+
+    VipsImage* layers[2] = {canvas, empty};
+    void*      buf       = nullptr;
+    size_t     len       = 0;
+    const int  rc        = minipsd_vips_psdsave_layers_buffer(layers, options.emptyLayer ? 2 : 1, &buf, &len,
+                                                              "composite", canvas,
+                                                              "compression", MINIPSD_VIPS_COMPRESSION_RLE, nullptr);
+    g_object_unref(empty);
+    if (rc != 0) {
+        const std::string err = vips_error_buffer();
+        vips_error_clear();
+        throw std::runtime_error("TemplateGenerator: cannot encode the PSD: " + err);
+    }
+    Bytes bytes(static_cast<const std::uint8_t*>(buf), static_cast<const std::uint8_t*>(buf) + len);
+    g_free(buf);
     return bytes;
 }
 

@@ -62,7 +62,7 @@ add_executable(platemaker-lib-tests
 target_compile_definitions(platemaker-lib-tests PRIVATE
     PLATEMAKER_CREDITS_DIR="${PROJECT_BINARY_DIR}/lib/credits")
 
-# minipsd for MINIPSD_MAX_SIDE in the template tests; its own tests live in its repository.
+# minipsd.h (the plugin's) for MINIPSD_MAX_SIDE and its version; its own tests live in its repository.
 target_link_libraries(platemaker-lib-tests PRIVATE minipsd::minipsd)
 
 # libvips is PRIVATE on platemaker-lib (VipsImage never appears in the public API),

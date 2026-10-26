@@ -175,20 +175,30 @@ if(NOT nlohmann_json_FOUND)
     FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
-# minipsd — single-header PSD writer (MIT), compiled privately into the lib by template_generator.cpp.
-# FIND_PACKAGE_ARGS: an installed minipsd is used first — its version file (SameMinorVersion) accepts any
-# 0.3.x from this one up and refuses 0.4 — and only otherwise is the tag fetched. This is the version
-# *required*, not necessarily the one used: the SBOM reads minipsd's own fragment (lib/CMakeLists.txt).
-# Working on both repositories: -DFETCHCONTENT_SOURCE_DIR_MINIPSD=<your minipsd checkout>.
-set(PLATEMAKER_MINIPSD_VERSION "0.3.1")
+# minipsd's libvips plugin (MIT): psdsave_layers writes the PSD templates (template_generator.cpp).
+# The release zip is the whole of it: the plugin, minipsd.h compiled into it (private to it), LICENSE.MIT
+# and the SBOM fragment of the zip (MINIPSD_SBOM_FILE on minipsd::vips) — one download, checked by hash.
+# Windows: the plugin takes this libvips (FETCHCONTENT_SOURCE_DIR_MINIPSD_LIBVIPS), so one libvips and
+# the zlib it links are used; it fetches only zlib's two headers, pinned, which the web zip lacks.
+# Elsewhere it finds libvips and zlib with pkg-config, as the system has them.
+# Working on both repositories: -DFETCHCONTENT_SOURCE_DIR_MINIPSD_VIPS=<an unpacked minipsd-vips zip>
+# (minipsd: cmake -DOUTPUT_DIR=<dir> -P tools/package_vips.cmake).
+set(PLATEMAKER_MINIPSD_VERSION "0.4.0")
+if(WIN32)
+    set(FETCHCONTENT_SOURCE_DIR_MINIPSD_LIBVIPS "${VIPS_ROOT_DIR}")
+endif()
+# The hash is the release's own minipsd-vips-<version>.zip.sha256.
 FetchContent_Declare(
-    minipsd
-    GIT_REPOSITORY    https://github.com/ShadobaDev/minipsd.git
-    GIT_TAG           ${PLATEMAKER_MINIPSD_VERSION}
-    GIT_SHALLOW       TRUE
-    FIND_PACKAGE_ARGS ${PLATEMAKER_MINIPSD_VERSION} CONFIG
+    minipsd_vips
+    URL      https://github.com/ShadobaDev/minipsd/releases/download/${PLATEMAKER_MINIPSD_VERSION}/minipsd-vips-${PLATEMAKER_MINIPSD_VERSION}.zip
+    URL_HASH SHA256=0d1f9f41bf060be3b7af9645cd9fd3577d12f160701c16aa44d5e3821f6cb458
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
-FetchContent_MakeAvailable(minipsd)
+FetchContent_MakeAvailable(minipsd_vips)
+# The minipsd.h compiled into the plugin, for its version and limits (build_info.cpp, the tests).
+add_library(minipsd_header INTERFACE)
+target_include_directories(minipsd_header INTERFACE "${minipsd_vips_SOURCE_DIR}/foreign/minipsd")
+add_library(minipsd::minipsd ALIAS minipsd_header)
 
 # GoogleTest — only when PLATEMAKER_BUILD_TESTS is enabled (declared below with option())
 # The actual FetchContent_Declare lives in tests/lib-unit-tests/CMakeLists.txt so that
