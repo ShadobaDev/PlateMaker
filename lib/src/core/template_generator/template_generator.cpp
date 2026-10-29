@@ -95,7 +95,7 @@ Bytes encodePsd(VipsImage* canvas, const TemplateOptions& options)
     size_t     len       = 0;
     const int  rc        = minipsd_vips_psdsave_layers_buffer(layers, options.emptyLayer ? 2 : 1, &buf, &len,
                                                               "composite", canvas,
-                                                              "compression", MINIPSD_VIPS_COMPRESSION_RLE, nullptr);
+                                                              "compression", MINIPSD_VIPS_COMPRESSION_ZIP, nullptr);
     g_object_unref(empty);
     if (rc != 0) {
         const std::string err = vips_error_buffer();
