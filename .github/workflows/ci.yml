@@ -73,7 +73,7 @@ jobs:
           cmake --build --preset ${{ matrix.preset }}
           ctest --preset ${{ matrix.preset }}
 
-  # The same tests, instrumented (preset linux-coverage), and the coverage of the library and the CLI.
+  # The same tests, instrumented (preset linux-coverage), and the coverage of the library.
   coverage:
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
@@ -93,11 +93,12 @@ jobs:
           cmake --build --preset linux-coverage
           ctest --preset linux-coverage
 
-      # Only lib/ and cli/: the tests and the fetched dependencies are compiled instrumented too.
+      # Library code only (lib/src, lib/include): the CLI, the tests and the fetched dependencies are
+      # compiled instrumented too, but are not what this report measures.
       # --exclude-throw-branches: the exception edges every call adds would drown the real branches.
       - name: Coverage report
         run: |
-          gcovr --root . --filter lib/ --filter cli/ --exclude-throw-branches \
+          gcovr --root . --filter lib/ --exclude-throw-branches \
                 --cobertura coverage.xml --txt coverage.txt --txt-summary \
                 build/linux-coverage
           { echo '```'; cat coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
