@@ -69,6 +69,16 @@ Models::ColourCorrection neutral()
     return cc;         // brightness 0, contrast 1, saturation 1
 }
 
+/// A 2x2 solid sRGB image in a non-uchar band format (USHORT / UINT), so the brightness/contrast
+/// maths runs against that format's full-scale value rather than the 8-bit default.
+PixelBuffer makeSolidFormat(const std::vector<std::uint8_t>& colour, VipsBandFormat fmt)
+{
+    VipsImage* cast = nullptr;
+    EXPECT_EQ(vips_cast(makeSolid(colour).vipsImage(), &cast, fmt, nullptr), 0)
+        << "vips_cast failed: " << vips_error_buffer();
+    return PixelBuffer{cast};
+}
+
 } // namespace
 
 TEST(ColourCorrectorTest, NeutralGradeLeavesPixelsUnchanged)
@@ -221,6 +231,44 @@ TEST(ColourCorrectorTest, ApplyToRgbaRejectsBadArgs)
     g.brightness = 0.1; // non-neutral so it actually tries to grade
     EXPECT_THROW(cc.applyToRgba(nullptr, 2, 2, g), std::runtime_error);
     EXPECT_THROW(cc.applyToRgba(px.data(), 0, 2, g), std::runtime_error);
+}
+
+TEST(ColourCorrectorTest, NonNeutralGradeOnInvalidBufferThrows)
+{
+    // A neutral grade returns the (invalid) buffer untouched, but any real grade must reject a null
+    // image instead of dereferencing it (colour_corrector.cpp:92-93).
+    ColourCorrector cc;
+    Models::ColourCorrection g = neutral();
+    g.brightness = 0.2;
+    EXPECT_THROW((void)cc.applyToBuffer(PixelBuffer{}, g), std::runtime_error);
+}
+
+TEST(ColourCorrectorTest, BrightnessLiftScalesWithSixteenBitFullScale)
+{
+    // A +0.1 brightness is a tenth of full-scale in the image's own bit depth: on a 16-bit image that
+    // is 0.1 * 65535 ≈ 6553.5, not the 8-bit ≈ 25.5. This pins formatMax(USHORT) (colour_corrector.cpp:37).
+    Models::ColourCorrection g = neutral();
+    g.brightness = 0.1;
+
+    ColourCorrector cc;
+    const auto p = pixel(cc.applyToBuffer(makeSolidFormat({0, 0, 0}, VIPS_FORMAT_USHORT), g));
+    ASSERT_EQ(p.size(), 3u);
+    EXPECT_NEAR(p[0], 0.1 * 65535.0, 2.0);
+    EXPECT_NEAR(p[1], 0.1 * 65535.0, 2.0);
+    EXPECT_NEAR(p[2], 0.1 * 65535.0, 2.0);
+}
+
+TEST(ColourCorrectorTest, BrightnessLiftScalesWithThirtyTwoBitFullScale)
+{
+    // Same, for a 32-bit unsigned image: formatMax(UINT) ≈ 4.29e9 (colour_corrector.cpp:38).
+    Models::ColourCorrection g = neutral();
+    g.brightness = 0.1;
+
+    ColourCorrector cc;
+    const auto p = pixel(cc.applyToBuffer(makeSolidFormat({0, 0, 0}, VIPS_FORMAT_UINT), g));
+    ASSERT_EQ(p.size(), 3u);
+    const double expected = 0.1 * 4294967295.0;
+    EXPECT_NEAR(p[0], expected, expected * 1e-4);
 }
 
 } // namespace Platemaker::Core

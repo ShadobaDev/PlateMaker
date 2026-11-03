@@ -344,6 +344,146 @@ TEST(StripOverlayCompositorTest, RgbaFormIsEmptyForAnUnloadableAsset)
     vips_error_clear();
 }
 
+// ---------------------------------------------------------------------------
+// composite — guards and the RGBA-slice path
+// ---------------------------------------------------------------------------
+
+TEST(StripOverlayCompositorTest, CompositeRejectsInvalidSlice)
+{
+    StripOverlayCompositor comp;
+    auto ovs = redOverlay(W, /*y*/ 0, /*h*/ 40);
+    EXPECT_THROW((void)comp.composite(PixelBuffer{}, /*stripTopY*/ 0, ovs), std::runtime_error);
+}
+
+TEST(StripOverlayCompositorTest, CompositeWithNoOverlaysReturnsTheSliceUnchanged)
+{
+    StripOverlayCompositor comp;
+    auto out = comp.composite(makeSolid(W, 100, {12, 34, 56}), /*stripTopY*/ 0, {});
+    ASSERT_TRUE(out.isValid());
+    const auto p = pixel(out, 5, 50);
+    ASSERT_EQ(p.size(), 3u) << "an empty overlay list must leave the slice byte-identical (still RGB)";
+    EXPECT_DOUBLE_EQ(p[0], 12.0);
+    EXPECT_DOUBLE_EQ(p[1], 34.0);
+    EXPECT_DOUBLE_EQ(p[2], 56.0);
+}
+
+TEST(StripOverlayCompositorTest, CompositeOntoAlreadyAlphaSlice)
+{
+    // An RGBA slice takes the "already has alpha" branch (no addalpha); the overlay must still land.
+    StripOverlayCompositor comp;
+    auto ovs = redOverlay(W, /*y*/ 20, /*h*/ 40);
+    auto out = comp.composite(makeSolid(W, 100, {255, 255, 255, 255}), /*stripTopY*/ 0, ovs);
+
+    ASSERT_TRUE(out.isValid());
+    const auto inside = pixel(out, 5, 40);
+    ASSERT_EQ(inside.size(), 4u);
+    EXPECT_NEAR(inside[0], 255.0, 1.0);
+    EXPECT_NEAR(inside[1], 0.0,   1.0);
+    EXPECT_NEAR(inside[2], 0.0,   1.0);
+}
+
+TEST(StripOverlayCompositorTest, EveryBlendModeTakesItsOwnPath)
+{
+    // One opaque grey overlay (100) over a brighter grey base (200), covering the whole slice, graded
+    // through each blend. The directional outcome of each confirms toVipsBlend mapped it to the right
+    // libvips mode (strip_overlay_compositor.cpp:49-55), not merely that compositing ran.
+    StripOverlayCompositor comp;
+    const auto run = [&](Models::BlendMode b) {
+        std::vector<LoadedOverlay> ovs;
+        LoadedOverlay o;
+        o.bitmap = makeSolid(W, 100, {100, 100, 100, 255});
+        o.x = 0; o.y = 0; o.w = W; o.h = 100; o.blend = b;
+        ovs.push_back(std::move(o));
+        return pixel(comp.composite(makeSolid(W, 100, {200, 200, 200}), 0, ovs), 5, 50)[0];
+    };
+
+    EXPECT_GT(run(Models::BlendMode::Screen),  210.0) << "screen brightens past both inputs";
+    EXPECT_LT(run(Models::BlendMode::Darken),  110.0) << "darken keeps the darker (overlay=100)";
+    EXPECT_GT(run(Models::BlendMode::Lighten), 190.0) << "lighten keeps the lighter (base=200)";
+    const double overlay = run(Models::BlendMode::Overlay);
+    EXPECT_GT(overlay, 100.0);
+    EXPECT_LT(overlay, 222.0) << "overlay lands between a pure multiply and a pure screen";
+}
+
+// ---------------------------------------------------------------------------
+// rasterizeOverlay — raster (PNG) load paths
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Writes \p buf to a uniquely-named temp PNG; removes it when the handle leaves scope.
+class TempPng {
+public:
+    explicit TempPng(const PixelBuffer& buf, const char* stem)
+        : m_path(std::filesystem::temp_directory_path() /
+                 ("pm-ovl-" + std::string(stem) + "-" +
+                  std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".png"))
+    {
+        EXPECT_EQ(vips_image_write_to_file(buf.vipsImage(), m_path.string().c_str(), nullptr), 0)
+            << vips_error_buffer();
+    }
+    ~TempPng() { std::error_code ec; std::filesystem::remove(m_path, ec); }
+    TempPng(const TempPng&)            = delete;
+    TempPng& operator=(const TempPng&) = delete;
+    [[nodiscard]] std::string path() const { return m_path.string(); }
+private:
+    std::filesystem::path m_path;
+};
+
+} // namespace
+
+TEST(StripOverlayCompositorTest, OpaqueRasterOverlayGainsAnAlphaBand)
+{
+    // A 3-band PNG carries no alpha, so rasterizeOverlay must promote it with vips_addalpha
+    // (strip_overlay_compositor.cpp:99-106); the compositor contract is a 4-band layer.
+    const TempPng png(makeSolid(16, 16, {10, 20, 30}), "opaque"); // 3-band → no alpha on disk
+    StripOverlayCompositor comp;
+
+    const PixelBuffer buf = comp.rasterizeOverlay(png.path(), 1.0);
+    ASSERT_TRUE(buf.isValid()) << vips_error_buffer();
+    EXPECT_EQ(buf.vipsImage()->Bands, 4) << "an opaque overlay must be promoted to RGBA";
+}
+
+TEST(StripOverlayCompositorTest, SixteenBitOverlayIsFlattenedToEightBitRgba)
+{
+    // A 16-bit asset must come back as straight 8-bit RGBA bytes — toRgba casts it down
+    // (strip_overlay_compositor.cpp:123-128), or the caller reads twice the bytes it expects.
+    VipsImage* u16 = nullptr;
+    ASSERT_EQ(vips_cast(makeSolid(16, 24, {1, 2, 3, 255}).vipsImage(), &u16, VIPS_FORMAT_USHORT, nullptr), 0)
+        << vips_error_buffer();
+    const TempPng png(PixelBuffer{u16}, "u16");
+
+    StripOverlayCompositor comp;
+    const OverlayRaster r = comp.rasterizeOverlayRgba(png.path(), 1.0);
+    ASSERT_TRUE(r.isValid()) << vips_error_buffer();
+    EXPECT_EQ(r.width, 16);
+    EXPECT_EQ(r.height, 24);
+    EXPECT_EQ(r.rgba.size(), static_cast<std::size_t>(16 * 24 * 4))
+        << "cast to uchar → exactly four bytes per pixel";
+}
+
+// ---------------------------------------------------------------------------
+// rasterizeOverlayAtWidth — the target-width probe
+// ---------------------------------------------------------------------------
+
+TEST(StripOverlayCompositorTest, RasterizeAtWidthRendersToTheRequestedWidth)
+{
+    const TempSvg svg(triangleSvg(20), "atwidth");
+    StripOverlayCompositor comp;
+
+    const PixelBuffer buf = comp.rasterizeOverlayAtWidth(svg.path(), /*width=*/40);
+    ASSERT_TRUE(buf.isValid()) << vips_error_buffer();
+    EXPECT_EQ(buf.vipsImage()->Xsize, 40) << "natural 20 probed, rendered at ratio 2.0";
+    EXPECT_EQ(buf.vipsImage()->Ysize, 40);
+}
+
+TEST(StripOverlayCompositorTest, RasterizeAtWidthIsEmptyWhenTheProbeFails)
+{
+    StripOverlayCompositor comp;
+    EXPECT_FALSE(comp.rasterizeOverlayAtWidth("no-such-file-anywhere.svg", /*width=*/40).isValid());
+    vips_error_clear();
+}
+
 TEST(StripOverlayCompositorTest, RasterizeOverlaysSkipsUnusableEntriesAndKeepsOrder)
 {
     const TempSvg svg(triangleSvg(20), "batch");

@@ -111,6 +111,25 @@ TrackedSource appendRgbSource(ScaledStrip& strip, int width, int height, int ban
     return src;
 }
 
+/// Appends a single-band grayscale (B_W) source — a non-RGB colourspace that normalizeBandCounts()
+/// must fold up to sRGB before it can join with a colour source.
+TrackedSource appendGraySource(ScaledStrip& strip, int width, int height, std::string path)
+{
+    VipsImage* black = nullptr;
+    EXPECT_EQ(vips_black(&black, width, height, "bands", 1, nullptr), 0)
+        << "vips_black failed: " << vips_error_buffer();
+
+    VipsImage* gray = nullptr;
+    EXPECT_EQ(vips_copy(black, &gray, "interpretation", VIPS_INTERPRETATION_B_W, nullptr), 0)
+        << "vips_copy failed: " << vips_error_buffer();
+    g_object_unref(black);
+
+    TrackedSource src{gray, std::move(path)};
+    g_object_ref(gray);  // observation reference; PixelBuffer takes the original
+    strip.append(ScaledImage{PixelBuffer{gray}, src.path});
+    return src;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -339,6 +358,30 @@ TEST(ScaledStripTest, SliceAllNormalisesMixedRgbAndRgbaStrip)
             [&](SliceResult&& s) {
                 EXPECT_EQ(vips_image_get_bands(s.image.vipsImage()), 4)
                     << "mixed strip must be promoted to RGBA (slice " << s.index << ")";
+                ++seen;
+                return true;
+            }));
+    EXPECT_EQ(seen, 2);
+}
+
+TEST(ScaledStripTest, SliceAllFoldsGrayscaleSourceUpToColour)
+{
+    // A grayscale (1-band B_W) page and an sRGB (3-band) page in one strip. The band counts differ, so
+    // normalizeBandCounts() does not early-out: pass 1 must fold the grayscale source into sRGB
+    // (scaled_strip.cpp:310-316) so the two can join. Slice height 150 over two 100px pages → slice 0
+    // straddles the boundary and joins a (folded) part with the colour part.
+    ScaledStrip strip;
+    appendGraySource(strip, 800, 100, "gray.png");
+    appendRgbSource(strip, 800, 100, 3, "colour.jpg");
+
+    Infrastructure::CancellationToken cancel;
+    int seen = 0;
+    EXPECT_NO_THROW(
+        strip.sliceAll(150, Models::LastSlicePolicy::KeepAsIs, cancel,
+            [&](SliceResult&& s) {
+                EXPECT_GE(vips_image_get_bands(s.image.vipsImage()), 3)
+                    << "grayscale must be folded up to colour so the join succeeds (slice "
+                    << s.index << ")";
                 ++seen;
                 return true;
             }));

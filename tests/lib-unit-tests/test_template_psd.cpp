@@ -322,3 +322,46 @@ TEST_F(TemplatePsdTest, OversizePsdIsAnInvalidArgument)
                  std::invalid_argument);
     EXPECT_FALSE(std::filesystem::exists(m_dir / "t.psd")) << "refused before the file is opened";
 }
+
+TEST_F(TemplatePsdTest, OversizePsdWidthIsAlsoRejected)
+{
+    // The guard is on either side, not just the height the test above exercises.
+    TemplateOptions o;
+    o.format = TemplateFormat::Psd;
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(MINIPSD_MAX_SIDE + 1, 100), {}, path("t.psd"), o),
+                 std::invalid_argument);
+    EXPECT_FALSE(std::filesystem::exists(m_dir / "t.psd"));
+}
+
+TEST_F(TemplatePsdTest, ZeroOrNegativeCanvasIsRejected)
+{
+    // Boundary at the smallest invalid sizes, each operand of (W <= 0 || H <= 0) in turn.
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(0, 100),  {}, path("w.png"), {}),
+                 std::invalid_argument); // width == 0
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(100, 0),  {}, path("h.png"), {}),
+                 std::invalid_argument); // height == 0
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(100, -1), {}, path("n.png"), {}),
+                 std::invalid_argument); // height negative
+    EXPECT_FALSE(std::filesystem::exists(m_dir / "w.png")) << "rejected before anything is drawn";
+}
+
+TEST_F(TemplatePsdTest, MarginsLargerThanTheCanvasAreRejected)
+{
+    // templateProfile margins total 28px horizontally (left 16 + right 12) and 24px vertically
+    // (top 10 + bottom 14). A canvas narrower / shorter than that leaves no safe area — each operand
+    // of (safeW <= 0 || safeHpx <= 0) fired separately.
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(20, 200), {}, path("sw.png"), {}),
+                 std::invalid_argument); // safe width collapses
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(200, 20), {}, path("sh.png"), {}),
+                 std::invalid_argument); // safe height collapses
+}
+
+TEST_F(TemplatePsdTest, NonPositiveDpiIsRejected)
+{
+    TemplateOptions zero; zero.dpi = 0.0;
+    TemplateOptions neg;  neg.dpi  = -72.0;
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(40, 40), {}, path("z.png"), zero),
+                 std::invalid_argument);
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(40, 40), {}, path("neg.png"), neg),
+                 std::invalid_argument);
+}
