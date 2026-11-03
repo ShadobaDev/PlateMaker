@@ -25,6 +25,7 @@
 #include <platemaker/models/project_item.hpp>
 #include <platemaker/models/workspace.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -389,6 +390,169 @@ TEST(InputCompositionSanitizeTest, ReorderMarksOutputsDesynchronized)
         EXPECT_EQ(inf.status, FileStatus::Processed);
 
     std::error_code ec; fs::remove_all(dir, ec);
+}
+
+} // namespace Platemaker
+
+// ---------------------------------------------------------------------------
+// moveInput / sanitize outputs / applyPartialResults / mergeFileScan rename
+// ---------------------------------------------------------------------------
+
+namespace Platemaker {
+namespace {
+
+/// A scratch folder for the disk-backed cases, removed when the test leaves scope.
+class ScratchDir {
+public:
+    explicit ScratchDir(const char* tag) : m_dir(fs::temp_directory_path() / tag)
+    {
+        fs::remove_all(m_dir);
+        fs::create_directories(m_dir);
+    }
+    ~ScratchDir() { std::error_code ec; fs::remove_all(m_dir, ec); }
+    ScratchDir(const ScratchDir&)            = delete;
+    ScratchDir& operator=(const ScratchDir&) = delete;
+
+    std::string write(const std::string& name, const std::string& content) const
+    {
+        const auto path = m_dir / name;
+        std::ofstream(path, std::ios::binary) << content;
+        return path.string();
+    }
+    [[nodiscard]] std::string path() const { return m_dir.string(); }
+
+private:
+    fs::path m_dir;
+};
+
+OutputFile outputNamed(const std::string& name, const std::string& sha256, FileStatus status)
+{
+    OutputFile o;
+    o.fileName = name;
+    o.sha256   = sha256;
+    o.status   = status;
+    return o;
+}
+
+} // namespace
+
+TEST(ProjectEditorTest, MoveInputNeedsTwoInputs)
+{
+    ProjectItem none = makeProject(0);
+    ProjectItem one  = makeProject(1);
+    EXPECT_FALSE(Infrastructure::ProjectEditor{none}.moveInput("u0", 1));
+    EXPECT_FALSE(Infrastructure::ProjectEditor{one}.moveInput("u0", 1));
+    EXPECT_EQ(one.getInputImages()[0].order, 0) << "a lone input is never reordered";
+}
+
+TEST(SanitizeOutputsTest, MissingLegacyAndEditedOutputsAreToldApart)
+{
+    const ScratchDir dir("pm-sanitize-outputs");
+    ProjectItem p;
+    p.getOutputDirectory() = dir.path();
+    const std::string kept   = dir.write("output_001.png", "slice-1");
+    (void)dir.write("output_002.png", "legacy");
+    const std::string edited = dir.write("output_003.png", "slice-3");
+    const std::string keptHash = Infrastructure::FileMetaData::computeFileSha256(kept);
+    const std::string oldHash  = Infrastructure::FileMetaData::computeFileSha256(edited);
+    std::ofstream(edited, std::ios::binary) << "edited outside PlateMaker";
+
+    p.getOutputImages() = {
+        outputNamed("output_000.png", "deadbeef", FileStatus::Done),   // deleted from disk
+        outputNamed("output_001.png", keptHash,   FileStatus::Done),   // unchanged
+        outputNamed("output_002.png", "",         FileStatus::Pending),// legacy record: no hash stored
+        outputNamed("output_003.png", oldHash,    FileStatus::Done),   // edited after the render
+    };
+
+    EXPECT_FALSE(Infrastructure::ProjectEditor{p}.sanitize({}));
+    EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Missing);
+    EXPECT_EQ(p.getOutputImages()[1].status, FileStatus::Done);
+    EXPECT_EQ(p.getOutputImages()[2].status, FileStatus::Done) << "existence is trusted without a hash";
+    EXPECT_EQ(p.getOutputImages()[3].status, FileStatus::Modified);
+    EXPECT_FALSE(p.isUpToDate());
+}
+
+TEST(SanitizeInputsTest, ErrorInputStaysErrorWhileStillUnreadable)
+{
+    const ScratchDir dir("pm-sanitize-unreadable");
+    const std::string page = dir.write("page.png", "pixels");
+    fs::permissions(page, fs::perms::none);
+    if (std::ifstream(page).good()) {
+        fs::permissions(page, fs::perms::owner_all);
+        GTEST_SKIP() << "file permissions do not stop this user from reading (running as root)";
+    }
+
+    ProjectItem p = makeProject(0);
+    InputFile inf;
+    inf.uid      = "u0";
+    inf.filePath = page;
+    inf.status   = FileStatus::Error;
+    p.getInputImages().push_back(inf);
+
+    (void)Infrastructure::ProjectEditor{p}.sanitize({});
+    EXPECT_EQ(p.getInputImages()[0].status, FileStatus::Error);
+    EXPECT_TRUE(p.getInputImages()[0].sha256.empty());
+    fs::permissions(page, fs::perms::owner_all);
+}
+
+TEST(ApplyPartialResultsTest, RefreshesOnlyTheRewrittenOutputs)
+{
+    ProjectItem p;
+    p.getOutputImages() = {outputNamed("output_001.png", "old-1", FileStatus::Modified),
+                           outputNamed("output_002.png", "old-2", FileStatus::Missing)};
+
+    Models::ProcessingSliceRecord rec;
+    rec.fileName     = "output_001.png";
+    rec.outputSha256 = "new-1";
+    Models::ProcessingSliceRecord stranger;
+    stranger.fileName     = "output_999.png";   // not an output of this project: ignored
+    stranger.outputSha256 = "x";
+
+    Infrastructure::ProjectEditor{p}.applyPartialResults({rec, stranger});
+    EXPECT_EQ(p.getOutputImages()[0].sha256, "new-1");
+    EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Done);
+    EXPECT_EQ(p.getOutputImages()[1].status, FileStatus::Missing);
+    EXPECT_EQ(p.getOutputImages().size(), 2u) << "the output list is not rebuilt";
+    EXPECT_FALSE(p.isUpToDate()) << "output_002 is still dirty";
+
+    rec.fileName     = "output_002.png";
+    rec.outputSha256 = "new-2";
+    Infrastructure::ProjectEditor{p}.applyPartialResults({rec});
+    EXPECT_TRUE(p.isUpToDate());
+}
+
+TEST(MergeFileScanTest, SameContentUnderANewNameIsARename)
+{
+    const ScratchDir dir("pm-merge-rename");
+    const std::string oldPath = dir.write("page_a.png", "page-a");
+    const std::string hash    = Infrastructure::FileMetaData::computeFileSha256(oldPath);
+
+    ProjectItem p = makeProject(0);
+    InputFile inf;
+    inf.uid      = "keep-me";
+    inf.filePath = oldPath;
+    inf.sha256   = hash;
+    inf.order    = 0;
+    inf.status   = FileStatus::Processed;
+    p.getInputImages().push_back(inf);
+    p.rebuildLookupTables();
+
+    const std::string first   = dir.write("cover.png", "a new first page");
+    const std::string renamed = (fs::path(dir.path()) / "page_b.png").string();
+    fs::rename(oldPath, renamed);
+
+    const auto result = Infrastructure::ProjectEditor{p}.mergeFileScan({first, renamed});
+    EXPECT_EQ(result.renamed, std::vector<std::string>{renamed});
+    EXPECT_EQ(result.added,   std::vector<std::string>{first});
+    EXPECT_TRUE(result.removed.empty()) << "a renamed file is not also reported as removed";
+
+    const auto& inputs = p.getInputImages();
+    const auto it = std::find_if(inputs.begin(), inputs.end(),
+                                 [&](const InputFile& f) { return f.filePath == renamed; });
+    ASSERT_NE(it, inputs.end());
+    EXPECT_EQ(it->uid, "keep-me") << "a rename keeps the page's identity";
+    EXPECT_EQ(it->order, 1)       << "and moves it to its new strip position";
+    EXPECT_EQ(it->sha256, hash);
 }
 
 } // namespace Platemaker

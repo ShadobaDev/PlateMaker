@@ -18,6 +18,7 @@
 #include <platemaker/models/output_profile.hpp>
 
 #include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <platemaker/models/output_presets.hpp>
@@ -178,6 +179,62 @@ TEST(ProfileBundleSerializerTest, LoadThrowsOnMissingFile)
     Infrastructure::ProfileBundleSerializer s;
     EXPECT_THROW((void)s.load("this/file/does/not/exist.platemaker.profiles.json"),
                  std::runtime_error);
+}
+
+TEST(ProfileBundleSerializerTest, DeserializeRejectsAVersionThatIsNotAnInteger)
+{
+    Infrastructure::ProfileBundleSerializer s;
+    EXPECT_THROW((void)s.deserialize(R"({"version": "1", "canvasProfiles": []})"), std::runtime_error);
+}
+
+TEST(ProfileBundleSerializerTest, DeserializeRejectsAPaletteOfTheWrongType)
+{
+    // The version is fine, the palette is not an array of profiles: a schema error, not a crash.
+    Infrastructure::ProfileBundleSerializer s;
+    EXPECT_THROW((void)s.deserialize(R"({"version": 1, "canvasProfiles": 5})"), std::runtime_error);
+}
+
+TEST(ProfileBundleSerializerTest, LoadNamesTheFileThatFailedToParse)
+{
+    namespace fs = std::filesystem;
+    const fs::path path = fs::temp_directory_path() / "pm_bundle_bad.platemaker.profiles.json";
+    { std::ofstream(path) << R"({"canvasProfiles": []})"; }   // no version
+
+    Infrastructure::ProfileBundleSerializer s;
+    try {
+        (void)s.load(path.string());
+        ADD_FAILURE() << "a bundle without a version must not load";
+    } catch (const std::runtime_error& e) {
+        EXPECT_NE(std::string(e.what()).find(path.string()), std::string::npos)
+            << "the error must say which file: " << e.what();
+    }
+    std::error_code ec;
+    fs::remove(path, ec);
+}
+
+TEST(ProfileBundleSerializerTest, SaveIntoAMissingFolderThrows)
+{
+    namespace fs = std::filesystem;
+    const fs::path path = fs::temp_directory_path() / "pm-no-such-folder-7f3a" / "lib.platemaker.profiles.json";
+    ASSERT_FALSE(fs::exists(path.parent_path()));
+    Infrastructure::ProfileBundleSerializer s;
+    EXPECT_THROW(s.save({canvas("cp-1", "A", 100, 100)}, {}, path.string()), std::runtime_error);
+}
+
+TEST(ProfileBundleSerializerTest, SaveOverSomethingThatCannotBeReplacedThrows)
+{
+    // The temp file is written, but neither the rename nor the copy fallback can replace a non-empty
+    // folder standing at the destination: save() must report it instead of claiming success.
+    namespace fs = std::filesystem;
+    const fs::path dir  = fs::temp_directory_path() / "pm-bundle-blocked";
+    const fs::path path = dir / "lib.platemaker.profiles.json";
+    fs::remove_all(dir);
+    fs::create_directories(path / "occupied");
+
+    Infrastructure::ProfileBundleSerializer s;
+    EXPECT_THROW(s.save({canvas("cp-1", "A", 100, 100)}, {}, path.string()), std::runtime_error);
+    EXPECT_TRUE(fs::is_directory(path)) << "the destination is left as it was";
+    fs::remove_all(dir);
 }
 
 } // namespace Platemaker

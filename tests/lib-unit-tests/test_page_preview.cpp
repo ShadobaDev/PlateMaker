@@ -325,4 +325,58 @@ TEST(PagePreviewTest, PageRgbaRejectsBadArgs)
                  std::runtime_error);
 }
 
+namespace {
+
+/// Writes \p img (taking ownership) as a libvips-native ".v" file — the one format that keeps any pixel
+/// format and interpretation exactly as given — and returns its path.
+std::string writeNative(const TempDir& tmp, const std::string& name, VipsImage* img)
+{
+    const std::string path = tmp.file(name);
+    EXPECT_EQ(vips_image_write_to_file(img, path.c_str(), nullptr), 0) << vips_error_buffer();
+    g_object_unref(img);
+    return path;
+}
+
+} // namespace
+
+/// A page with no colour route to sRGB (complex-valued pixels) cannot be handed to a consumer.
+TEST(PagePreviewTest, PageRgbaRejectsAPageWithoutAnSrgbRoute)
+{
+    TempDir tmp("nosrgb");
+    VipsImage* black = nullptr;
+    VipsImage* cx    = nullptr;
+    ASSERT_EQ(vips_black(&black, 100, 100, "bands", 3, nullptr), 0) << vips_error_buffer();
+    ASSERT_EQ(vips_cast(black, &cx, VIPS_FORMAT_COMPLEX, nullptr), 0) << vips_error_buffer();
+    g_object_unref(black);
+    const std::string page = writeNative(tmp, "complex.v", cx);
+
+    std::vector<unsigned char> rgba(100 * 100 * 4, 0);
+    EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(page), output(100, 100), {}, {},
+                                                     rgba.data(), 100, 100),
+                 std::runtime_error);
+    vips_error_clear();
+}
+
+/// The consumer is promised 8-bit RGBA. A 16-bit page mislabelled sRGB passes through the colourspace
+/// step unchanged (it already claims sRGB), so the layout check is what must stop it.
+TEST(PagePreviewTest, PageRgbaRejectsAPageThatIsNotEightBit)
+{
+    TempDir tmp("not8bit");
+    VipsImage* black = nullptr;
+    VipsImage* u16   = nullptr;
+    VipsImage* srgb  = nullptr;
+    ASSERT_EQ(vips_black(&black, 100, 100, "bands", 3, nullptr), 0) << vips_error_buffer();
+    ASSERT_EQ(vips_cast(black, &u16, VIPS_FORMAT_USHORT, nullptr), 0) << vips_error_buffer();
+    ASSERT_EQ(vips_copy(u16, &srgb, "interpretation", VIPS_INTERPRETATION_sRGB, nullptr), 0)
+        << vips_error_buffer();
+    g_object_unref(black);
+    g_object_unref(u16);
+    const std::string page = writeNative(tmp, "sixteen.v", srgb);
+
+    std::vector<unsigned char> rgba(100 * 100 * 4, 0);
+    EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(page), output(100, 100), {}, {},
+                                                     rgba.data(), 100, 100),
+                 std::runtime_error);
+}
+
 } // namespace Platemaker::Core

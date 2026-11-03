@@ -334,6 +334,26 @@ TEST(ScaledStripTest, SliceAllStopsWhenCancelled)
     EXPECT_EQ(seen, 0);
 }
 
+TEST(ScaledStripTest, ResetTokenLetsSlicingRunAgain)
+{
+    // A token reused for a second run: reset() must clear an earlier cancel, or every later render
+    // through the same token would silently produce nothing.
+    ScaledStrip strip;
+    (void)appendSource(strip, 800, 100, "a.png");
+    (void)appendSource(strip, 800, 100, "b.png");
+
+    Infrastructure::CancellationToken cancel;
+    cancel.cancel();
+    ASSERT_TRUE(cancel.isCancelled());
+    cancel.reset();
+    EXPECT_FALSE(cancel.isCancelled());
+
+    int seen = 0;
+    strip.sliceAll(100, Models::LastSlicePolicy::KeepAsIs, cancel,
+        [&](SliceResult&&) { ++seen; return true; });
+    EXPECT_EQ(seen, 2);
+}
+
 // ---------------------------------------------------------------------------
 // ScaledStrip — band-count normalisation
 //
@@ -386,6 +406,112 @@ TEST(ScaledStripTest, SliceAllFoldsGrayscaleSourceUpToColour)
                 return true;
             }));
     EXPECT_EQ(seen, 2);
+}
+
+TEST(ScaledStripTest, SourceWithoutARouteToSrgbIsReportedWhenNormalising)
+{
+    // Band counts differ (3 vs 4), so pass 1 must fold the 3-band multiband source to sRGB — but a
+    // complex-valued image has no colour route there. sliceAll() must throw before slicing anything.
+    ScaledStrip strip;
+    {
+        VipsImage* black = nullptr;
+        VipsImage* cx    = nullptr;
+        ASSERT_EQ(vips_black(&black, 800, 100, "bands", 3, nullptr), 0) << vips_error_buffer();
+        ASSERT_EQ(vips_cast(black, &cx, VIPS_FORMAT_COMPLEX, nullptr), 0) << vips_error_buffer();
+        g_object_unref(black);
+        strip.append(ScaledImage{PixelBuffer{cx}, "complex.v"});
+    }
+    appendRgbSource(strip, 800, 100, 4, "rgba.png");
+
+    Infrastructure::CancellationToken cancel;
+    int seen = 0;
+    EXPECT_THROW(strip.sliceAll(100, Models::LastSlicePolicy::KeepAsIs, cancel,
+                                [&](SliceResult&&) { ++seen; return true; }),
+                 std::runtime_error);
+    EXPECT_EQ(seen, 0);
+    vips_error_clear();
+}
+
+TEST(ScaledStripTest, SourcesThatStillDisagreeAfterNormalisingFailTheJoin)
+{
+    // A one-band image tagged sRGB skips the colourspace fold (it claims to be sRGB already) and only
+    // gains an alpha band, so it reaches the join with 2 bands against 3. The join must fail loudly at
+    // the straddling slice rather than emit a padded or mis-coloured panel.
+    ScaledStrip strip;
+    {
+        VipsImage* black = nullptr;
+        VipsImage* lie   = nullptr;
+        ASSERT_EQ(vips_black(&black, 800, 100, "bands", 1, nullptr), 0) << vips_error_buffer();
+        ASSERT_EQ(vips_copy(black, &lie, "interpretation", VIPS_INTERPRETATION_sRGB, nullptr), 0)
+            << vips_error_buffer();
+        g_object_unref(black);
+        strip.append(ScaledImage{PixelBuffer{lie}, "mislabelled.png"});
+    }
+    appendRgbSource(strip, 800, 100, 3, "colour.jpg");
+
+    Infrastructure::CancellationToken cancel;
+    EXPECT_THROW(strip.sliceAll(150, Models::LastSlicePolicy::KeepAsIs, cancel,
+                                [](SliceResult&&) { return true; }),
+                 std::runtime_error);
+    vips_error_clear();
+}
+
+TEST(ScaledStripTest, SourceThatCannotTakeAnAlphaBandIsReported)
+{
+    // A LABQ-coded page mislabelled sRGB skips the colourspace fold, then needs an alpha band to match a
+    // wider (5-band) page — and libvips cannot add one to a coded image. sliceAll() must throw up front.
+    ScaledStrip strip;
+    {
+        VipsImage* black = nullptr;
+        VipsImage* lab   = nullptr;
+        VipsImage* labq  = nullptr;
+        VipsImage* lie   = nullptr;
+        ASSERT_EQ(vips_black(&black, 800, 100, "bands", 3, nullptr), 0) << vips_error_buffer();
+        ASSERT_EQ(vips_colourspace(black, &lab, VIPS_INTERPRETATION_LAB,
+                                   "source_space", VIPS_INTERPRETATION_sRGB, nullptr), 0) << vips_error_buffer();
+        ASSERT_EQ(vips_Lab2LabQ(lab, &labq, nullptr), 0) << vips_error_buffer();
+        ASSERT_EQ(vips_copy(labq, &lie, "interpretation", VIPS_INTERPRETATION_sRGB, nullptr), 0)
+            << vips_error_buffer();
+        g_object_unref(black);
+        g_object_unref(lab);
+        g_object_unref(labq);
+        strip.append(ScaledImage{PixelBuffer{lie}, "coded.v"});
+    }
+    {
+        VipsImage* black = nullptr;
+        VipsImage* five  = nullptr;
+        ASSERT_EQ(vips_black(&black, 800, 100, "bands", 5, nullptr), 0) << vips_error_buffer();
+        ASSERT_EQ(vips_copy(black, &five, "interpretation", VIPS_INTERPRETATION_sRGB, nullptr), 0)
+            << vips_error_buffer();
+        g_object_unref(black);
+        strip.append(ScaledImage{PixelBuffer{five}, "five.v"});
+    }
+
+    Infrastructure::CancellationToken cancel;
+    int seen = 0;
+    EXPECT_THROW(strip.sliceAll(100, Models::LastSlicePolicy::KeepAsIs, cancel,
+                                [&](SliceResult&&) { ++seen; return true; }),
+                 std::runtime_error);
+    EXPECT_EQ(seen, 0);
+    vips_error_clear();
+}
+
+TEST(ScaledStripTest, NarrowerLaterSourceFailsItsSlice)
+{
+    // The strip takes its width from the first source. append() does not check later ones, so a
+    // narrower page reaches buildSlice, where cutting a strip-wide band out of it fails. That must be
+    // a runtime_error at the slice that needs it — the earlier, full-width slice is still delivered.
+    ScaledStrip strip;
+    (void)appendSource(strip, 800, 100, "wide.png");
+    (void)appendSource(strip, 400, 100, "narrow.png");
+
+    Infrastructure::CancellationToken cancel;
+    int seen = 0;
+    EXPECT_THROW(strip.sliceAll(100, Models::LastSlicePolicy::KeepAsIs, cancel,
+                                [&](SliceResult&&) { ++seen; return true; }),
+                 std::runtime_error);
+    EXPECT_EQ(seen, 1);
+    vips_error_clear();
 }
 
 TEST(ScaledStripTest, SliceAllLeavesUniformRgbStripThreeBand)

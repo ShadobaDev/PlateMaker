@@ -175,6 +175,16 @@ TEST(MarginCropperTest, ThrowsWhenHorizontalMarginsConsumeTheWidth)
     EXPECT_THROW((void)cropper.crop(blackImage(100, 80), margins), std::invalid_argument);
 }
 
+TEST(MarginCropperTest, NegativeMarginPlacesTheAreaOutsideTheImage)
+{
+    // A negative left margin keeps the area's size positive (so the first guard passes) but starts it
+    // left of the image; vips_extract_area refuses it and crop() reports that as a runtime_error.
+    const MarginCropper cropper;
+    const Models::Margins margins{0, 0, 0, -10};
+    EXPECT_THROW((void)cropper.crop(blackImage(100, 80), margins), std::runtime_error);
+    vips_error_clear();
+}
+
 TEST(MarginCropperTest, ThrowsWhenVerticalMarginsExceedTheHeight)
 {
     const MarginCropper cropper;
@@ -230,6 +240,34 @@ TEST(ScalerTest, ScaleBufferResizesToTargetWidthPreservingAspect)
     EXPECT_EQ(scaled.buffer.width(),  100);
     EXPECT_EQ(scaled.buffer.height(), 50);
     EXPECT_EQ(scaled.sourceFilePath, "memory.png") << "the source path must be carried through";
+}
+
+TEST(ScalerTest, ScaleBufferBeyondTheResamplerLimitThrows)
+{
+    // Size limit: libvips resizes by a factor of at most 1e7. A 1 px wide page asked for a 20 000 000 px
+    // wide strip exceeds it, and scale() must throw instead of returning an image.
+    VipsImage* img = nullptr;
+    ASSERT_EQ(vips_black(&img, 1, 1, nullptr), 0) << vips_error_buffer();
+    EXPECT_THROW((void)Scaler{}.scale(PixelBuffer{img}, "src.png", /*targetWidth=*/20'000'000),
+                 std::runtime_error);
+    vips_error_clear();
+}
+
+TEST(ScalerTest, ScaleFileBeyondTheResamplerLimitThrows)
+{
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "pm-scaler-limit";
+    fs::remove_all(dir); fs::create_directories(dir);
+    const std::string src = (dir / "one-pixel.png").string();
+    {
+        VipsImage* img = nullptr;
+        ASSERT_EQ(vips_black(&img, 1, 1, nullptr), 0) << vips_error_buffer();
+        ASSERT_EQ(vips_image_write_to_file(img, src.c_str(), nullptr), 0) << vips_error_buffer();
+        g_object_unref(img);
+    }
+    EXPECT_THROW((void)Scaler{}.scale(src, /*targetWidth=*/20'000'000), std::runtime_error);
+    vips_error_clear();
+    fs::remove_all(dir);
 }
 
 TEST(ScalerTest, ScaleNonExistentFileThrows)

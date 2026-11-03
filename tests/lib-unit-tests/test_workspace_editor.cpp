@@ -543,4 +543,65 @@ TEST(WorkspaceEditorImportTest, IsAdditiveAndLeavesExistingProfilesUntouched)
     EXPECT_EQ(ws.canvasProfiles()[1].name, "Imported");
 }
 
+// ---------------------------------------------------------------------------
+// Output palette removal / dedup, and the pre-id relink of every project reference
+// ---------------------------------------------------------------------------
+
+TEST(WorkspaceEditorTest, RemoveOutputProfileReportsWhetherItExisted)
+{
+    Models::Workspace ws;
+    Infrastructure::WorkspaceEditor ed(ws);
+    const std::string id = ed.addOutputProfile(output("", "Mine"));
+    EXPECT_FALSE(ed.removeOutputProfile("op-nope"));
+    EXPECT_EQ(ws.outputProfiles().size(), 1u);
+    EXPECT_TRUE(ed.removeOutputProfile(id));
+    EXPECT_TRUE(ws.outputProfiles().empty());
+}
+
+TEST(WorkspaceEditorTest, ReplaceOutputProfilesDeduplicatesIds)
+{
+    Models::Workspace ws;
+    const auto report = Infrastructure::WorkspaceEditor(ws).replaceOutputProfiles({
+        output("op-dup", "First"),
+        output("op-dup", "Second"),   // duplicate id → reassigned and reported
+    });
+
+    ASSERT_EQ(ws.outputProfiles().size(), 2u);
+    EXPECT_EQ(ws.outputProfiles()[0].id, "op-dup") << "the first holder keeps the id";
+    EXPECT_NE(ws.outputProfiles()[1].id, "op-dup");
+    ASSERT_EQ(report.outputProfiles.size(), 1u);
+    EXPECT_EQ(report.outputProfiles[0].name,  "Second");
+    EXPECT_EQ(report.outputProfiles[0].oldId, "op-dup");
+    EXPECT_EQ(report.outputProfiles[0].newId, ws.outputProfiles()[1].id);
+}
+
+TEST(WorkspaceEditorTest, MintingAnIdRelinksEveryProjectReferenceToTheOldNameId)
+{
+    // Before profiles carried ids, a project referred to "cp-<name>". A profile that arrives without an
+    // id gets a fresh one, and every place a project stored the old form must follow it: the linked
+    // profiles, the render-time baseline and each input's matched profile.
+    Models::Workspace ws;
+    Infrastructure::WorkspaceEditor ed(ws);
+    ed.replaceCanvasProfiles({canvas("cp-Legacy", "Legacy", 800, 1000)});
+
+    Models::ProjectItem& proj = ed.addProject("Chapter");
+    ASSERT_TRUE(ed.addCanvasProfileToProject(proj, "cp-Legacy"));
+    proj.canvasProfileIdsAtRender = {"cp-Legacy"};
+    Models::InputFile page;
+    page.uid             = "u0";
+    page.filePath        = "p0.png";
+    page.canvasProfileId = "cp-Legacy";
+    proj.getInputImages().push_back(page);
+
+    ed.replaceCanvasProfiles({canvas("", "Legacy", 800, 1000)});   // the id was lost on a round trip
+    ASSERT_EQ(ws.canvasProfiles().size(), 1u);
+    const std::string minted = ws.canvasProfiles()[0].id;
+    ASSERT_NE(minted, "cp-Legacy");
+
+    const Models::ProjectItem& after = ws.projectItems.back();
+    EXPECT_EQ(after.canvasProfileIds(), std::vector<std::string>{minted});
+    EXPECT_EQ(after.canvasProfileIdsAtRender, std::vector<std::string>{minted});
+    EXPECT_EQ(after.getInputImages()[0].canvasProfileId, minted);
+}
+
 } // namespace Platemaker

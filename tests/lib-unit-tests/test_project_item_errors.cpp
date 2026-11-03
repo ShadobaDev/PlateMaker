@@ -157,5 +157,26 @@ TEST(PostRenderErrorTest, ErrorStatusSurvivesSaveLoad)
     fs::remove_all(dir);
 }
 
+// The slices a partial re-render must regenerate: every output not Done, in list order.
+TEST(DirtyOutputsTest, EveryOutputNotDoneIsDirty)
+{
+    ProjectItem p;
+    EXPECT_TRUE(p.dirtyOutputNames().empty()) << "no outputs, nothing to redo";
+
+    const auto out = [](const char* name, FileStatus st) {
+        Models::OutputFile o;
+        o.fileName = name;
+        o.status   = st;
+        return o;
+    };
+    p.getOutputImages() = {out("output_001.png", FileStatus::Done),
+                           out("output_002.png", FileStatus::Modified),
+                           out("output_003.png", FileStatus::Done),
+                           out("output_004.png", FileStatus::Missing),
+                           out("output_005.png", FileStatus::Desynchronized)};
+    EXPECT_EQ(p.dirtyOutputNames(),
+              (std::vector<std::string>{"output_002.png", "output_004.png", "output_005.png"}));
+}
+
 } // namespace
 } // namespace Platemaker

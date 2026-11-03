@@ -113,4 +113,19 @@ TEST(OverlayInventoryTest, RemoveOverlayById)
     EXPECT_EQ(proj.getStripOverlays().front().uid, u2);
 }
 
+TEST(OverlayInventoryTest, AnUnhashableAssetIsAddedWithoutDedup)
+{
+    // No hash, no content identity: two unreadable assets are kept as given, never merged by path.
+    TempDir     tmp("unhashable");
+    ProjectItem proj;
+    const std::string missingA = (fs::temp_directory_path() / "pm-ovl-missing-a.svg").string();
+    const std::string missingB = (fs::temp_directory_path() / "pm-ovl-missing-b.svg").string();
+    (void)proj.addOverlay(missingA, 0.0, 0.0, 0.0);
+    (void)proj.addOverlay(missingB, 0.0, 0.0, 0.0);
+    ASSERT_EQ(proj.getStripOverlays().size(), 2u);
+    EXPECT_TRUE(proj.getStripOverlays()[0].sha256.empty());
+    EXPECT_EQ(proj.getStripOverlays()[0].assetPath, missingA);
+    EXPECT_EQ(proj.getStripOverlays()[1].assetPath, missingB);
+}
+
 } // namespace Platemaker::Models

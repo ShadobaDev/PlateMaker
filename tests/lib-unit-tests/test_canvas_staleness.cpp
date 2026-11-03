@@ -768,6 +768,47 @@ TEST(DistinguishProfileTest, AUniqueNameNeedsNoDistinction)
     EXPECT_TRUE(d.differs.empty());
 }
 
+TEST(DistinguishProfileTest, ANameOfTheSameLengthButOtherLettersIsNotTheSameName)
+{
+    // "3p-m" and "3p-s" are the same length, so the case-insensitive comparison has to look at the
+    // letters; a profile identical in every field but named differently is neither duplicate nor rival.
+    auto a = makeProfile("a", 2200, 8280, 300);
+    a.name = "3p-m";
+    auto b = a;
+    b.id   = "b";
+    b.name = "3p-s";
+    const auto d = distinguishProfile({a, b}, a);
+    EXPECT_FALSE(d.duplicate);
+    EXPECT_TRUE(d.differs.empty());
+}
+
+TEST(DistinguishProfileTest, EveryComponentOfAFieldCounts)
+{
+    // Each colour channel, each margin side and the template format are compared on their own: a
+    // difference in any one of them alone must name its field.
+    const auto base = makeProfile("a", 800, 1280, 10);
+    const auto only = [&](auto change, const char* id) {
+        auto other = base;
+        other.id = id;
+        change(other);
+        return distinguishProfile({base, other}, base).differs;
+    };
+    using F = ProfileField;
+    EXPECT_EQ(only([](CanvasProfile& p) { p.visualColour.g = 1; }, "g"), std::vector<F>{F::Colours});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.visualColour.b = 1; }, "b"), std::vector<F>{F::Colours});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.visualColour.a = 1; }, "al"), std::vector<F>{F::Colours});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.backgroundColour.r = 9; }, "bg"), std::vector<F>{F::Colours});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.margins.top = 11; }, "mt"), std::vector<F>{F::Margins});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.margins.right = 11; }, "mr"), std::vector<F>{F::Margins});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.margins.bottom = 11; }, "mb"), std::vector<F>{F::Margins});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.canvasSize.height = 1281; }, "h"), std::vector<F>{F::CanvasSize});
+    EXPECT_EQ(only([](CanvasProfile& p) {
+                  p.templateSettings.format = p.templateSettings.format == TemplateFormat::Psd
+                                                  ? TemplateFormat::Png : TemplateFormat::Psd;
+              }, "fmt"),
+              std::vector<F>{F::TemplateSettings});
+}
+
 TEST(DistinguishProfileTest, AnIdenticalProfileOfTheSameNameIsADuplicate)
 {
     // As in a real workspace: two "3p-m", same in every field. Names compare without case.

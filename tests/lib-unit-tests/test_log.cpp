@@ -105,4 +105,23 @@ TEST(LogTest, ComponentNamesAreStable)
     EXPECT_STREQ(Log::componentName(Log::ProcessingPipeline), "ProcessingPipeline");
     EXPECT_STREQ(Log::componentName(Log::Scaler), "Scaler");
     EXPECT_STREQ(Log::componentName(Log::ScaledStrip), "ScaledStrip");
+    EXPECT_STREQ(Log::componentName(Log::MarginCropper), "MarginCropper");
+    EXPECT_STREQ(Log::componentName(Log::CanvasProfileMatcher), "CanvasProfileMatcher");
+    EXPECT_STREQ(Log::componentName(Log::ImageIO), "ImageIO");
+    EXPECT_STREQ(Log::componentName(Log::TemplateGenerator), "TemplateGenerator");
+    EXPECT_STREQ(Log::componentName(Log::WorkspaceSerializer), "WorkspaceSerializer");
+    EXPECT_STREQ(Log::componentName(Log::WorkspaceEditor), "WorkspaceEditor");
+    EXPECT_STREQ(Log::componentName(Log::ProjectEditor), "ProjectEditor");
+    EXPECT_STREQ(Log::componentName(Log::ThumbnailCache), "ThumbnailCache");
+    EXPECT_STREQ(Log::componentName(Log::FileMetaData), "FileMetaData");
+    EXPECT_STREQ(Log::componentName(Log::ColourCorrector), "ColourCorrector");
+    EXPECT_STREQ(Log::componentName(Log::StripOverlayCompositor), "StripOverlayCompositor");
+    EXPECT_STREQ(Log::componentName(Log::Memory), "Memory");
+}
+
+TEST(LogTest, UnknownOrCombinedComponentHasAGenericName)
+{
+    // A bit no component owns, and a mask of two components, are not one name.
+    EXPECT_STREQ(Log::componentName(1ull << 63), "component");
+    EXPECT_STREQ(Log::componentName(Log::Scaler | Log::ImageIO), "component");
 }

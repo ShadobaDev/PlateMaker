@@ -356,6 +356,14 @@ TEST_F(TemplatePsdTest, MarginsLargerThanTheCanvasAreRejected)
                  std::invalid_argument); // safe height collapses
 }
 
+TEST_F(TemplatePsdTest, UnwritableOutputPathIsAnError)
+{
+    // The template is encoded in memory and then written; a destination in a missing folder must be
+    // reported, not return a hash for bytes that never reached disk.
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(40, 40), {}, path("missing/t.png"), {}),
+                 std::runtime_error);
+}
+
 TEST_F(TemplatePsdTest, NonPositiveDpiIsRejected)
 {
     TemplateOptions zero; zero.dpi = 0.0;

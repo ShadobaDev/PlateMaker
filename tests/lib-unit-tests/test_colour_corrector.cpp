@@ -231,6 +231,66 @@ TEST(ColourCorrectorTest, ApplyToRgbaRejectsBadArgs)
     g.brightness = 0.1; // non-neutral so it actually tries to grade
     EXPECT_THROW(cc.applyToRgba(nullptr, 2, 2, g), std::runtime_error);
     EXPECT_THROW(cc.applyToRgba(px.data(), 0, 2, g), std::runtime_error);
+    EXPECT_THROW(cc.applyToRgba(px.data(), 2, 0, g), std::runtime_error);
+    EXPECT_THROW(cc.applyToRgba(px.data(), 2, -1, g), std::runtime_error);
+}
+
+TEST(ColourCorrectorTest, ApplyToRgbaWithOnlyACurveStillGrades)
+{
+    // Neutral scalars but a curve is not the no-op fast path: the curve must reach the bytes.
+    std::vector<std::uint8_t> px = {128, 128, 128, 255,  128, 128, 128, 255,
+                                    128, 128, 128, 255,  128, 128, 128, 255};
+    Models::ColourCorrection g = neutral();
+    g.curves.red = {{0.0, 0.0}, {1.0, 0.5}};
+
+    ColourCorrector cc;
+    cc.applyToRgba(px.data(), 2, 2, g);
+    for (std::size_t i = 0; i < px.size(); i += 4) {
+        EXPECT_NEAR(px[i + 0], 64, 2);    // red halved
+        EXPECT_NEAR(px[i + 1], 128, 1);
+        EXPECT_EQ(px[i + 3], 255);
+    }
+}
+
+TEST(ColourCorrectorTest, CurvesApplyOnlyToEightBitColour)
+{
+    // Curves are an 8-bit, 3-band LUT. A 16-bit image and a grey image both skip them (and come back
+    // unchanged), rather than being mapped through a table built for other values.
+    Models::ColourCorrection g = neutral();
+    g.curves.master = {{0.0, 1.0}, {1.0, 1.0}};   // would turn everything white
+
+    ColourCorrector cc;
+    const auto p16 = pixel(cc.applyToBuffer(makeSolidFormat({100, 100, 100}, VIPS_FORMAT_USHORT), g));
+    ASSERT_EQ(p16.size(), 3u);
+    EXPECT_DOUBLE_EQ(p16[0], 100.0);
+    const auto grey = pixel(cc.applyToBuffer(makeSolid({100}), g));
+    ASSERT_EQ(grey.size(), 1u);
+    EXPECT_DOUBLE_EQ(grey[0], 100.0);
+}
+
+TEST(ColourCorrectorTest, SaturationLeavesAGreyImageAlone)
+{
+    // Saturation is a 3x3 colour recomb; a one-band image has no colour to change.
+    Models::ColourCorrection g = neutral();
+    g.saturation = 0.0;
+    ColourCorrector cc;
+    const auto p = pixel(cc.applyToBuffer(makeSolid({77}), g));
+    ASSERT_EQ(p.size(), 1u);
+    EXPECT_DOUBLE_EQ(p[0], 77.0);
+}
+
+TEST(ColourCorrectorTest, NearVerticalCurveStepTakesItsLowerPoint)
+{
+    // Two curve points closer than 1e-9 in x would divide by almost nothing. The value exactly at the
+    // upper point takes the lower point's y instead of an interpolation through the gap.
+    const double x = 128.0 / 255.0;
+    Models::ColourCorrection g = neutral();
+    g.curves.master = {{0.0, 0.0}, {x - 1e-12, 0.2}, {x, 0.9}, {1.0, 1.0}};
+
+    ColourCorrector cc;
+    const auto p = pixel(cc.applyToBuffer(makeSolid({128, 128, 128}), g));
+    ASSERT_EQ(p.size(), 3u);
+    EXPECT_NEAR(p[0], 0.2 * 255.0, 1.0);
 }
 
 TEST(ColourCorrectorTest, NonNeutralGradeOnInvalidBufferThrows)
@@ -241,6 +301,35 @@ TEST(ColourCorrectorTest, NonNeutralGradeOnInvalidBufferThrows)
     Models::ColourCorrection g = neutral();
     g.brightness = 0.2;
     EXPECT_THROW((void)cc.applyToBuffer(PixelBuffer{}, g), std::runtime_error);
+}
+
+TEST(ColourCorrectorTest, SaturationOnComplexImageThrows)
+{
+    // The saturation recomb refuses complex-valued pixels; the grade must surface that as a
+    // runtime_error (and release its intermediates) instead of returning a half-graded image.
+    Models::ColourCorrection g = neutral();
+    g.saturation = 0.5;
+
+    ColourCorrector cc;
+    EXPECT_THROW((void)cc.applyToBuffer(makeSolidFormat({10, 20, 30}, VIPS_FORMAT_COMPLEX), g),
+                 std::runtime_error);
+}
+
+TEST(ColourCorrectorTest, BrightnessOnACodedImageThrows)
+{
+    // A LABQ-coded image reports 4 bands but decodes to 3, so the per-band brightness vectors no longer
+    // fit and vips_linear refuses them; the grade must throw rather than return the image ungraded.
+    VipsImage* lab  = nullptr;
+    VipsImage* labq = nullptr;
+    ASSERT_EQ(vips_colourspace(makeSolid({120, 130, 140}).vipsImage(), &lab, VIPS_INTERPRETATION_LAB, nullptr), 0)
+        << vips_error_buffer();
+    ASSERT_EQ(vips_Lab2LabQ(lab, &labq, nullptr), 0) << vips_error_buffer();
+    g_object_unref(lab);
+
+    Models::ColourCorrection g = neutral();
+    g.brightness = 0.1;
+    ColourCorrector cc;
+    EXPECT_THROW((void)cc.applyToBuffer(PixelBuffer{labq}, g), std::runtime_error);
 }
 
 TEST(ColourCorrectorTest, BrightnessLiftScalesWithSixteenBitFullScale)
