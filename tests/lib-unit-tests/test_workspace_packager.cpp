@@ -10,6 +10,10 @@
 
 #include <archive.h>
 #include <archive_entry.h>
+
+#ifndef _WIN32
+#include <locale.h>   // newlocale(), uselocale()
+#endif
 #include <nlohmann/json.hpp>
 
 #include <platemaker/infrastructure/file/path_utf8.hpp>
@@ -91,6 +95,12 @@ std::string readText(const fs::path& p)
 std::vector<std::string> unzip(const fs::path& zip, const fs::path& dir)
 {
     std::vector<std::string> names;
+#ifndef _WIN32
+    // As WorkspacePackager::unpack() reads names: this thread in a UTF-8 locale, or libarchive drops the
+    // non-ASCII ones in the test process's "C" locale.
+    const locale_t utf8     = newlocale(LC_CTYPE_MASK, "C.UTF-8", locale_t{});
+    const locale_t previous = uselocale(utf8);
+#endif
     archive* a = archive_read_new();
     archive_read_support_format_zip(a);
 #ifdef _WIN32
@@ -112,6 +122,10 @@ std::vector<std::string> unzip(const fs::path& zip, const fs::path& dir)
             f.write(static_cast<const char*>(buf), static_cast<std::streamsize>(size));
     }
     archive_read_free(a);
+#ifndef _WIN32
+    uselocale(previous);
+    freelocale(utf8);
+#endif
     return names;
 }
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.6.0] — Unreleased
+## [0.6.0] — 03.11.2026
 
 Adds two optional, non-destructive **render-time processing steps** — project-wide **colour correction**
 (page domain) and text/bubble **overlays** (strip domain) — behind a small typed-step framework, and
@@ -9,12 +9,6 @@ scale), so the GUI pins the version in lockstep (exactly as 0.5.0 did). Output i
 any project that uses neither step**, and older workspaces load unchanged (the new config is additive,
 guarded fields). Also carries the additive profile-portability work originally staged for 0.5.2 (never
 released), which re-derives onto this baseline per the cascade rule.
-
-> **Build note.** Overlays may now be SVG, so the bundled libvips must keep **librsvg** enabled. The
-> custom-libvips item in `docs/TODO.md` proposes `-Dsvg=disabled` on the grounds that SVG is a format
-> "we neither load nor save" — that justification retires here. The GPL driver behind that item is
-> `libimagequant` and is unaffected; librsvg is LGPL, so dynamic linking carries no equivalent
-> encumbrance.
 
 ### Changed
 

@@ -1,5 +1,11 @@
 # Platemaker
 
+[![CI](https://github.com/ShadobaDev/PlateMaker/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ShadobaDev/PlateMaker/actions/workflows/ci.yml)
+[![Coverage](https://coveralls.io/repos/github/ShadobaDev/PlateMaker/badge.svg?branch=main)](https://coveralls.io/github/ShadobaDev/PlateMaker?branch=main)
+[![Release](https://img.shields.io/github/v/release/ShadobaDev/PlateMaker)](https://github.com/ShadobaDev/PlateMaker/releases/latest)
+[![License (lib): LGPL-3.0](https://img.shields.io/badge/license%20(lib)-LGPL--3.0-blue)](LICENSE.LGPL)
+[![License (CLI): GPL-3.0](https://img.shields.io/badge/license%20(CLI)-GPL--3.0-blue)](LICENSE.GPL)
+
 > **Comic artist canvas tool** — pre-processing and post-processing for Webtoon-style publishing.
 
 Platemaker handles both ends of the comic-art workflow: generating canvas templates with margin guides before drawing, and scaling + slicing finished artwork into upload-ready panels. It is designed around the Webtoon vertical-scroll format (800 px wide, 1280 px-high slices) but is architecturally extensible to other formats.
@@ -514,6 +520,7 @@ export LD_LIBRARY_PATH="/path/to/platemaker-dev-0.2.1-linux-x86_64-release/lib:$
 | `linux-release` | Linux / WSL2 | Release | libvips from apt; others auto-fetched |
 | `linux-debug` | Linux / WSL2 | Debug | full symbols, no sanitizer (packageable) |
 | `linux-asan` | Linux / WSL2 | Debug | + ASan/UBSan — local only, not packaged |
+| `linux-coverage` | Linux / WSL2 | Debug | + `--coverage`, for gcovr (CI's coverage job) — not packaged |
 | `mingw-release` | Windows MinGW | Release | libvips from MSYS2; others auto-fetched |
 | `mingw-debug` | Windows MinGW | Debug | full symbols |
 | `msvc-release` / `msvc-debug` | Windows MSVC | Release / Debug | secondary — all deps auto-fetched |

@@ -28,6 +28,10 @@
 #include <archive.h>
 #include <archive_entry.h>
 
+#ifndef _WIN32
+#include <locale.h>   // newlocale(), uselocale(): POSIX 2008
+#endif
+
 #include <algorithm>
 #include <cctype>
 #include <ctime>
@@ -52,6 +56,37 @@ namespace fs = std::filesystem;
 /// the folder keeps its place there, so a package holds the consumer's layout, whatever it is.
 constexpr const char* k_inputsDir   = "inputs";     //!< pages: a person opening the zip looks for them here
 constexpr const char* k_externalDir = "external";   //!< anything else the workspace named from elsewhere
+
+/// libarchive hands an entry's name over in the current locale, and on POSIX a process is in "C" (ASCII)
+/// until it calls setlocale(): there a non-ASCII name is lost (ARCHIVE_WARN, the name NULL), even through
+/// archive_entry_pathname_utf8(). The names are UTF-8 whatever the locale, so while it lives this object
+/// puts the calling thread alone in a UTF-8 locale; the process's locale, and other threads', stay as they
+/// are. Windows names files in UTF-16 and needs nothing.
+#ifdef _WIN32
+struct Utf8ThreadLocale {};
+#else
+class Utf8ThreadLocale {
+public:
+    Utf8ThreadLocale()
+        : m_utf8(newlocale(LC_CTYPE_MASK, "C.UTF-8", locale_t{}))
+        , m_previous(m_utf8 ? uselocale(m_utf8) : locale_t{})
+    {
+    }
+    ~Utf8ThreadLocale()
+    {
+        if (m_utf8) {
+            uselocale(m_previous);
+            freelocale(m_utf8);
+        }
+    }
+    Utf8ThreadLocale(const Utf8ThreadLocale&)            = delete;
+    Utf8ThreadLocale& operator=(const Utf8ThreadLocale&) = delete;
+
+private:
+    locale_t m_utf8;       // null where the system has no C.UTF-8: names stay as libarchive gives them
+    locale_t m_previous;
+};
+#endif
 
 /// Names in a package are compared the way the file systems it lands on compare them: without case.
 /// ponytail: ASCII case only — two names differing only in the case of a non-ASCII letter are kept apart.
@@ -503,6 +538,8 @@ std::optional<UnpackedPackage> WorkspacePackager::unpack(const std::string&     
     const auto     total = fs::file_size(zip, ec);
     if (ec)
         throw refuse("cannot read '" + zipPath + "': " + ec.message());
+
+    [[maybe_unused]] const Utf8ThreadLocale utf8Names{};
 
     // Owned from here on: whatever goes wrong, the half-unpacked folder goes with it.
     struct Reader {

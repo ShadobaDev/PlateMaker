@@ -44,9 +44,12 @@ INSERT_W, INSERT_H = 400, 100    # → 200×50 scaled: pushes every slice below 
 PAGE_KIB = PAGE_W * PAGE_H * 3 // 1024
 
 # Enough pages that residency must plateau well before the halfway mark for the run to be bounded at
-# all: libvips reclaims a released page on its own cache schedule (~13 pages at this size), so a
-# shorter chapter would finish before the ceiling binds and prove nothing.
-PAGE_COUNT = 40
+# all. A page the strip releases stays decoded while libvips' operation cache still holds its
+# operations: at this size the cache's limit of 100 operations binds, not its memory, so the plateau
+# is 100 ÷ the operations per page — ~13 pages on Windows' libvips 8.18, 20 on Ubuntu's 8.15
+# (measured: a cache of 50 holds 10, of 25 holds 5). A shorter chapter would finish before the
+# ceiling binds and prove nothing; 60 keeps the halfway mark (30) above either plateau.
+PAGE_COUNT = 60
 
 
 # ---------------------------------------------------------------------------

@@ -36,10 +36,6 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # ---------------------------------------------------------------------------
-# vcpkg toolchain is injected via CMakePresets.json — nothing to do here.
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
 # Dependencies
 # ---------------------------------------------------------------------------
 include(FetchContent)
@@ -183,7 +179,7 @@ endif()
 # Elsewhere it finds libvips and zlib with pkg-config, as the system has them.
 # Working on both repositories: -DFETCHCONTENT_SOURCE_DIR_MINIPSD_VIPS=<an unpacked minipsd-vips zip>
 # (minipsd: cmake -DOUTPUT_DIR=<dir> -P tools/package_vips.cmake).
-set(PLATEMAKER_MINIPSD_VERSION "0.4.0")
+set(PLATEMAKER_MINIPSD_VERSION "0.4.1")
 if(WIN32)
     set(FETCHCONTENT_SOURCE_DIR_MINIPSD_LIBVIPS "${VIPS_ROOT_DIR}")
 endif()
@@ -191,7 +187,7 @@ endif()
 FetchContent_Declare(
     minipsd_vips
     URL      https://github.com/ShadobaDev/minipsd/releases/download/${PLATEMAKER_MINIPSD_VERSION}/minipsd-vips-${PLATEMAKER_MINIPSD_VERSION}.zip
-    URL_HASH SHA256=0d1f9f41bf060be3b7af9645cd9fd3577d12f160701c16aa44d5e3821f6cb458
+    URL_HASH SHA256=ca872899fa945530b5b9c001fbfe34c60b1c4896a1159429d19ba59a70518638
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(minipsd_vips)

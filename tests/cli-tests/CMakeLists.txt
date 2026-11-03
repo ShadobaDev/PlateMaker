@@ -51,7 +51,9 @@ add_test(
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
+# TIMEOUT covers the whole pytest run, not one test: an instrumented Debug build (linux-coverage) takes
+# ~3.5 minutes over it.
 set_tests_properties(cli-tests PROPERTIES
     LABELS "cli;integration"
-    TIMEOUT 120
+    TIMEOUT 600
 )
