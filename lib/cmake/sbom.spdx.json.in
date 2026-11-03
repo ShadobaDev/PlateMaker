@@ -86,7 +86,7 @@
     {
       "spdxElementId": "SPDXRef-Package-libplatemaker",
       "relationshipType": "STATIC_LINK",
-      "relatedSpdxElement": "SPDXRef-Package-minipsd"
+      "relatedSpdxElement": "@_pm_minipsd_spdxid@"
     }@_pm_extra_relationships@
   ]
 }

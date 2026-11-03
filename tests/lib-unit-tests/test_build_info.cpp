@@ -92,7 +92,7 @@ TEST(LinkedComponents, ReportsMinipsdWithMitLicence)
 {
     // Compiled into the lib, so it is the lib's to name — at the version of the header it was built with.
     const auto components = linkedComponents();
-    const LinkedComponent* psd = find(components, "minipsd");
+    const LinkedComponent* psd = find(components, "minipsd-vips");
     ASSERT_NE(psd, nullptr);
     EXPECT_EQ(psd->version, MINIPSD_VERSION_STRING);
     EXPECT_EQ(psd->licence, "MIT");

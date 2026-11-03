@@ -104,6 +104,7 @@ target_link_libraries(platemaker-lib
         VIPS::vips-cpp
         nlohmann_json::nlohmann_json
         LibArchive::LibArchive
+        minipsd::vips
         minipsd::minipsd
 )
 
@@ -182,25 +183,25 @@ else()
     set(_pm_json_version "${PLATEMAKER_JSON_VERSION}")      # pinned tag (root CMakeLists.txt)
 endif()
 
-# minipsd, as its own SPDX fragment describes it: the minipsd actually used (an installed 0.3.x may be
-# newer than the pin), with its licence, PURL and header hash — taken whole, not copied field by field.
-# The property is set the same way whether minipsd was fetched or found.
-get_target_property(_pm_minipsd_sbom minipsd::minipsd MINIPSD_SBOM_FILE)
+# minipsd's libvips plugin, as the SBOM fragment of its zip describes it: the version, licence, PURL and
+# every file's hash — taken whole, not copied field by field.
+get_target_property(_pm_minipsd_sbom minipsd::vips MINIPSD_SBOM_FILE)
 if(NOT _pm_minipsd_sbom OR NOT EXISTS "${_pm_minipsd_sbom}")
-    message(FATAL_ERROR "minipsd provides no SBOM fragment (target property MINIPSD_SBOM_FILE)")
+    message(FATAL_ERROR "minipsd-vips provides no SBOM fragment (target property MINIPSD_SBOM_FILE)")
 endif()
 file(READ "${_pm_minipsd_sbom}" _pm_minipsd_doc)
 string(JSON _pm_minipsd_package GET "${_pm_minipsd_doc}" packages 0)
 string(JSON _pm_minipsd_name    GET "${_pm_minipsd_package}" name)
-if(NOT _pm_minipsd_name STREQUAL "minipsd")
-    message(FATAL_ERROR "minipsd's SBOM fragment does not describe minipsd first (found '${_pm_minipsd_name}')")
+if(NOT _pm_minipsd_name STREQUAL "minipsd-vips")
+    message(FATAL_ERROR "minipsd-vips' SBOM fragment does not describe minipsd-vips first (found '${_pm_minipsd_name}')")
 endif()
+string(JSON _pm_minipsd_spdxid    GET "${_pm_minipsd_package}" SPDXID)
 string(JSON _pm_minipsd_version   GET "${_pm_minipsd_package}" versionInfo)
 string(JSON _pm_minipsd_homepage  GET "${_pm_minipsd_package}" homepage)
 string(JSON _pm_minipsd_copyright GET "${_pm_minipsd_package}" copyrightText)
 string(JSON _pm_minipsd_licence   GET "${_pm_minipsd_package}" licenseDeclared)
 set(_pm_minipsd_package ",\n    ${_pm_minipsd_package}")   # spliced after nlohmann-json in the template
-message(STATUS "SBOM: minipsd ${_pm_minipsd_version} (${_pm_minipsd_sbom})")
+message(STATUS "SBOM: minipsd-vips ${_pm_minipsd_version} (${_pm_minipsd_sbom})")
 
 set(_pm_credits_dir "${CMAKE_CURRENT_BINARY_DIR}/credits")
 file(MAKE_DIRECTORY "${_pm_credits_dir}/licenses")
@@ -213,16 +214,12 @@ file(MAKE_DIRECTORY "${_pm_credits_dir}/licenses")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/cmake/licenses/"
      DESTINATION "${_pm_credits_dir}/licenses")
 
-# minipsd's licence carries its own copyright, so it ships as its own text — taken from minipsd itself
-# rather than vendored here: its source tree when fetched, its installed doc dir when found.
-if(minipsd_SOURCE_DIR AND EXISTS "${minipsd_SOURCE_DIR}/LICENSE.MIT")
-    set(_pm_minipsd_licence_file "${minipsd_SOURCE_DIR}/LICENSE.MIT")
-elseif(minipsd_DIR AND EXISTS "${minipsd_DIR}/../../doc/minipsd/LICENSE.MIT")
-    set(_pm_minipsd_licence_file "${minipsd_DIR}/../../doc/minipsd/LICENSE.MIT")   # share/cmake/minipsd
-else()
-    message(FATAL_ERROR "minipsd's LICENSE.MIT was not found (fetched source or installed share/doc/minipsd)")
+# minipsd-vips' licence carries its own copyright, so it ships as its own text — the LICENSE.MIT in its
+# zip, not a copy vendored here.
+if(NOT EXISTS "${minipsd_vips_SOURCE_DIR}/LICENSE.MIT")
+    message(FATAL_ERROR "minipsd-vips' LICENSE.MIT was not found in ${minipsd_vips_SOURCE_DIR}")
 endif()
-file(COPY_FILE "${_pm_minipsd_licence_file}" "${_pm_credits_dir}/licenses/minipsd.MIT.txt" ONLY_IF_DIFFERENT)
+file(COPY_FILE "${minipsd_vips_SOURCE_DIR}/LICENSE.MIT" "${_pm_credits_dir}/licenses/minipsd-vips.MIT.txt" ONLY_IF_DIFFERENT)
 
 # Third-party NOTICES + the bundled-dependency SBOM fragments (@_pm_extra_packages@ /
 # @_pm_extra_relationships@ below). Only meaningful on Windows, where we bundle the libvips DLL graph and
@@ -245,10 +242,12 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/sbom.spdx.json.in"
 # MSVC: WINDOWS_EXPORT_ALL_SYMBOLS generates a .def file automatically.
 # MinGW/GCC: the equivalent is the --export-all-symbols linker flag;
 #   WINDOWS_EXPORT_ALL_SYMBOLS is silently ignored by CMake for GCC.
+#   Unlike the .def file it also reaches the static libraries linked in, so the plugin's are excluded:
+#   the lib exports none of minipsd-vips' functions.
 if(MSVC)
     set_target_properties(platemaker-lib PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 elseif(WIN32)
-    target_link_options(platemaker-lib PRIVATE "-Wl,--export-all-symbols")
+    target_link_options(platemaker-lib PRIVATE "-Wl,--export-all-symbols" "-Wl,--exclude-libs,libminipsd_vips.a")
 endif()
 
 # ---------------------------------------------------------------------------
