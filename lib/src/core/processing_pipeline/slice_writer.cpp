@@ -85,6 +85,10 @@ std::vector<LoadedOverlay> loadOverlaysForStrip(
 
 int expectedSliceCount(int stripHeight, const Models::OutputProfile& outProfile)
 {
+    // A zero height would divide by zero (SIGFPE) before ScaledStrip::sliceAll() rejects it; report no
+    // slices and let sliceAll() raise the same typed error a negative height gets.
+    if (outProfile.sliceHeight <= 0)
+        return 0;
     const int fullCount = stripHeight / outProfile.sliceHeight;
     const int remainder = stripHeight % outProfile.sliceHeight;
     return fullCount +
