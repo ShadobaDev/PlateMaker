@@ -234,6 +234,7 @@ TEST(ProfileBundleSerializerTest, SaveOverSomethingThatCannotBeReplacedThrows)
     Infrastructure::ProfileBundleSerializer s;
     EXPECT_THROW(s.save({canvas("cp-1", "A", 100, 100)}, {}, path.string()), std::runtime_error);
     EXPECT_TRUE(fs::is_directory(path)) << "the destination is left as it was";
+    EXPECT_FALSE(fs::exists(fs::path(path.string() + ".tmp"))) << "nor anything beside it";
     fs::remove_all(dir);
 }
 

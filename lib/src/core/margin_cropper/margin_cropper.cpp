@@ -31,15 +31,19 @@ PixelBuffer MarginCropper::crop(
     const int srcW = source.width();
     const int srcH = source.height();
 
-    // Safe-area rectangle derived from the margin offsets.
+    // Safe-area rectangle derived from the margin offsets, in 64 bits: two margins near INT_MAX would
+    // overflow an int and could come back positive.
     const int x = margins.left;
     const int y = margins.top;
-    const int w = srcW - margins.left - margins.right;
-    const int h = srcH - margins.top  - margins.bottom;
+    const long long w = static_cast<long long>(srcW) - margins.left - margins.right;
+    const long long h = static_cast<long long>(srcH) - margins.top  - margins.bottom;
 
-    if (w <= 0 || h <= 0) {
+    // A negative margin would start the area outside the image, which libvips refuses with a message
+    // about extract_area rather than about margins.
+    const bool negative = margins.top < 0 || margins.right < 0 || margins.bottom < 0 || margins.left < 0;
+    if (negative || w <= 0 || h <= 0) {
         throw std::invalid_argument(
-            "MarginCropper::crop() — margins produce a zero or negative safe area "
+            "MarginCropper::crop() — margins must be non-negative and leave a safe area "
             "(source: " + std::to_string(srcW) + "x" + std::to_string(srcH) +
             ", margins: top="    + std::to_string(margins.top) +
             " right="  + std::to_string(margins.right) +
@@ -49,7 +53,7 @@ PixelBuffer MarginCropper::crop(
     }
 
     VipsImage* out = nullptr;
-    if (vips_extract_area(source.vipsImage(), &out, x, y, w, h, nullptr) != 0) {
+    if (vips_extract_area(source.vipsImage(), &out, x, y, static_cast<int>(w), static_cast<int>(h), nullptr) != 0) {
         throw std::runtime_error(
             "MarginCropper::crop() — vips_extract_area failed: " +
             std::string(vips_error_buffer()));

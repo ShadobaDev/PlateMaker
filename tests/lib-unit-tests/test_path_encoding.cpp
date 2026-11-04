@@ -156,6 +156,20 @@ TEST(NonAsciiPathTest, FileHashIsNotEmptyAndMatchesTheAsciiPathHash)
     EXPECT_EQ(hashNonAscii, hashAscii);
 }
 
+TEST(NonAsciiPathTest, FileHashIsEmptyForAFolderOrAMissingFile)
+{
+    // Empty means "cannot be read": a folder used to hash as no bytes at all, which is a real hash
+    // (of an empty file) and would compare equal to one.
+    const NonAsciiDir dir;
+    const std::string file = dir.writeChild("payload.bin", k_content);
+    const std::string folder = Infrastructure::pathToUtf8(Infrastructure::utf8ToPath(file).parent_path());
+
+    EXPECT_TRUE(Infrastructure::FileMetaData::computeFileSha256(folder).empty());
+    EXPECT_TRUE(Infrastructure::FileMetaData::computeFileSha256(folder + "/missing.bin").empty());
+    EXPECT_EQ(Infrastructure::FileMetaData::computeFileSha256(file),
+              Infrastructure::FileMetaData::computeSha256(k_content, std::string(k_content).size()));
+}
+
 TEST(NonAsciiPathTest, SanitizeReportsProcessedRatherThanPending)
 {
     // The end-to-end shape of the render bug: an input that was hashed at render time must

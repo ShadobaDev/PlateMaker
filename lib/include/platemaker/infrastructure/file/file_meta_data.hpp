@@ -32,6 +32,8 @@ namespace Platemaker::Infrastructure {
  */
 class PLATEMAKER_EXPORT FileMetaData {
 public:
+    /// SHA-256 of the file at \p filePath (UTF-8), as lowercase hex; empty when it cannot be read whole —
+    /// missing, a folder, or a read that ended before the file's size.
     static std::string computeFileSha256(const std::string& filePath);
 
     /// SHA-256 of \p size bytes at \p data, as lowercase hex — for bytes about to be written, where

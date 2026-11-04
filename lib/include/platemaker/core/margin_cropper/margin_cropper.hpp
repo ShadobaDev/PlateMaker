@@ -53,7 +53,7 @@ public:
      *                top + bottom must be less than source.height().
      * \return A new PixelBuffer containing only the safe-area region.
      *
-     * \throws std::invalid_argument if the margins would produce a zero or negative safe area.
+     * \throws std::invalid_argument if a margin is negative, or the margins leave no safe area.
      * \throws std::runtime_error    if the libvips crop operation fails.
      */
     [[nodiscard]] PixelBuffer crop(

@@ -690,15 +690,10 @@ TEST(RenderDiagnosticsTest, EveryStepReportsOnItsChannelWhenEnabled)
 }
 
 // A black-and-white bubble is the commonest overlay there is. Saved as a greyscale PNG it loads as one
-// band; rasterizeOverlay() only adds alpha (two bands), and compositing then embeds it with a four-value
-// transparent background, which libvips refuses — so the whole render fails.
+// band; unless it becomes sRGB before its alpha, compositing embeds a two-band layer with a four-value
+// transparent background, which libvips refuses, and the whole render fails.
 TEST(SliceOutputTest, GreyscaleOverlayIsComposited)
 {
-    GTEST_SKIP() << "BUG: a greyscale (1-band) or grey+alpha overlay fails the render with "
-                    "\"embed overlay layer: linear: vector must have 1 or 2 elements\" — "
-                    "StripOverlayCompositor::rasterizeOverlay() does not convert grey to sRGB before "
-                    "adding alpha (strip_overlay_compositor.cpp:99), so composite() gets a 2-band layer.";
-
     TempDir tmp("grey-ovl");
     RenderRequest req = request(threePages(tmp), {}, {}, tmp.dir());
     Models::StripOverlay ov;

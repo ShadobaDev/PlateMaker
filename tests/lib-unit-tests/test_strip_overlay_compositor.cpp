@@ -446,28 +446,36 @@ TEST(StripOverlayCompositorTest, OpaqueRasterOverlayGainsAnAlphaBand)
 
 TEST(StripOverlayCompositorTest, SixteenBitOverlayIsFlattenedToEightBitRgba)
 {
-    // A 16-bit asset must come back as straight 8-bit RGBA bytes — toRgba casts it down
-    // (strip_overlay_compositor.cpp:123-128), or the caller reads twice the bytes it expects.
-    // pngsave writes 16 bits only for an RGB16 image, so tag it as one after the cast.
-    VipsImage* u16 = nullptr;
-    ASSERT_EQ(vips_cast(makeSolid(16, 24, {1, 2, 3, 255}).vipsImage(), &u16, VIPS_FORMAT_USHORT, nullptr), 0)
-        << vips_error_buffer();
+    // A 16-bit asset must come back as 8-bit RGBA bytes, its values scaled rather than clipped: 16-bit
+    // 257 × v is 8-bit v, where a cast would clip every value above 255 to white. pngsave writes 16 bits
+    // only for an RGB16 image, so the pixels are scaled up, cast, and tagged as one.
+    VipsImage* wide  = nullptr;
+    VipsImage* u16   = nullptr;
     VipsImage* rgb16 = nullptr;
+    ASSERT_EQ(vips_linear1(makeSolid(16, 24, {1, 2, 3, 255}).vipsImage(), &wide, 257.0, 0.0, nullptr), 0)
+        << vips_error_buffer();
+    ASSERT_EQ(vips_cast(wide, &u16, VIPS_FORMAT_USHORT, nullptr), 0) << vips_error_buffer();
     ASSERT_EQ(vips_copy(u16, &rgb16, "interpretation", VIPS_INTERPRETATION_RGB16, nullptr), 0)
         << vips_error_buffer();
+    g_object_unref(wide);
     g_object_unref(u16);
     const TempPng png(PixelBuffer{rgb16}, "u16");
+    {
+        VipsImage* onDisk = vips_image_new_from_file(png.path().c_str(), nullptr);
+        ASSERT_NE(onDisk, nullptr) << vips_error_buffer();
+        EXPECT_EQ(onDisk->BandFmt, VIPS_FORMAT_USHORT) << "the asset on disk must really be 16-bit";
+        g_object_unref(onDisk);
+    }
 
     StripOverlayCompositor comp;
-    const PixelBuffer loaded = comp.rasterizeOverlay(png.path(), 1.0);
-    ASSERT_TRUE(loaded.isValid());
-    ASSERT_EQ(loaded.vipsImage()->BandFmt, VIPS_FORMAT_USHORT) << "the asset on disk must really be 16-bit";
     const OverlayRaster r = comp.rasterizeOverlayRgba(png.path(), 1.0);
     ASSERT_TRUE(r.isValid()) << vips_error_buffer();
     EXPECT_EQ(r.width, 16);
     EXPECT_EQ(r.height, 24);
-    EXPECT_EQ(r.rgba.size(), static_cast<std::size_t>(16 * 24 * 4))
-        << "cast to uchar → exactly four bytes per pixel";
+    ASSERT_EQ(r.rgba.size(), static_cast<std::size_t>(16 * 24 * 4)) << "exactly four bytes per pixel";
+    EXPECT_EQ(std::vector<unsigned char>(r.rgba.begin(), r.rgba.begin() + 4),
+              (std::vector<unsigned char>{1, 2, 3, 255}))
+        << "scaled from 16 bits, not clipped";
 }
 
 // ---------------------------------------------------------------------------
@@ -563,10 +571,10 @@ TEST(StripOverlayCompositorTest, RasterScaleBeyondTheResamplerLimitIsEmpty)
     vips_error_clear();
 }
 
-TEST(StripOverlayCompositorTest, RasterThatCannotTakeAnAlphaBandIsEmpty)
+TEST(StripOverlayCompositorTest, RasterOfAnotherColourCodingBecomesRgba)
 {
-    // A libvips-native (.v) asset can hold a LABQ-coded image: it loads, has no alpha, and addalpha
-    // refuses it. rasterizeOverlay must hand back an invalid buffer for it.
+    // A libvips-native (.v) asset can hold a LABQ-coded image. It is not sRGB, so it is converted, and
+    // comes back as RGBA like any other asset.
     VipsImage* lab  = nullptr;
     VipsImage* labq = nullptr;
     ASSERT_EQ(vips_colourspace(makeSolid(4, 4, {200, 200, 200}).vipsImage(), &lab,
@@ -579,21 +587,23 @@ TEST(StripOverlayCompositorTest, RasterThatCannotTakeAnAlphaBandIsEmpty)
     g_object_unref(labq);
 
     StripOverlayCompositor comp;
-    EXPECT_FALSE(comp.rasterizeOverlay(path.string(), 1.0).isValid());
-    vips_error_clear();
+    const OverlayRaster r = comp.rasterizeOverlayRgba(path.string(), 1.0);
     std::error_code ec;
     std::filesystem::remove(path, ec);
+    ASSERT_TRUE(r.isValid()) << vips_error_buffer();
+    ASSERT_EQ(r.rgba.size(), static_cast<std::size_t>(4 * 4 * 4));
+    // LABQ packs Lab into 32 bits, so the grey comes back near, not at, 200 (197 measured on 8.18).
+    EXPECT_NEAR(r.rgba[0], 200, 4);
+    EXPECT_NEAR(r.rgba[1], 200, 4);
+    EXPECT_NEAR(r.rgba[2], 200, 4);
+    EXPECT_EQ(r.rgba[3], 255) << "opaque: the asset had no alpha";
 }
 
 TEST(StripOverlayCompositorTest, GreyAlphaOverlayIsPromotedToRgba)
 {
     // LoadedOverlay documents the layer as "promoted to 4-band on load", and rasterizeOverlayRgba as
-    // RGBA bytes. A grey+alpha PNG (2 bands) already has alpha, so the addalpha promotion skips it and
-    // it stays 2-band: the RGBA form then fails its own size check and comes back empty.
-    GTEST_SKIP() << "BUG: a 2-band grey+alpha overlay is not promoted to RGBA "
-                    "(strip_overlay_compositor.cpp:99 only adds alpha; nothing converts grey to sRGB), "
-                    "so rasterizeOverlayRgba() returns an empty raster for a valid asset.";
-
+    // RGBA bytes. A grey+alpha PNG (2 bands) already has alpha: it must still become sRGB, or it stays
+    // 2-band and the RGBA form fails its own size check and comes back empty.
     const TempPng png(makeSolid(6, 4, {90, 200}), "greyalpha");   // 2-band B_W + alpha
     StripOverlayCompositor comp;
     const PixelBuffer buf = comp.rasterizeOverlay(png.path(), 1.0);

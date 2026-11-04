@@ -119,6 +119,7 @@ void ProfileBundleSerializer::save(
     const fs::path tmpPath   =
         finalPath.parent_path() / utf8ToPath(pathToUtf8(finalPath.filename()) + ".tmp");
 
+    bool written = false;
     {
         std::ofstream tmp(tmpPath, std::ios::out | std::ios::trunc);
         if (!tmp.is_open()) {
@@ -127,19 +128,22 @@ void ProfileBundleSerializer::save(
                 pathToUtf8(tmpPath) + "' for writing");
         }
         tmp << text;
-        if (!tmp.good()) {
-            throw std::runtime_error(
-                "ProfileBundleSerializer::save() — write error for '" +
-                pathToUtf8(tmpPath) + "'");
-        }
-    } // tmp closed and flushed here
+        tmp.close();   // flushes: a full disk shows here, not in the destructor where nobody sees it
+        written = !tmp.fail();
+    }
 
+    // On a failure the temp file goes too: the existing file is untouched, and nothing is left beside it.
     std::error_code ec;
+    if (!written) {
+        fs::remove(tmpPath, ec);
+        throw std::runtime_error("ProfileBundleSerializer::save() — write error for '" + pathToUtf8(tmpPath) + "'");
+    }
     fs::rename(tmpPath, finalPath, ec);
     if (ec) {
         // Fallback for cross-device rename (uncommon but possible on Windows).
         fs::copy_file(tmpPath, finalPath, fs::copy_options::overwrite_existing, ec);
-        if (!ec) fs::remove(tmpPath, ec);
+        std::error_code removed;
+        fs::remove(tmpPath, removed);   // whether or not the copy landed; a leftover is not a failure
         if (ec) {
             throw std::runtime_error(
                 "ProfileBundleSerializer::save() — cannot move temp file to '" +

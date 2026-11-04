@@ -566,6 +566,7 @@ TEST(WorkspaceSerializerTest, SaveOverSomethingThatCannotBeReplacedThrows)
 
     EXPECT_THROW(WorkspaceSerializer{}.save(makeMinimalWorkspace(), path.string()), std::runtime_error);
     EXPECT_TRUE(fs::is_directory(path)) << "the destination is left as it was";
+    EXPECT_FALSE(fs::exists(fs::path(path.string() + ".tmp"))) << "nor anything beside it";
     fs::remove_all(dir);
 }
 

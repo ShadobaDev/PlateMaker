@@ -24,6 +24,7 @@
 #include <vips/vips.h>
 
 #include <filesystem>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -175,14 +176,23 @@ TEST(MarginCropperTest, ThrowsWhenHorizontalMarginsConsumeTheWidth)
     EXPECT_THROW((void)cropper.crop(blackImage(100, 80), margins), std::invalid_argument);
 }
 
-TEST(MarginCropperTest, NegativeMarginPlacesTheAreaOutsideTheImage)
+TEST(MarginCropperTest, NegativeMarginIsAnInvalidArgument)
 {
-    // A negative left margin keeps the area's size positive (so the first guard passes) but starts it
-    // left of the image; vips_extract_area refuses it and crop() reports that as a runtime_error.
+    // A negative margin keeps the area's size positive but would start it outside the image: refused as
+    // the margins' fault, each side on its own, before libvips is asked.
     const MarginCropper cropper;
-    const Models::Margins margins{0, 0, 0, -10};
-    EXPECT_THROW((void)cropper.crop(blackImage(100, 80), margins), std::runtime_error);
-    vips_error_clear();
+    for (const Models::Margins margins : {Models::Margins{-1, 0, 0, 0}, Models::Margins{0, -1, 0, 0},
+                                          Models::Margins{0, 0, -1, 0}, Models::Margins{0, 0, 0, -10}})
+        EXPECT_THROW((void)cropper.crop(blackImage(100, 80), margins), std::invalid_argument);
+}
+
+TEST(MarginCropperTest, MarginsThatOverflowAnIntLeaveNoSafeArea)
+{
+    // 100 - INT_MAX - INT_MAX wraps to a positive int; the area is computed in 64 bits instead.
+    const MarginCropper cropper;
+    const int big = std::numeric_limits<int>::max();
+    EXPECT_THROW((void)cropper.crop(blackImage(100, 80), Models::Margins{0, big, 0, big}), std::invalid_argument);
+    EXPECT_THROW((void)cropper.crop(blackImage(100, 80), Models::Margins{big, 0, big, 0}), std::invalid_argument);
 }
 
 TEST(MarginCropperTest, ThrowsWhenVerticalMarginsExceedTheHeight)
@@ -242,18 +252,21 @@ TEST(ScalerTest, ScaleBufferResizesToTargetWidthPreservingAspect)
     EXPECT_EQ(scaled.sourceFilePath, "memory.png") << "the source path must be carried through";
 }
 
-TEST(ScalerTest, ScaleBufferBeyondTheResamplerLimitThrows)
+TEST(ScalerTest, ScaleBufferBeyondTheWidestImageThrows)
 {
-    // Size limit: libvips resizes by a factor of at most 1e7. A 1 px wide page asked for a 20 000 000 px
-    // wide strip exceeds it, and scale() must throw instead of returning an image.
+    // Size limit: no image is wider than VIPS_MAX_COORD, and past it libvips refuses the resize factor
+    // with only "parameter scale not set". One pixel more is refused first, saying which bound.
     VipsImage* img = nullptr;
     ASSERT_EQ(vips_black(&img, 1, 1, nullptr), 0) << vips_error_buffer();
-    EXPECT_THROW((void)Scaler{}.scale(PixelBuffer{img}, "src.png", /*targetWidth=*/20'000'000),
-                 std::runtime_error);
-    vips_error_clear();
+    try {
+        (void)Scaler{}.scale(PixelBuffer{img}, "src.png", VIPS_MAX_COORD + 1);
+        ADD_FAILURE() << "a width past VIPS_MAX_COORD was accepted";
+    } catch (const std::runtime_error& e) {
+        EXPECT_NE(std::string(e.what()).find("targetWidth must be 1 to"), std::string::npos) << e.what();
+    }
 }
 
-TEST(ScalerTest, ScaleFileBeyondTheResamplerLimitThrows)
+TEST(ScalerTest, ScaleFileBeyondTheWidestImageThrows)
 {
     namespace fs = std::filesystem;
     const fs::path dir = fs::temp_directory_path() / "pm-scaler-limit";
@@ -265,7 +278,7 @@ TEST(ScalerTest, ScaleFileBeyondTheResamplerLimitThrows)
         ASSERT_EQ(vips_image_write_to_file(img, src.c_str(), nullptr), 0) << vips_error_buffer();
         g_object_unref(img);
     }
-    EXPECT_THROW((void)Scaler{}.scale(src, /*targetWidth=*/20'000'000), std::runtime_error);
+    EXPECT_THROW((void)Scaler{}.scale(src, VIPS_MAX_COORD + 1), std::runtime_error);
     vips_error_clear();
     fs::remove_all(dir);
 }

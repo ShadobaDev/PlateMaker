@@ -357,8 +357,9 @@ TEST(PagePreviewTest, PageRgbaRejectsAPageWithoutAnSrgbRoute)
     vips_error_clear();
 }
 
-/// The consumer is promised 8-bit RGBA. A 16-bit page mislabelled sRGB passes through the colourspace
-/// step unchanged (it already claims sRGB), so the layout check is what must stop it.
+/// The consumer is promised 8-bit RGBA. libvips 8.15 passes a 16-bit page mislabelled sRGB through the
+/// colourspace step unchanged (it already claims sRGB), so the layout check is what must stop it; 8.18
+/// brings it to 8 bits in that step itself (measured on both), and the page is decoded.
 TEST(PagePreviewTest, PageRgbaRejectsAPageThatIsNotEightBit)
 {
     TempDir tmp("not8bit");
@@ -374,9 +375,13 @@ TEST(PagePreviewTest, PageRgbaRejectsAPageThatIsNotEightBit)
     const std::string page = writeNative(tmp, "sixteen.v", srgb);
 
     std::vector<unsigned char> rgba(100 * 100 * 4, 0);
-    EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(page), output(100, 100), {}, {},
-                                                     rgba.data(), 100, 100),
-                 std::runtime_error);
+    if (vips_version(0) == 8 && vips_version(1) < 18)
+        EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(page), output(100, 100), {}, {},
+                                                         rgba.data(), 100, 100),
+                     std::runtime_error);
+    else
+        EXPECT_NO_THROW(ProcessingPipeline::decodePageToRgba(input(page), output(100, 100), {}, {},
+                                                            rgba.data(), 100, 100));
 }
 
 } // namespace Platemaker::Core

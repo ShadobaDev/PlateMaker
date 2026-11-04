@@ -21,6 +21,7 @@
 
 #include <vips/vips.h>
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -496,22 +497,35 @@ TEST(ScaledStripTest, SourceThatCannotTakeAnAlphaBandIsReported)
     vips_error_clear();
 }
 
-TEST(ScaledStripTest, NarrowerLaterSourceFailsItsSlice)
+TEST(ScaledStripTest, AppendRefusesAPageOfAnotherWidthOrNoImage)
 {
-    // The strip takes its width from the first source. append() does not check later ones, so a
-    // narrower page reaches buildSlice, where cutting a strip-wide band out of it fails. That must be
-    // a runtime_error at the slice that needs it — the earlier, full-width slice is still delivered.
+    // The strip takes its width from the first page. A later page of another width, or one with no
+    // image, is refused at append(), by name, rather than when slicing reaches it.
     ScaledStrip strip;
     (void)appendSource(strip, 800, 100, "wide.png");
-    (void)appendSource(strip, 400, 100, "narrow.png");
+    VipsImage* narrow = nullptr;
+    ASSERT_EQ(vips_black(&narrow, 400, 100, nullptr), 0) << vips_error_buffer();
+    EXPECT_THROW(strip.append(ScaledImage{PixelBuffer{narrow}, "narrow.png"}), std::invalid_argument);
+    EXPECT_THROW(strip.append(ScaledImage{PixelBuffer{}, "empty.png"}), std::invalid_argument);
+    EXPECT_EQ(strip.totalHeight(), 100) << "a refused page adds nothing";
+}
 
-    Infrastructure::CancellationToken cancel;
-    int seen = 0;
-    EXPECT_THROW(strip.sliceAll(100, Models::LastSlicePolicy::KeepAsIs, cancel,
-                                [&](SliceResult&&) { ++seen; return true; }),
-                 std::runtime_error);
-    EXPECT_EQ(seen, 1);
-    vips_error_clear();
+TEST(ScaledStripTest, AppendRefusesAStripTallerThanAnIntCounts)
+{
+    // Pages are lazy, so a strip of INT_MAX rows costs nothing to build: 10,000,000-row pages (libvips'
+    // largest side) until the next one would overflow the strip's height.
+    ScaledStrip strip;
+    const int pageH = 10'000'000;
+    const int pages = std::numeric_limits<int>::max() / pageH;   // 214: 2,140,000,000 rows
+    for (int i = 0; i < pages; ++i) {
+        VipsImage* img = nullptr;
+        ASSERT_EQ(vips_black(&img, 1, pageH, nullptr), 0) << vips_error_buffer();
+        strip.append(ScaledImage{PixelBuffer{img}, "tall.png"});
+    }
+    VipsImage* last = nullptr;
+    ASSERT_EQ(vips_black(&last, 1, pageH, nullptr), 0) << vips_error_buffer();
+    EXPECT_THROW(strip.append(ScaledImage{PixelBuffer{last}, "one-too-many.png"}), std::length_error);
+    EXPECT_EQ(strip.totalHeight(), pages * pageH);
 }
 
 TEST(ScaledStripTest, SliceAllLeavesUniformRgbStripThreeBand)

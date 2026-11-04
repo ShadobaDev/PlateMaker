@@ -25,6 +25,7 @@
 #include <vips/vips.h>
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -77,6 +78,17 @@ void ScaledStrip::memTrace(const char* phase) const
 
 void ScaledStrip::append(ScaledImage image)
 {
+    // Refused here, by name, rather than as a libvips extract_area error when slicing reaches the page.
+    const std::string& name = image.sourceFilePath;
+    if (!image.buffer.isValid())
+        throw std::invalid_argument("ScaledStrip::append() — '" + name + "' has no image");
+    if (m_width != 0 && image.buffer.width() != m_width)
+        throw std::invalid_argument("ScaledStrip::append() — '" + name + "' is " +
+                                    std::to_string(image.buffer.width()) + " px wide; the strip is " +
+                                    std::to_string(m_width));
+    if (image.buffer.height() > std::numeric_limits<int>::max() - m_totalHeight)
+        throw std::length_error("ScaledStrip::append() — '" + name + "' would make the strip taller than " +
+                                std::to_string(std::numeric_limits<int>::max()) + " px");
     if (m_width == 0) {
         m_width = image.buffer.width();
     }
