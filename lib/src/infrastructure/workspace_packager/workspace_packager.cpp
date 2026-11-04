@@ -17,6 +17,7 @@
 #include <platemaker/infrastructure/workspace_packager/workspace_packager.hpp>
 
 #include "infrastructure/file/folder_paths.hpp"        // genericUtf8(), relativeInside()
+#include "infrastructure/file/atomic_file.hpp"         // publishTempFile()
 #include "infrastructure/model_json/model_json.hpp"   // the shared Models JSON codec
 
 #include <platemaker/infrastructure/file/path_utf8.hpp>
@@ -505,15 +506,8 @@ bool WorkspacePackager::write(const PackagePlan&       plan,
         fs::remove(tmpPath, ec);
         return false;
     }
-    fs::rename(tmpPath, finalPath, ec);
-    if (ec) {
-        // Across devices a rename cannot work; a copy then does the same job (as WorkspaceSerializer::save()).
-        fs::copy_file(tmpPath, finalPath, fs::copy_options::overwrite_existing, ec);
-        std::error_code ignored;
-        fs::remove(tmpPath, ignored);
-        if (ec)
-            throw refuse("cannot move the package to '" + zipPath + "': " + ec.message());
-    }
+    if (const std::error_code moved = publishTempFile(tmpPath, finalPath, /*copyFallback=*/true))
+        throw refuse("cannot move the package to '" + zipPath + "': " + moved.message());
     return true;
 }
 

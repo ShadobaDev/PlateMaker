@@ -29,6 +29,7 @@ set(PLATEMAKER_SOURCES
     src/core/processing_pipeline/slice_writer.cpp
 
     # Infrastructure / IO
+    src/infrastructure/file/atomic_file.cpp
     src/infrastructure/file/file_meta_data.cpp
     src/infrastructure/image_io/image_io.cpp
     src/infrastructure/model_json/model_json.cpp

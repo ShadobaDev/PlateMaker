@@ -29,6 +29,8 @@
  */
 
 #include <platemaker/infrastructure/thumbnail_cache/thumbnail_cache.hpp>
+
+#include "infrastructure/file/atomic_file.hpp"   // publishTempFile()
 #include <platemaker/infrastructure/file/path_utf8.hpp>
 #include <platemaker/core/pixel_buffer/pixel_buffer.hpp>
 
@@ -188,10 +190,7 @@ void writeThumbnail(const std::string& destPath, VipsImage* shrunk)
         throw std::runtime_error(
             "ThumbnailCache — failed to write thumbnail '" + destPath + "': " + err);
     }
-    std::error_code ec;
-    fs::rename(utf8ToPath(tmpPath), utf8ToPath(destPath), ec);
-    if (ec) {
-        std::error_code rmEc; fs::remove(utf8ToPath(tmpPath), rmEc);
+    if (const std::error_code ec = publishTempFile(utf8ToPath(tmpPath), utf8ToPath(destPath), /*copyFallback=*/false)) {
         throw std::runtime_error(
             "ThumbnailCache — could not publish thumbnail '" + destPath + "': " + ec.message());
     }

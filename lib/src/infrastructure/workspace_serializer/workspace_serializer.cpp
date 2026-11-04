@@ -18,6 +18,7 @@
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 
 #include "infrastructure/file/folder_paths.hpp"        // genericUtf8(), relativeInside()
+#include "infrastructure/file/atomic_file.hpp"            // writeTextFileAtomically()
 #include "infrastructure/model_json/model_json.hpp"   // the shared Models JSON codec
 
 #include <platemaker/infrastructure/file/path_utf8.hpp>
@@ -306,51 +307,14 @@ void WorkspaceSerializer::save(
     const Models::Workspace& workspace,
     const std::string&       filePath) const
 {
-    // Write to a sibling temp file then rename for near-atomic replacement.
-    // The appended name goes back through utf8ToPath() as well: operator/ with a narrow
-    // string would rebuild a path the ambiguous way, reintroducing the bug on the temp file.
-    const fs::path finalPath = utf8ToPath(filePath);
-
     // serialize(), plus what only a location can add: the relative copies of the overlay assets.
+    const fs::path finalPath = utf8ToPath(filePath);
     nlohmann::json j = workspace;
     addRelativePaths(j, fs::absolute(finalPath).parent_path());
     const std::string text = j.dump(4);
 
-    const fs::path tmpPath   =
-        finalPath.parent_path() / utf8ToPath(pathToUtf8(finalPath.filename()) + ".tmp");
-
-    bool written = false;
-    {
-        std::ofstream tmp(tmpPath, std::ios::out | std::ios::trunc);
-        if (!tmp.is_open()) {
-            throw std::runtime_error(
-                "WorkspaceSerializer::save() — cannot open temp file '" +
-                pathToUtf8(tmpPath) + "' for writing");
-        }
-        tmp << text;
-        tmp.close();   // flushes: a full disk shows here, not in the destructor where nobody sees it
-        written = !tmp.fail();
-    }
-
-    // On a failure the temp file goes too: the existing file is untouched, and nothing is left beside it.
-    std::error_code ec;
-    if (!written) {
-        fs::remove(tmpPath, ec);
-        throw std::runtime_error("WorkspaceSerializer::save() — write error for '" + pathToUtf8(tmpPath) + "'");
-    }
-    fs::rename(tmpPath, finalPath, ec);
-    if (ec) {
-        // Fallback for cross-device rename (uncommon but possible on Windows).
-        fs::copy_file(tmpPath, finalPath,
-                      fs::copy_options::overwrite_existing, ec);
-        std::error_code removed;
-        fs::remove(tmpPath, removed);   // whether or not the copy landed; a leftover is not a failure
-        if (ec) {
-            throw std::runtime_error(
-                "WorkspaceSerializer::save() — cannot move temp file to '" +
-                filePath + "': " + ec.message());
-        }
-    }
+    // Whole or not at all: a crash mid-write must not cost the user the workspace they had.
+    writeTextFileAtomically(finalPath, text, "WorkspaceSerializer::save()");
 }
 
 // ---------------------------------------------------------------------------

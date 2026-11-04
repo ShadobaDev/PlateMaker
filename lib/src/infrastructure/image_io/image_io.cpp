@@ -11,6 +11,8 @@
  */
 
 #include <platemaker/infrastructure/image_io/image_io.hpp>
+
+#include "infrastructure/file/atomic_file.hpp"   // publishTempFile()
 #include <platemaker/infrastructure/file/path_utf8.hpp>
 
 #include <vips/vips.h>
@@ -229,11 +231,7 @@ void ImageIO::encode(
     // an open viewer). The lib does **not** poll or retry — that policy belongs to the consumer — so a
     // locked destination surfaces immediately as a typed OutputLockedError, which the pipeline maps to
     // ProcessingErrorCode::OutputLocked.
-    std::error_code ec;
-    fs::rename(utf8ToPath(tmpPath), utf8ToPath(outputPath), ec);
-    if (ec) {
-        std::error_code rmEc;
-        fs::remove(utf8ToPath(tmpPath), rmEc);
+    if (const std::error_code ec = publishTempFile(utf8ToPath(tmpPath), utf8ToPath(outputPath), /*copyFallback=*/false)) {
         throw OutputLockedError(
             "ImageIO::encode() — could not replace '" + outputPath +
             "' (is it open in another program?): " + ec.message());
