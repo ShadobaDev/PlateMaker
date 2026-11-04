@@ -1,7 +1,7 @@
 /**
  * \file tests/lib-fault-tests/test_fault_harness.cpp
  * \brief The harness itself: for each kind of wrapper, the library's call passes through untouched
- *        until a test arms it, and then fails the way the real function fails.
+ *        until a test arms it, and then fails the way the real function fails, or returns the image given.
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
  */
@@ -25,38 +25,13 @@ namespace {
 
 namespace fs = std::filesystem;
 
-class VipsEnvironment : public ::testing::Environment {
-public:
-    void SetUp() override { ASSERT_EQ(VIPS_INIT("platemaker-lib-fault-tests"), 0) << vips_error_buffer(); }
-    void TearDown() override { vips_shutdown(); }
-};
-
-const auto* const g_vipsEnv = ::testing::AddGlobalTestEnvironment(new VipsEnvironment);
-
 /// A black sRGB image of \p bands bands.
 Core::PixelBuffer blackImage(int width, int height, int bands)
 {
-    VipsImage* black = nullptr;
-    VipsImage* srgb  = nullptr;
-    EXPECT_EQ(vips_black(&black, width, height, "bands", bands, nullptr), 0) << vips_error_buffer();
-    EXPECT_EQ(vips_copy(black, &srgb, "interpretation", VIPS_INTERPRETATION_sRGB, nullptr), 0) << vips_error_buffer();
-    g_object_unref(black);
-    return Core::PixelBuffer{srgb};
+    return Core::PixelBuffer{Fault::blackImage(width, height, bands)};
 }
 
-/// What the message of \p f's exception says, or "" when it throws none.
-template <typename F>
-std::string thrown(F&& f)
-{
-    try {
-        f();
-    } catch (const std::exception& e) {
-        return e.what();
-    }
-    return {};
-}
-
-bool contains(const std::string& text, const std::string& part) { return text.find(part) != std::string::npos; }
+using Fault::thrown;
 
 using FaultHarnessTest = FaultTest;
 
@@ -80,6 +55,26 @@ TEST_F(FaultHarnessTest, OnlyTheArmedCallFailsAndOnlyOnce)
     EXPECT_EQ(Fault::calls("vips_extract_area"), 3);
 }
 
+TEST_F(FaultHarnessTest, AnArmedCallCanReturnAnImageInstead)
+{
+    const Core::PixelBuffer image = blackImage(10, 10, 3);
+    VipsImage* const        other = Fault::blackImage(2, 3, 1);
+    Fault::returnImage("vips_extract_area", other);
+
+    const Core::PixelBuffer cropped = Core::MarginCropper{}.crop(image, {1, 1, 1, 1});
+    EXPECT_EQ(cropped.vipsImage(), other);
+    g_object_unref(other);
+}
+
+TEST_F(FaultHarnessTest, ObjectsAliveAreCounted)
+{
+    const int before = Fault::liveObjects();
+    VipsImage* const image = Fault::blackImage(2, 2, 1);
+    EXPECT_GT(Fault::liveObjects(), before);   // the image, and what made it while it is alive
+    g_object_unref(image);
+    EXPECT_EQ(Fault::liveObjects(), before);
+}
+
 TEST_F(FaultHarnessTest, AnArmedFaultNeverReachedIsReported)
 {
     Fault::failCall("vips_extract_area");
@@ -98,8 +93,7 @@ TEST_F(FaultHarnessTest, ALibvipsOperationFailsWithItsError)
     EXPECT_EQ(cropped.height(), 6);
 
     Fault::failCall("vips_extract_area");
-    EXPECT_TRUE(contains(thrown([&] { (void)cropper.crop(image, {1, 2, 3, 4}); }),
-                         "injected failure in vips_extract_area"));
+    EXPECT_CONTAINS(thrown([&] { (void)cropper.crop(image, {1, 2, 3, 4}); }), "injected failure in vips_extract_area");
 }
 
 TEST_F(FaultHarnessTest, ALibvipsFunctionThatIsNoOperationFailsWithItsError)
@@ -120,7 +114,7 @@ TEST_F(FaultHarnessTest, ALibvipsFunctionThatIsNoOperationFailsWithItsError)
     EXPECT_EQ(sliceTwoPages(), 4);
 
     Fault::failCall("vips_addalpha");
-    EXPECT_TRUE(contains(thrown(sliceTwoPages), "injected failure in vips_addalpha"));
+    EXPECT_CONTAINS(thrown(sliceTwoPages), "injected failure in vips_addalpha");
 }
 
 TEST_F(FaultHarnessTest, ALibarchiveFunctionFailsWithItsResult)
@@ -135,8 +129,8 @@ TEST_F(FaultHarnessTest, ALibarchiveFunctionFailsWithItsResult)
     fs::remove(zip);
 
     Fault::failCall("archive_write_new");
-    EXPECT_TRUE(contains(thrown([&] { (void)Infrastructure::WorkspacePackager::write(plan, Infrastructure::pathToUtf8(zip)); }),
-                         "cannot create an archive"));
+    EXPECT_CONTAINS(thrown([&] { (void)Infrastructure::WorkspacePackager::write(plan, Infrastructure::pathToUtf8(zip)); }),
+                    "cannot create an archive");
     EXPECT_FALSE(fs::exists(zip));
 }
 

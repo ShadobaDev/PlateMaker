@@ -17,6 +17,7 @@ add_executable(platemaker-lib-fault-tests
     fault.cpp
     wrappers.cpp
     test_fault_harness.cpp
+    test_libvips_failures.cpp
 )
 
 # Exported, so libplatemaker.so binds to the wrappers and not to the libraries behind them.
