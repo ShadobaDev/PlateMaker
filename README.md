@@ -36,6 +36,7 @@ platemaker/
 ├── cli/                     # platemaker binary — links libplatemaker
 ├── tests/
 │   ├── lib-unit-tests/      # GoogleTest C++ unit tests for libplatemaker
+│   ├── lib-fault-tests/     # its error paths, by making libvips/libarchive/libc calls fail (Linux only)
 │   └── cli-tests/           # pytest-based Python integration tests for the CLI
 └── docs/
     ├── SPECIFICATION.md          # index: old section numbers -> wiki pages

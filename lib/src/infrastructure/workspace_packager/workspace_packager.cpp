@@ -594,6 +594,7 @@ std::optional<UnpackedPackage> WorkspacePackager::unpack(const std::string&     
                 if (progress)
                     progress(static_cast<std::uint64_t>(archive_filter_bytes(a, -1)), total);
             }
+            file.close();   // flushes: a full disk shows here, not in the destructor where nobody sees it
             if (!file)
                 throw refuse("cannot write '" + pathToUtf8(out) + "'");
         }

@@ -14,6 +14,9 @@
 #include <archive.h>
 #include <vips/vips.h>
 
+#include <unistd.h>
+
+#include <cerrno>
 #include <cstdarg>
 #include <vector>
 
@@ -149,3 +152,10 @@ extern "C" int vips_pngsave_buffer(VipsImage* in, void** buf, size_t* len, ...)
 
 // --- libarchive -----------------------------------------------------------------------------------
 FAULT_C_FUNCTION(struct archive*, archive_write_new, (void), (), nullptr)
+FAULT_C_FUNCTION(int, archive_write_header, (struct archive* a, struct archive_entry* entry), (a, entry), ARCHIVE_FATAL)
+FAULT_C_FUNCTION(la_ssize_t, archive_write_data, (struct archive* a, const void* buffer, size_t size), (a, buffer, size),
+                 ARCHIVE_FATAL)
+
+// --- libc: what std::ifstream and std::ofstream read and write with -------------------------------------
+FAULT_C_FUNCTION(ssize_t, read, (int fd, void* buffer, size_t size), (fd, buffer, size), (errno = EIO, -1))
+FAULT_C_FUNCTION(ssize_t, write, (int fd, const void* buffer, size_t size), (fd, buffer, size), (errno = ENOSPC, -1))

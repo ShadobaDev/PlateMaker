@@ -73,10 +73,12 @@ released), which re-derives onto this baseline per the cascade rule.
     Any that does has to be re-placed.
 - **An overlay is any image libvips can load — raster *or* vector.** `StripOverlay::bitmapPath` is now
   **`assetPath`**, and the loader dispatches on content: a PNG goes through its own loader, an SVG
-  through librsvg. Neither the compositor nor its caller has to know which arrived, and what the asset
-  *depicts* stays entirely the consumer's concern — an SVG changes nothing about the library having no
-  text engine, because it arrives as resolved geometry. This is what lets a consumer hand over authored
-  lettering that re-renders sharp instead of a bitmap that can only be resampled.
+  through librsvg. Whatever its colour coding — greyscale, with or without alpha, or 16 bits a channel —
+  it composites as 8-bit sRGB RGBA, deeper values scaled rather than clipped. Neither the compositor nor
+  its caller has to know which arrived, and what the asset *depicts* stays entirely the consumer's
+  concern — an SVG changes nothing about the library having no text engine, because it arrives as
+  resolved geometry. This is what lets a consumer hand over authored lettering that re-renders sharp
+  instead of a bitmap that can only be resampled.
 - **`StripOverlayCompositor::decodeBitmaps()` becomes `rasterizeOverlays(overlays, scale)`.** Vector
   and raster reach a requested size by genuinely different routes and `scale` is not a shared loader
   option — svgload takes it, pngload fails outright if it is passed — so the loader is resolved with
@@ -322,6 +324,24 @@ released), which re-derives onto this baseline per the cascade rule.
   drawing app that sizes a canvas physically could then resample the template on import and shift its
   edges by a pixel. `generate()` takes a new **`TemplateOptions`** (defaulted, so existing calls compile
   unchanged) whose `dpi` defaults to 300; pixels are untouched.
+- **A slice height of 0 no longer kills the process.** `render()` divided the strip's height by it before
+  anything checked it, so the caller's process died of a division by zero (a signal, which no `catch`
+  stops). It is now the typed `SlicingFailed` error a negative height already gave.
+- **A file read only in part has no hash.** `FileMetaData::computeFileSha256()` hashed whatever a read
+  cut short let through, and a folder as no bytes at all, so a changed file could pass for unchanged.
+  Both now return an empty string, the "cannot be read" callers already handle.
+- **A workspace that cannot be written whole says so, and leaves nothing behind.**
+  `WorkspaceSerializer::save()` checked its temporary file before closing it, so a full disk on the last
+  flush went unseen and the truncated file replaced the workspace; and a failed save left the temporary
+  file beside it. Every file the library replaces (workspace, profile bundle, package, output slice,
+  thumbnail) now goes through one write-then-rename: on a failure the old file stays as it was, and no
+  temporary file is left.
+- **Bad inputs are refused with a message, not with a libvips error or a wrong result.**
+  `MarginCropper::crop()` refuses a negative margin, and computes the safe area in 64 bits, so two huge
+  margins can no longer add up to a small positive one. `ScaledStrip::append()` refuses a page with no
+  image or of another width (`std::invalid_argument`) and a strip taller than an `int` can count
+  (`std::length_error`). `Scaler::scale()` refuses a target width above libvips' limit
+  (`VIPS_MAX_COORD`), as it did one of 0 or less.
 
 ## [0.5.1] — 23.08.2026
 
