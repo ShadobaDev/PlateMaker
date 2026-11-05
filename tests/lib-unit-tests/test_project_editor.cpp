@@ -189,6 +189,12 @@ TEST(ProjectEditorSnapshotTest, RoundTripsContentAndPreservesName)
     EXPECT_EQ(p.getOutputDirectory(), "out/dir");                             // dir restored
     EXPECT_EQ(p.outputSignature, "sig123");
     EXPECT_EQ(p.name, "Renamed"); // name is workspace-owned → preserved, NOT reverted to the snapshot
+
+    // Moving a project onto itself, as a swap through a reference can, keeps it whole.
+    ProjectItem& same = p;
+    p = std::move(same);
+    EXPECT_EQ(p.outputSignature, "sig123");
+    EXPECT_EQ(p.getInputImages().size(), 3u);
 }
 
 TEST(ProjectEditorSnapshotTest, RoundTripsProfileLinks)
@@ -260,14 +266,23 @@ TEST(InputCompositionTest, ApplyProcessingResultsCapturesBaseline)
 {
     ProjectItem p = makeProject(3);
     Infrastructure::ProjectEditor(p).setInputOrder({"u2", "u0", "u1"});
+    p.getInputImages()[0].width  = 800;
+    p.getInputImages()[0].height = 5120;
 
     // Files need not exist — the baseline is captured unconditionally at the end of the apply.
     // (The unreadable inputs now come back as post-render Error entries; this test only cares about
     // the baseline, so the returned errors are intentionally discarded.)
-    (void)Infrastructure::ProjectEditor{p}.applyProcessingResults(/*records*/ {}, /*applied*/ {}, /*skipped*/ {},
+    // A page the run could not measure keeps the size an earlier render recorded.
+    const std::vector<Models::AppliedCanvasProfile> applied{{"p0.png", "", "", 0, 0},
+                                                            {"p1.png", "", "", 640, 960}};
+    (void)Infrastructure::ProjectEditor{p}.applyProcessingResults(/*records*/ {}, applied, /*skipped*/ {},
                                    /*workspaceProfiles*/ {}, /*outDir*/ "out", /*ts*/ "2026-07-29T00:00:00Z");
 
     EXPECT_EQ(p.inputOrderAtRender, (std::vector<std::string>{"u2", "u0", "u1"}));
+    EXPECT_EQ(p.getInputImages()[0].width, 800);
+    EXPECT_EQ(p.getInputImages()[0].height, 5120);
+    EXPECT_EQ(p.getInputImages()[1].width, 640);
+    EXPECT_EQ(p.getInputImages()[1].height, 960);
 }
 
 // ---------------------------------------------------------------------------
@@ -557,6 +572,18 @@ TEST(MergeFileScanTest, SameContentUnderANewNameIsARename)
     EXPECT_EQ(it->uid, "keep-me") << "a rename keeps the page's identity";
     EXPECT_EQ(it->order, 1)       << "and moves it to its new strip position";
     EXPECT_EQ(it->sha256, hash);
+
+    // A rename that keeps the strip position changes no slice.
+    p.getOutputImages().push_back(OutputFile{});
+    p.getOutputImages()[0].status = FileStatus::Done;
+    p.rebuildLookupTables();
+    const std::string again = (fs::path(dir.path()) / "page_c.png").string();
+    fs::rename(renamed, again);
+
+    const auto quiet = Infrastructure::ProjectEditor{p}.mergeFileScan({first, again});
+    EXPECT_EQ(quiet.renamed, std::vector<std::string>{again});
+    EXPECT_FALSE(quiet.outputsInvalidated);
+    EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Done);
 }
 
 } // namespace Platemaker

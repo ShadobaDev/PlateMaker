@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 #include <platemaker/infrastructure/project_editor/project_editor.hpp>
 
@@ -464,6 +465,12 @@ TEST(CanvasConfigChangePreciseTest, AddingAProfileThatMatchesNoPageStaysQuiet)
     EXPECT_FALSE(change.anyChanged()) << "a profile that matches nothing must not invalidate the project";
     EXPECT_FALSE(change.listChanged);
     EXPECT_TRUE(change.changedInputs.empty());
+
+    // Re-matching needs both dimensions, and a render records each only from a real reading, so a
+    // page can carry one. Such a page falls back to the coarse list comparison.
+    for (const auto& [w, h] : {std::pair{1600, 0}, std::pair{0, 10240}})
+        EXPECT_TRUE(makeSizedProject({ws[0]}, "p1", w, h).detectCanvasConfigChange(ws).listChanged)
+            << w << "x" << h;
 }
 
 TEST(CanvasConfigChangePreciseTest, AddingAProfileThatMatchesAPreviouslyUnmatchedPageFlagsOnlyIt)
@@ -631,6 +638,8 @@ TEST(SanitizeCanvasTest, MarginEditDesynchronizesOnlyTheAffectedPages)
 
     EXPECT_EQ(d.inputStatus(2),  FileStatus::Processed);
     EXPECT_EQ(d.outputStatus(2), FileStatus::Done);
+
+    EXPECT_TRUE(d.project.outputsForInput("not-a-page.png").empty()) << "a path that fed nothing";
 }
 
 TEST(SanitizeCanvasTest, AddingAMatchingProfileDesynchronizesOnlyThePagesItMatches)
@@ -752,6 +761,28 @@ TEST(OutputProfileSignatureTest, CatchesFormatAndQualityChanges)
     OutputProfile d = a;
     d.jpegOptions.quality = a.jpegOptions.quality - 1;
     EXPECT_NE(outputProfileSignature(a), outputProfileSignature(d));
+
+    // detectStaleness() compares the stored signature, and the stored slice names for the format.
+    auto project = makeRenderedProject({}, "");   // one slice, "output_001.png"
+    project.outputSignature = outputProfileSignature(a);
+    EXPECT_FALSE(project.detectStaleness({}, a).configurationChanged());
+
+    auto report = project.detectStaleness({}, c);
+    EXPECT_TRUE(report.outputProfileChanged);
+    EXPECT_FALSE(report.outputFormatChanged) << "still PNG";
+
+    report = project.detectStaleness({}, b);
+    EXPECT_TRUE(report.outputProfileChanged);
+    EXPECT_TRUE(report.outputFormatChanged);
+
+    // Without a stored signature only the names can tell, and a name without an extension tells nothing.
+    project.outputSignature.clear();
+    report = project.detectStaleness({}, b);
+    EXPECT_FALSE(report.outputProfileChanged);
+    EXPECT_TRUE(report.outputFormatChanged);
+
+    project.getOutputImages()[0].fileName = "output_001";
+    EXPECT_FALSE(project.detectStaleness({}, b).configurationChanged());
 }
 
 // ---------------------------------------------------------------------------

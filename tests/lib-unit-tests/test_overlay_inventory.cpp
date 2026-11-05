@@ -95,6 +95,13 @@ TEST(OverlayInventoryTest, DedupReusesPathForIdenticalContent)
     // The placement of the deduped overlay is still its own.
     EXPECT_DOUBLE_EQ(ovs[1].xFrac, 0.05);
     EXPECT_DOUBLE_EQ(ovs[1].yFrac, 0.05);
+
+    // An overlay of that content that lost its path has no path to share.
+    proj.getStripOverlays()[0].assetPath.clear();
+    proj.getStripOverlays()[1].assetPath.clear();
+    const std::string f4 = tmp.write("d.png", "SAME-BYTES");
+    (void)proj.addOverlay(f4, 0.0, 0.0, 0.0);
+    EXPECT_EQ(proj.getStripOverlays().back().assetPath, f4);
 }
 
 TEST(OverlayInventoryTest, RemoveOverlayById)

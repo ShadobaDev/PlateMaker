@@ -297,12 +297,9 @@ CanvasConfigChange ProjectItem::detectCanvasConfigChange(
     const std::vector<std::string> effectiveIds = effectiveCanvasProfileIds(workspaceProfiles);
     std::vector<const CanvasProfile*> effective;
     effective.reserve(effectiveIds.size());
-    for (const auto& id : effectiveIds) {
-        const auto it = std::find_if(workspaceProfiles.begin(), workspaceProfiles.end(),
-            [&id](const CanvasProfile& cp) { return cp.id == id; });
-        if (it != workspaceProfiles.end())
-            effective.push_back(&*it);
-    }
+    for (const auto& id : effectiveIds)
+        effective.push_back(&*std::find_if(workspaceProfiles.begin(), workspaceProfiles.end(),
+            [&id](const CanvasProfile& cp) { return cp.id == id; }));
 
     // Per-page re-match. For each input, decide whether the profile it would render with *now*
     // differs from the one recorded at the last render.

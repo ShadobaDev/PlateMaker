@@ -93,8 +93,12 @@ TEST(PostRenderErrorTest, InputsAllProcessedTreatsErrorAsSettled)
     ProjectItem p;
     InputFile a; a.uid = "u0"; a.status = FileStatus::Processed; p.getInputImages().push_back(a);
     InputFile b; b.uid = "u1"; b.status = FileStatus::Error;     p.getInputImages().push_back(b);
+    InputFile c; c.uid = "u2"; c.status = FileStatus::Skipped;   p.getInputImages().push_back(c);
 
     EXPECT_TRUE(p.inputsAllProcessed());
+
+    InputFile d; d.uid = "u3"; d.status = FileStatus::Pending;   p.getInputImages().push_back(d);
+    EXPECT_FALSE(p.inputsAllProcessed());
 }
 
 // sanitize() keeps an Error sticky while the file is unreadable, then recovers it once it can be hashed.

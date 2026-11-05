@@ -67,7 +67,19 @@ TEST(FileUidTest, EnsureUniqueFileUidsMintsEmptyAndDeduplicates)
     inputs[1].uid = "file-dup";
     inputs[2].uid.clear();
 
+    // Outputs are their own namespace, repaired the same way.
+    p.getOutputImages().resize(3);
+    p.getOutputImages()[0].uid = "out-dup";
+    p.getOutputImages()[1].uid = "out-dup";
+
     p.ensureUniqueFileUids();
+
+    const auto& outputs = p.getOutputImages();
+    EXPECT_EQ(outputs[0].uid, "out-dup");
+    EXPECT_NE(outputs[1].uid, "out-dup");
+    EXPECT_FALSE(outputs[1].uid.empty());
+    EXPECT_FALSE(outputs[2].uid.empty());
+    EXPECT_NE(outputs[1].uid, outputs[2].uid);
 
     EXPECT_EQ(inputs[0].uid, "file-dup") << "the first holder keeps its id";
     EXPECT_NE(inputs[1].uid, "file-dup") << "the duplicate is reissued";
