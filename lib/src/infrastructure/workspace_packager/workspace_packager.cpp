@@ -209,10 +209,10 @@ private:
 };
 
 /// Resets \p key to the empty value of its own type — "", [] or {} — so the copy stays well-formed.
+/// \p o is a model just converted: the key is there.
 void clear(nlohmann::json& o, const char* key)
 {
-    if (o.contains(key))
-        o[key] = nlohmann::json(o[key].type());
+    o[key] = nlohmann::json(o[key].type());
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -241,7 +241,7 @@ bool unsafeTarget(const std::string& target)
     if (target.empty() || target.find('\\') != std::string::npos)
         return true;
     const fs::path p = utf8ToPath(target);
-    if (p.has_root_name() || p.has_root_directory())
+    if (p.has_root_path())   // "/x", and on Windows "C:x" and "C:/x" too
         return true;
     return std::any_of(p.begin(), p.end(), [](const fs::path& part) { return part == ".."; });
 }
@@ -378,17 +378,16 @@ PackagePlan WorkspacePackager::plan(const Models::Workspace& workspace, const st
         }
 
         for (auto& overlay : project["stripOverlays"])
-            if (!overlay.value("assetPath", std::string{}).empty())
+            if (!overlay["assetPath"].get<std::string>().empty())
                 planner.refer(overlay["assetPath"], k_externalDir, name);
     }
 
     // Templates are named relative to the workspace folder already; a relative one is simply in it.
     // Every format a profile has is packaged: a PNG and a PSD are both the user's.
     for (auto& profile : j["canvasProfiles"])
-        if (auto& templates = profile["templates"]; templates.is_array())
-            for (auto& info : templates)
-                if (info.is_object() && !info.value("path", std::string{}).empty())
-                    planner.refer(info["path"], k_externalDir, {});
+        for (auto& info : profile["templates"])
+            if (!info["path"].get<std::string>().empty())
+                planner.refer(info["path"], k_externalDir, {});
 
     planner.settle();
     plan.workspaceJson = j.dump(4);

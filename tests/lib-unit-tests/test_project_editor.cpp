@@ -326,7 +326,8 @@ TEST_F(SerializedProject, BackfillsBaselineFromOutputProvenance)
     OutputFile out2;
     out2.fileName  = "output_002.png";
     out2.status    = FileStatus::Done;
-    out2.sourceMap = {{"p2.png", 0, 10}};
+    // p1 runs on into the second slice; gone.png fed it but is no input any more.
+    out2.sourceMap = {{"p1.png", 5, 5}, {"p2.png", 0, 10}, {"gone.png", 0, 3}};
     p.getOutputImages().push_back(std::move(out2));
 
     ASSERT_TRUE(p.inputOrderAtRender.empty());
@@ -334,9 +335,12 @@ TEST_F(SerializedProject, BackfillsBaselineFromOutputProvenance)
 
     Models::Workspace loaded = roundTrip(std::move(ws));
     ASSERT_EQ(loaded.projectItems.size(), 1u);
-    // Reconstructed from provenance, keyed by the current input uids.
-    EXPECT_EQ(loaded.projectItems[0].inputOrderAtRender,
-              (std::vector<std::string>{"u0", "u1", "u2"}));
+    // Reconstructed from provenance, keyed by the current input uids: each page once, and a page that
+    // is no input by its path.
+    const auto& order = loaded.projectItems[0].inputOrderAtRender;
+    ASSERT_EQ(order.size(), 4u);
+    EXPECT_EQ(std::vector<std::string>(order.begin(), order.begin() + 3), (std::vector<std::string>{"u0", "u1", "u2"}));
+    EXPECT_EQ(fs::path(order[3]).filename(), "gone.png");
 
     // With the baseline restored, a reorder is now detectable.
     Infrastructure::ProjectEditor(loaded.projectItems[0]).setInputOrder({"u2", "u1", "u0"});

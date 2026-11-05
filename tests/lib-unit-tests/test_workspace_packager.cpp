@@ -215,8 +215,9 @@ TEST(WorkspacePackager, APackageUnpacksIntoANewFolderAndSaysWhatItHolds)
     const fs::path zip = s.root / "Chapter.platemaker.zip";
     ASSERT_TRUE(WorkspacePackager::write(smallPlan(s.root), pathToUtf8(zip)));
 
-    const fs::path folder   = s.root / "there" / utf8ToPath("Rozdział");
-    const auto     unpacked = WorkspacePackager::unpack(pathToUtf8(zip), pathToUtf8(folder));
+    const fs::path    folder = s.root / "there" / utf8ToPath("Rozdział");
+    CancellationToken notCancelled;
+    const auto        unpacked = WorkspacePackager::unpack(pathToUtf8(zip), pathToUtf8(folder), {}, &notCancelled);
     ASSERT_TRUE(unpacked.has_value());
     EXPECT_EQ(unpacked->workspaceFile, g(folder / "Chapter.platemaker.json"));
     EXPECT_FALSE(fs::exists(s.root / "there" / utf8ToPath("Rozdział.partial")));
@@ -305,6 +306,24 @@ TEST(WorkspacePackager, AManifestWithOddOptionalPartsStillUnpacks)
     EXPECT_EQ(m.applicationDetails, "{}");
     ASSERT_EQ(m.missing.size(), 1u) << "only the object entry is a missing-file record";
     EXPECT_EQ(m.missing[0].target, "inputs/a.png");
+
+    // An application that is no object, a missing list that is no list; an application with no details.
+    const fs::path zip2 = s.root / "p2.zip";
+    zipWith(zip2, {{"w.platemaker.json", "{}"},
+                   {"package.json", R"({"format": 1, "workspace": "w.platemaker.json",
+                                        "application": "Tool", "missing": "none"})"}});
+    const auto other = WorkspacePackager::unpack(pathToUtf8(zip2), pathToUtf8(s.root / "out2"));
+    ASSERT_TRUE(other.has_value());
+    EXPECT_TRUE(other->manifest.applicationName.empty());
+    EXPECT_TRUE(other->manifest.missing.empty());
+
+    const fs::path zip3 = s.root / "p3.zip";
+    zipWith(zip3, {{"w.platemaker.json", "{}"},
+                   {"package.json", R"({"format": 1, "workspace": "w.platemaker.json", "application": {"name": "Tool"}})"}});
+    const auto plain = WorkspacePackager::unpack(pathToUtf8(zip3), pathToUtf8(s.root / "out3"));
+    ASSERT_TRUE(plain.has_value());
+    EXPECT_EQ(plain->manifest.applicationName, "Tool");
+    EXPECT_EQ(plain->manifest.applicationDetails, "{}");
 }
 
 TEST(WorkspacePackager, EntriesThatAreNotPlainFilesOrCollideAreRefused)
@@ -440,6 +459,7 @@ TEST(WorkspacePackager, AnUnpackThatCannotFinishLeavesNothing)
     refused("twice.zip", {{"w.platemaker.json", "{}"}, {"a.png", "1"}, {"A.PNG", "2"}, {"package.json", manifest}});
     refused("no-manifest.zip", {{"w.platemaker.json", "{}"}});
     refused("no-workspace.zip", {{"package.json", manifest}});
+    refused("unnamed-workspace.zip", {{"w.platemaker.json", "{}"}, {"package.json", R"({"format": 1})"}});
     refused("nested-workspace.zip", {{"sub/w.platemaker.json", "{}"},
                                      {"package.json", R"({"format": 1, "workspace": "sub/w.platemaker.json"})"}});
 }
@@ -465,15 +485,17 @@ TEST(WorkspacePackager, APackageUnpacksAndOpensWithItsManifestLast)
     touchFile(s.root / "fonts" / "Comic.ttf", "font-bytes");
     plan.files.push_back({g(s.root / "fonts" / "Comic.ttf"), "fonts/Comic.ttf"});
 
-    std::uint64_t lastDone = 0, lastTotal = 0;
-    const fs::path zip = s.root / "out" / "Chapter.platemaker.zip";
+    std::uint64_t     lastDone = 0, lastTotal = 0;
+    CancellationToken notCancelled;
+    const fs::path    zip = s.root / "out" / "Chapter.platemaker.zip";
     fs::create_directories(zip.parent_path());
     ASSERT_TRUE(WorkspacePackager::write(plan, pathToUtf8(zip),
                                          [&](std::uint64_t done, std::uint64_t total) {
                                              EXPECT_GE(done, lastDone);
                                              lastDone  = done;
                                              lastTotal = total;
-                                         }));
+                                         },
+                                         &notCancelled));
     EXPECT_EQ(lastDone, lastTotal);
     EXPECT_FALSE(fs::exists(zip.parent_path() / "Chapter.platemaker.zip.tmp"));
 
@@ -520,6 +542,10 @@ TEST(WorkspacePackager, APlanThatCannotBeWrittenIsRefusedBeforeAnythingIs)
     PackagePlan rooted = smallPlan(s.root);
     rooted.files.push_back({rooted.files[0].source, "/etc/x.png"});
     refused(rooted);
+
+    PackagePlan nameless = smallPlan(s.root);
+    nameless.files.push_back({nameless.files[0].source, ""});
+    refused(nameless);
 
     PackagePlan twice = smallPlan(s.root);
     twice.files.push_back({twice.files[0].source, "OVERLAYS/ovl-1.svg"});   // the same place, another case
@@ -571,7 +597,7 @@ TEST(WorkspacePackager, APlanPlacesEveryFileOnceAndCarriesNoRender)
         const std::string id = ed.addCanvasProfile(canvas);
         Models::CanvasTemplateInfo info;
         info.path = "templates/3p-m.png";             // relative to the workspace folder, as the GUI writes it
-        ed.setCanvasProfileTemplates(id, {info});
+        ed.setCanvasProfileTemplates(id, {info, Models::CanvasTemplateInfo{}});   // and one with no file yet
     }
 
     Models::ProjectItem one;
@@ -584,7 +610,8 @@ TEST(WorkspacePackager, APlanPlacesEveryFileOnceAndCarriesNoRender)
     one.getInputImages()    = {page("in-1", a / "001.png", 0), page("in-2", a / "002.png", 1),
                                page("in-3", gone, 2)};
     one.getStripOverlays()  = {overlay("ovl-1", ws / "overlays" / "ovl-1.svg", "in-1"),
-                               overlay("ovl-2", ws / "overlays" / "ovl-1.svg", "in-2")};   // shares a file
+                               overlay("ovl-2", ws / "overlays" / "ovl-1.svg", "in-2"),   // shares a file
+                               overlay("ovl-3", {}, "in-1")};                             // names none
     Models::OutputFile out;
     out.uid      = "out-1";
     out.fileName = "001.webp";
@@ -702,6 +729,35 @@ TEST(WorkspacePackager, APackageMirrorsTheWorkspaceFolderAndBringsTheRestIn)
                       }));
     ASSERT_EQ(plan.missing.size(), 1u);
     EXPECT_EQ(plan.missing[0].target, "pages/gone.png");   // missing, and still where the folder had it
+}
+
+TEST(WorkspacePackager, ImagesAreStoredAsTheyAreAndTheRestIsDeflated)
+{
+    // Deflating a PNG, JPEG or WebP again costs time and saves nothing; anything else is compressed.
+    const Scratch s("stored");
+    PackagePlan   plan;
+    plan.workspaceFileName = "w.platemaker.json";
+    plan.workspaceJson     = "{}";
+    for (const char* name : {"a.png", "b.jpg", "c.JPEG", "d.webp", "e.svg"}) {
+        touchFile(s.root / name, std::string(4096, '\0'));   // compresses to almost nothing, if asked
+        plan.files.push_back({g(s.root / name), name});
+    }
+    const fs::path zip = s.root / "p.zip";
+    ASSERT_TRUE(WorkspacePackager::write(plan, pathToUtf8(zip)));
+
+    // The central directory: per entry, its compression method (0 stored, 8 deflated) and its name.
+    const std::string bytes = readText(zip);
+    const auto        le16  = [&](std::size_t at) {
+        return static_cast<int>(static_cast<unsigned char>(bytes[at]) | static_cast<unsigned char>(bytes[at + 1]) << 8);
+    };
+    std::map<std::string, int> method;
+    for (auto at = bytes.find("PK\x01\x02"); at != std::string::npos; at = bytes.find("PK\x01\x02", at + 4))
+        method[bytes.substr(at + 46, static_cast<std::size_t>(le16(at + 28)))] = le16(at + 10);
+    EXPECT_EQ(method["a.png"], 0);
+    EXPECT_EQ(method["b.jpg"], 0);
+    EXPECT_EQ(method["c.JPEG"], 0);
+    EXPECT_EQ(method["d.webp"], 0);
+    EXPECT_EQ(method["e.svg"], 8);
 }
 
 TEST(WorkspacePackager, TheArchiveHeadersMatchTheLibraryThatShips)

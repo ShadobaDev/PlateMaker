@@ -12,8 +12,10 @@
 #include "fault.hpp"
 
 #include <archive.h>
+#include <archive_entry.h>
 #include <vips/vips.h>
 
+#include <locale.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -155,7 +157,21 @@ FAULT_C_FUNCTION(struct archive*, archive_write_new, (void), (), nullptr)
 FAULT_C_FUNCTION(int, archive_write_header, (struct archive* a, struct archive_entry* entry), (a, entry), ARCHIVE_FATAL)
 FAULT_C_FUNCTION(la_ssize_t, archive_write_data, (struct archive* a, const void* buffer, size_t size), (a, buffer, size),
                  ARCHIVE_FATAL)
+FAULT_C_FUNCTION(const char*, archive_error_string, (struct archive* a), (a), nullptr)
+FAULT_C_FUNCTION(const char*, archive_entry_pathname, (struct archive_entry* entry), (entry), nullptr)
+FAULT_C_FUNCTION(const char*, archive_entry_pathname_utf8, (struct archive_entry* entry), (entry), nullptr)
 
 // --- libc: what std::ifstream and std::ofstream read and write with -------------------------------------
 FAULT_C_FUNCTION(ssize_t, read, (int fd, void* buffer, size_t size), (fd, buffer, size), (errno = EIO, -1))
 FAULT_C_FUNCTION(ssize_t, write, (int fd, const void* buffer, size_t size), (fd, buffer, size), (errno = ENOSPC, -1))
+
+// glibc declares it noexcept, so it is written out to match; failing, it says the locale does not exist.
+static const bool fault_declared_newlocale = Fault::declare("newlocale");
+extern "C" locale_t newlocale(int categories, const char* name, locale_t base) noexcept
+{
+    if (Fault::shoot("newlocale") == Fault::Shot::Fail)
+        return (errno = ENOENT, locale_t{});
+    using Real = locale_t (*)(int, const char*, locale_t);
+    static const Real realFunction = reinterpret_cast<Real>(Fault::real("newlocale"));
+    return realFunction(categories, name, base);
+}

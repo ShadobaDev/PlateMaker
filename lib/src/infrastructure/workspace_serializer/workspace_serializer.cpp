@@ -318,7 +318,7 @@ void WorkspaceSerializer::save(
 
 void WorkspaceSerializer::migrate(
     Models::Workspace& workspace,
-    int                fromVersion) const
+    int                /*fromVersion*/) const   // no step needs it yet: from_json does them all
 {
     // v1 → v2: removed activeCanvasProfileName / activeOutputProfileName from Workspace;
     //           added OutputProfile::id (back-compat: empty string for profiles missing it);
@@ -327,15 +327,11 @@ void WorkspaceSerializer::migrate(
     // v2 → v3: CanvasProfile::templateInfo (one file) became templates (one entry per format), with
     //           sha256 and format added. Handled in from_json (the "templateInfo" key, finished by
     //           migratedTemplateInfo) — no in-place fixup needed.
-    if (fromVersion < 3)
-        workspace.version = k_currentVersion;
-    if (fromVersion < 2) {
-        workspace.version = k_currentVersion;
-        // Ids for profiles deserialised without one are minted by mintMissingProfileIds()
-        // in load(), which runs for every file version — so there is nothing to do here.
-        // It also relinks the legacy "op-<name>" / "cp-<name>" references that a v1 file
-        // may carry, which this step could not do on its own.
-    }
+    // v1: ids for profiles deserialised without one are minted by mintMissingProfileIds() in load(),
+    //     which runs for every file version and also relinks the legacy "op-<name>" / "cp-<name>"
+    //     references a v1 file may carry — so there is nothing to do here.
+    // What is left is the version the file now has.
+    workspace.version = k_currentVersion;
 }
 
 } // namespace Platemaker::Infrastructure

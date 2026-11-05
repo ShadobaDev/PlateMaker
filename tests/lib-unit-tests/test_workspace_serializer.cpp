@@ -369,6 +369,7 @@ TEST(WorkspaceSerializerTest, OptionalFieldsAbsentFromAnOlderFileTakeTheirDefaul
         enums["inputFiles"][0].erase(k);
     j["projectItems"][1]["colourCorrection"]["curves"] = nlohmann::json::object();
     j["projectItems"][0]["outputFiles"][0].erase("uid");
+    j["projectItems"].push_back(j["projectItems"][1]);   // a project twice: its uid with it
     { std::ofstream out(tmp); out << j.dump(2); }
 
     const Models::Workspace loaded = ser.load(tmp.string());
@@ -413,6 +414,9 @@ TEST(WorkspaceSerializerTest, OptionalFieldsAbsentFromAnOlderFileTakeTheirDefaul
     EXPECT_NEAR(graded.colourCorrection.brightness, 0.3, 1e-9) << "fields present still load";
     EXPECT_FALSE(Models::hasAnyCurve(graded.colourCorrection.curves)) << "an empty curves object is no curve";
     EXPECT_FALSE(loaded.projectItems[0].getOutputImages()[0].uid.empty()) << "an output gets a uid on load";
+    ASSERT_EQ(loaded.projectItems.size(), 3u);
+    EXPECT_EQ(loaded.projectItems[1].uid, graded.uid);
+    EXPECT_NE(loaded.projectItems[2].uid, graded.uid) << "a uid the file gives twice is minted anew";
 }
 
 TEST(WorkspaceSerializerTest, ProfilesWrittenBeforeDpiLoadWithTheDefaults)
@@ -536,14 +540,26 @@ TEST(WorkspaceSerializerTest, LoadPrePlatemakerProjectFormatExplainsTheIncompati
 TEST(WorkspaceSerializerTest, LoadPaletteOfTheWrongTypeIsASchemaError)
 {
     const std::filesystem::path tmp = std::filesystem::temp_directory_path() / "pm_test_badschema.json";
-    { std::ofstream f(tmp); f << R"({"version": 1, "canvasProfiles": "not a list", "outputProfiles": []})"; }
+    const auto project = [](const char* parts) {
+        return std::string(R"({"version": 3, "canvasProfiles": [], "outputProfiles": [], "projectItems": [{)") + parts
+             + R"(, "outputDirectory": ""}]})";
+    };
+    const std::string output = R"({"fileName": "001.png", "sha256": "", "status": "Done"})";
 
-    const WorkspaceSerializer ser;
-    try {
-        (void)ser.load(tmp.string());
-        ADD_FAILURE() << "a malformed palette must not load";
-    } catch (const std::runtime_error& e) {
-        EXPECT_NE(std::string(e.what()).find("schema error"), std::string::npos) << e.what();
+    // What is wrong, and what the message must say: a missing key by name, a wrong type by kind.
+    for (const auto& [text, names] : std::vector<std::pair<std::string, std::string>>{
+             {R"({"version": 1, "canvasProfiles": "not a list", "outputProfiles": []})", "must be array"},
+             {project(R"("outputFiles": [])"), "inputFiles"},
+             {project(R"("inputFiles": [])"), "outputFiles"},
+             {project((R"("inputFiles": [], "outputFiles": [)" + output + "]").c_str()), "sourceMap"}}) {
+        { std::ofstream f(tmp); f << text; }
+        try {
+            (void)WorkspaceSerializer{}.load(tmp.string());
+            ADD_FAILURE() << "must not load: " << text;
+        } catch (const std::runtime_error& e) {
+            EXPECT_NE(std::string(e.what()).find("schema error"), std::string::npos) << e.what();
+            EXPECT_NE(std::string(e.what()).find(names), std::string::npos) << e.what();
+        }
     }
     std::filesystem::remove(tmp);
 }

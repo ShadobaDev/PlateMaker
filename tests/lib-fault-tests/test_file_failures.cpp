@@ -96,6 +96,44 @@ TEST_F(FileFailureTest, AnEntryThatCannotBeWrittenFailsTheUnpackAndLeavesNothing
     }
 }
 
+TEST_F(FileFailureTest, WithoutAUtf8LocaleAnAsciiPackageStillUnpacks)
+{
+    const Fault::Scratch scratch;
+    const std::string    zip = scratch.file("in.zip");
+    ASSERT_TRUE(WorkspacePackager::write(onePagePlan(scratch), zip));
+
+    Fault::failCall("newlocale");   // no C.UTF-8 on this system: the thread keeps the locale it had
+    ASSERT_TRUE(WorkspacePackager::unpack(zip, scratch.file("out")));
+    EXPECT_TRUE(fs::exists(scratch.file("out/inputs/page.png")));
+}
+
+TEST_F(FileFailureTest, AnEntryNameReadsInTheLocaleWhenNotInUtf8AndIsRefusedWhenNotAtAll)
+{
+    const Fault::Scratch scratch;
+    const std::string    zip = scratch.file("in.zip");
+    ASSERT_TRUE(WorkspacePackager::write(onePagePlan(scratch), zip));
+
+    Fault::failCall("archive_entry_pathname_utf8");   // the first entry's name, in the locale's form instead
+    ASSERT_TRUE(WorkspacePackager::unpack(zip, scratch.file("out")));
+    EXPECT_TRUE(fs::exists(scratch.file("out/inputs/page.png")));
+
+    Fault::failCall("archive_entry_pathname_utf8");
+    Fault::failCall("archive_entry_pathname");        // and no name at all
+    EXPECT_CONTAINS(thrown([&] { (void)WorkspacePackager::unpack(zip, scratch.file("out2")); }),
+                    "'' would land outside the folder");
+    EXPECT_FALSE(fs::exists(scratch.file("out2")));
+}
+
+TEST_F(FileFailureTest, AnArchiveErrorWithoutAReasonSaysSo)
+{
+    const Fault::Scratch scratch;
+    writeFile(scratch.file("text.zip"), "no archive here");
+
+    Fault::failCall("archive_error_string");
+    EXPECT_CONTAINS(thrown([&] { (void)WorkspacePackager::unpack(scratch.file("text.zip"), scratch.file("out")); }),
+                    ": archive error");
+}
+
 // --- Planning one ---------------------------------------------------------------------------------------
 
 TEST_F(FileFailureTest, PathsThatCannotBeResolvedArePlannedAsSpelled)
