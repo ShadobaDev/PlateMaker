@@ -72,7 +72,7 @@ bool sameField(const CanvasProfile& a, const CanvasProfile& b, ProfileField f)
     case ProfileField::Colours:
         return sameRgba(a.visualColour, b.visualColour) && sameRgba(a.backgroundColour, b.backgroundColour);
     }
-    return true;
+    return true;   // GCOVR_EXCL_LINE: every value returns above; the compiler still wants a return
 }
 
 constexpr ProfileField k_fields[] = {ProfileField::CanvasSize, ProfileField::Margins, ProfileField::Dpi,

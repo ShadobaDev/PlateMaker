@@ -150,6 +150,7 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
         // An overlapping entry must still hold its pixels. If it does not,
         // releaseConsumedEntries() ran ahead of the slice cursor — a logic error here,
         // not bad input, and one that would otherwise surface as a confusing vips failure.
+        // GCOVR_EXCL_START: our own invariant (sliceAll() releases only the entries behind its cursor)
         if (!entry.image.buffer.isValid()) {
             for (VipsImage* p : parts) g_object_unref(p);
             throw std::runtime_error(
@@ -157,6 +158,7 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
                 "' overlaps slice " + std::to_string(index) +
                 " but its buffer was already released");
         }
+        // GCOVR_EXCL_STOP
 
         // Intersection in virtual-strip coordinates.
         const int overlapStart = std::max(entry.startY, sliceStartY);
@@ -187,11 +189,13 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
         parts.push_back(part);
     }
 
+    // GCOVR_EXCL_START: our own invariant (sliceAll() asks only for slices inside the strip)
     if (parts.empty()) {
         throw std::runtime_error(
             "ScaledStrip::buildSlice() — no source entries overlap slice " +
             std::to_string(index));
     }
+    // GCOVR_EXCL_STOP
 
     if (parts.size() == 1) {
         // Single-source slice: no join needed.

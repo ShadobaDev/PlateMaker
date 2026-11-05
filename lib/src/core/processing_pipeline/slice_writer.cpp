@@ -43,17 +43,6 @@ std::string zeroPad(int n, int width)
     return oss.str();
 }
 
-//! The file extension the output format writes.
-std::string formatExtension(Models::OutputFormat fmt)
-{
-    switch (fmt) {
-        case Models::OutputFormat::PNG:  return ".png";
-        case Models::OutputFormat::JPEG: return ".jpg";
-        case Models::OutputFormat::WebP: return ".webp";
-    }
-    return ".png";
-}
-
 /**
  * \brief Resolves overlay page anchors against the assembled strip and rasterises the assets once.
  *
@@ -101,7 +90,7 @@ SliceWriter::SliceWriter(const RenderRequest&                        request,
                          const ProcessingCallbacks&                  callbacks)
     : m_request(request)
     , m_callbacks(callbacks)
-    , m_extension(formatExtension(request.outputProfile.outputFormat))
+    , m_extension(Models::outputFormatExtension(request.outputProfile.outputFormat))
 {
     // Partial render: the progress denominator is the number of slices we will actually save, not
     // the full count. Slice names derive from the index alone, so this is resolved up front — no

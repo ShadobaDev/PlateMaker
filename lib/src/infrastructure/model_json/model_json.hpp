@@ -37,6 +37,7 @@ namespace Platemaker::Models {
 // NLOHMANN_JSON_SERIALIZE_ENUM emits inline functions, so they are safe to define in a header
 // included by multiple translation units.
 
+// GCOVR_EXCL_START: nlohmann's code, expanded here; what it does with our values is tested through it
 NLOHMANN_JSON_SERIALIZE_ENUM(LastSlicePolicy, {
     {LastSlicePolicy::Crop,     "Crop"},
     {LastSlicePolicy::PadWhite, "PadWhite"},
@@ -79,6 +80,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM(FileStatus, {
     {FileStatus::Skipped,        "Skipped"},
     {FileStatus::Error,          "Error"}
 })
+// GCOVR_EXCL_STOP
 
 // --- Struct codecs (declarations; defined in model_json.cpp) ---
 

@@ -47,16 +47,13 @@ double evalCurve(const std::vector<Models::CurvePoint>& pts, double t)
     if (pts.empty())          return t;
     if (t <= pts.front().x)   return pts.front().y;
     if (t >= pts.back().x)    return pts.back().y;
-    for (std::size_t i = 1; i < pts.size(); ++i) {
-        if (t <= pts[i].x) {
-            const auto&  a  = pts[i - 1];
-            const auto&  b  = pts[i];
-            const double dx = b.x - a.x;
-            const double f  = dx > 1e-9 ? (t - a.x) / dx : 0.0;
-            return a.y + f * (b.y - a.y);
-        }
-    }
-    return pts.back().y;
+    std::size_t i = 1;
+    while (t > pts[i].x) ++i;   // stops by the last point: t is below it
+    const auto&  a  = pts[i - 1];
+    const auto&  b  = pts[i];
+    const double dx = b.x - a.x;
+    const double f  = dx > 1e-9 ? (t - a.x) / dx : 0.0;
+    return a.y + f * (b.y - a.y);
 }
 
 //! Clamp a normalised [0,1] value to a rounded 0..255 byte.
@@ -213,8 +210,10 @@ void ColourCorrector::applyToRgba(unsigned char* rgba, int width, int height,
     // The lib does not own the vips lifecycle, and a GUI consumer cannot call VIPS_INIT itself (it has no
     // vips headers) — it may reach here (a live grade preview) before any render has initialised vips.
     // VIPS_INIT only does anything on its first successful call, so ensure it before touching vips.
+    // GCOVR_EXCL_START: VIPS_INIT fails only on a broken install, never once a test has started libvips
     if (VIPS_INIT("platemaker"))
         vips_error_clear(); // a genuine init failure surfaces as a throw from the vips calls below
+    // GCOVR_EXCL_STOP
 
     // Neutral grade → leave the bytes untouched (matches apply()'s no-op fast path).
     if (cc.brightness == 0.0 && cc.contrast == 1.0 && cc.saturation == 1.0

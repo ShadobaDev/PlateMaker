@@ -131,17 +131,12 @@ bool isFolderRelative(const std::string& utf8)
 /// save(): writes the relative copy beside every overlay asset that lies inside \p folder.
 void addRelativePaths(nlohmann::json& j, const fs::path& folder)
 {
-    if (!j.contains("projectItems"))
-        return;
-    for (auto& project : j["projectItems"]) {
-        if (!project.contains("stripOverlays"))
-            continue;
+    // \p j is a Workspace just converted: every key is there, of its type.
+    for (auto& project : j["projectItems"])
         for (auto& overlay : project["stripOverlays"])
-            if (overlay.contains("assetPath") && overlay["assetPath"].is_string())
-                if (const std::string rel = relativeInside(utf8ToPath(overlay["assetPath"].get<std::string>()), folder);
-                    !rel.empty())
-                    overlay[k_assetPathRelative] = rel;
-    }
+            if (const std::string rel = relativeInside(utf8ToPath(overlay["assetPath"].get<std::string>()), folder);
+                !rel.empty())
+                overlay[k_assetPathRelative] = rel;
 }
 
 /// load(): turns every relative form back into the absolute path the model holds.

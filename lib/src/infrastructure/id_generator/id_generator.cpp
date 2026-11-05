@@ -59,10 +59,12 @@ std::string retryUntilFree(std::string_view prefix, const IsTaken& isTaken)
         if (!isTaken(candidate)) return candidate;
     }
 
+    // GCOVR_EXCL_START: 8 collisions in a row on 128 random bits; only a broken random source gets here
     throw std::runtime_error(
         "Platemaker::Infrastructure — could not find a free identifier for prefix '" +
         std::string{prefix} + "' after " + std::to_string(k_maxAttempts) +
         " attempts; the platform's random number source appears to be broken");
+    // GCOVR_EXCL_STOP
 }
 
 //! Predicate over any range whose elements expose a std::string \c id member.

@@ -107,6 +107,20 @@ TEST_F(LibvipsFailureTest, AGradeOfRgbaBytesThatFailsSaysWhichStepAndLeaksNothin
     EXPECT_EQ(rgba, std::vector<unsigned char>(4 * 4 * 4, 128));   // untouched
 }
 
+TEST_F(LibvipsFailureTest, AGradeThatLosesTheAlphaBandIsRefused)
+{
+    Models::ColourCorrection cc;
+    cc.brightness = 0.1;
+    std::vector<unsigned char> rgba(4 * 4 * 4, 128);
+    VipsImage* const rgb = Fault::blackImage(4, 4, 3);
+
+    Fault::returnImage("vips_bandjoin2", rgb);   // the alpha rejoined, but three bands come back
+    EXPECT_CONTAINS(thrown([&] { Core::ColourCorrector{}.applyToRgba(rgba.data(), 4, 4, cc); }),
+                    "unexpected graded image layout");
+    EXPECT_EQ(rgba, std::vector<unsigned char>(4 * 4 * 4, 128));
+    g_object_unref(rgb);
+}
+
 // --- PixelBuffer --------------------------------------------------------------------------------------
 
 TEST_F(LibvipsFailureTest, ACloneThatFailsThrows)
@@ -133,6 +147,22 @@ TEST_F(LibvipsFailureTest, ASliceWhosePartFailsReleasesTheOthers)
                     }),
                     "vips_extract_area failed (slice 0)");
     EXPECT_EQ(Fault::liveObjects(), before);
+}
+
+TEST_F(LibvipsFailureTest, ASliceOfAnotherHeightThanAskedThrows)
+{
+    Core::ScaledStrip strip;
+    strip.append(Core::ScaledImage{Core::PixelBuffer{Fault::blackImage(10, 20, 3)}, "a"});
+    Infrastructure::CancellationToken cancel;
+    VipsImage* const padded = Fault::blackImage(10, 21, 3);
+
+    Fault::returnImage("vips_extract_area", padded);   // the black-band bug: one row more than the window
+    EXPECT_CONTAINS(thrown([&] {
+                        strip.sliceAll(20, Models::LastSlicePolicy::KeepAsIs, cancel,
+                                       [](Core::SliceResult&&) { return true; });
+                    }),
+                    "slice 0 built height 21 != requested 20");
+    g_object_unref(padded);
 }
 
 TEST_F(LibvipsFailureTest, ATailThatCannotBePaddedThrows)

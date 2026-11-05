@@ -101,7 +101,7 @@ public:
         case OutputFormat::JPEG: return ".jpg";
         case OutputFormat::WebP: return ".webp";
     }
-    return ".png";
+    return ".png";   // GCOVR_EXCL_LINE: every value returns above; the compiler still wants a return
 }
 
 /**

@@ -137,7 +137,7 @@ cmake --preset linux-coverage
 cmake --build --preset linux-coverage
 ctest --preset linux-coverage          # the fault-injection tests run here only (ELF)
 gcovr --root . --filter lib/ --exclude-throw-branches --exclude-unreachable-branches \
-      --txt-summary build/linux-coverage
+      --exclude-noncode-lines --txt-summary build/linux-coverage
 ```
 
 ## MSVC (secondary)

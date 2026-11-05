@@ -98,10 +98,12 @@ jobs:
       # --exclude-throw-branches: the exception edges every call adds would drown the real branches.
       # --exclude-unreachable-branches: the branches gcc gives lines with no code (a closing brace's
       # cleanup on an exception's way out), which no test can take.
+      # --exclude-noncode-lines: the same lines, uncovered — the cleanup is counted as a line there.
+      # Code no test can reach is marked GCOVR_EXCL with its reason (the list: wiki, Platform).
       - name: Coverage report
         run: |
           gcovr --root . --filter lib/ --exclude-throw-branches --exclude-unreachable-branches \
-                --cobertura coverage.xml --txt coverage.txt --txt-summary \
+                --exclude-noncode-lines --cobertura coverage.xml --txt coverage.txt --txt-summary \
                 build/linux-coverage
           { echo '```'; cat coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 

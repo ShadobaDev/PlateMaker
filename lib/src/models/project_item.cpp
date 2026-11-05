@@ -169,14 +169,10 @@ std::string ProjectItem::addOverlay(const std::string& assetPath, double xFrac, 
     ov.enabled = true;
     ov.anchorInputUid = anchorInputUid;
 
-    // Hash the content (dedup + staleness). A hash failure is non-fatal: the overlay is still
+    // Hash the content (dedup + staleness). An unreadable asset is non-fatal: the overlay is still
     // registered with an empty sha (no dedup, and a later silent content change won't be caught until
     // it is re-added) — the same tolerance applyProcessingResults() gives an unhashable input.
-    try {
-        ov.sha256 = Infrastructure::FileMetaData::computeFileSha256(assetPath);
-    } catch (const std::exception&) {
-        ov.sha256.clear();
-    }
+    ov.sha256 = Infrastructure::FileMetaData::computeFileSha256(assetPath);
 
     // Dedup by content: if an existing overlay references an asset with the same hash, reuse that stored
     // path so identical content is kept once (the consumer can drop its duplicate file).
