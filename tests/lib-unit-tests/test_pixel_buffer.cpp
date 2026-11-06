@@ -24,6 +24,7 @@
 #include <vips/vips.h>
 
 #include <filesystem>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -83,6 +84,55 @@ TEST(PixelBufferTest, MoveAssignmentTransfersOwnership)
     EXPECT_EQ(dst.height(), 3);
     EXPECT_FALSE(src.isValid()) << "moved-from buffer must be left empty";  // NOLINT(bugprone-use-after-move)
     EXPECT_EQ(src.vipsImage(), nullptr);
+
+    // Onto itself, as a swap through a reference can: the image stays, and stays owned once.
+    PixelBuffer& same = dst;
+    dst = std::move(same);
+    EXPECT_EQ(dst.vipsImage(), raw);
+    EXPECT_EQ(G_OBJECT(raw)->ref_count, 1u);
+}
+
+// ---------------------------------------------------------------------------
+// PixelBuffer — release() / clone()
+// ---------------------------------------------------------------------------
+
+TEST(PixelBufferTest, ReleaseHandsOverOwnershipAndEmptiesBuffer)
+{
+    // release() must return the raw VipsImage and leave the buffer empty, so the destructor does not
+    // unref an image the caller now owns. We re-wrap the released pointer to balance the reference.
+    VipsImage* img = nullptr;
+    ASSERT_EQ(vips_black(&img, 5, 7, nullptr), 0) << vips_error_buffer();
+    PixelBuffer buf{img};
+    VipsImage* const raw = buf.vipsImage();
+
+    VipsImage* const taken = buf.release();
+    EXPECT_EQ(taken, raw) << "release must hand back the very image it held";
+    EXPECT_FALSE(buf.isValid()) << "released buffer must be left empty";
+    EXPECT_EQ(buf.vipsImage(), nullptr);
+
+    PixelBuffer{taken}; // re-adopt so the single reference is dropped exactly once
+}
+
+TEST(PixelBufferTest, CloneOfEmptyBufferIsEmpty)
+{
+    const PixelBuffer empty;
+    const PixelBuffer copy = empty.clone();
+    EXPECT_FALSE(copy.isValid());
+    EXPECT_EQ(copy.vipsImage(), nullptr);
+}
+
+TEST(PixelBufferTest, CloneProducesAnIndependentImageOfTheSameShape)
+{
+    VipsImage* img = nullptr;
+    ASSERT_EQ(vips_black(&img, 8, 4, nullptr), 0) << vips_error_buffer();
+    const PixelBuffer src{img};
+
+    const PixelBuffer copy = src.clone();
+    ASSERT_TRUE(copy.isValid());
+    EXPECT_EQ(copy.width(),  8);
+    EXPECT_EQ(copy.height(), 4);
+    EXPECT_NE(copy.vipsImage(), src.vipsImage())
+        << "clone must be a distinct VipsImage, not an aliased reference to the source";
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +149,67 @@ TEST(MarginCropperTest, ThrowsOnInvalidSourceBuffer)
 }
 
 // ---------------------------------------------------------------------------
+// MarginCropper — safe-area geometry
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A synthetic RGB image of the given size, for crop geometry tests.
+PixelBuffer blackImage(int w, int h)
+{
+    VipsImage* img = nullptr;
+    EXPECT_EQ(vips_black(&img, w, h, nullptr), 0) << vips_error_buffer();
+    return PixelBuffer{img};
+}
+
+} // namespace
+
+TEST(MarginCropperTest, CropsToTheSafeAreaRectangle)
+{
+    const MarginCropper cropper;
+    // 100x80 source, margins top=5 right=10 bottom=15 left=20 → safe area 70x60.
+    const Models::Margins margins{5, 10, 15, 20};
+    const PixelBuffer out = cropper.crop(blackImage(100, 80), margins);
+    EXPECT_EQ(out.width(),  100 - 20 - 10);
+    EXPECT_EQ(out.height(), 80 - 5 - 15);
+}
+
+TEST(MarginCropperTest, ThrowsWhenHorizontalMarginsConsumeTheWidth)
+{
+    const MarginCropper cropper;
+    // left + right == srcW → w == 0 → the first operand of (w <= 0 || h <= 0) fires.
+    const Models::Margins margins{0, 50, 0, 50};
+    EXPECT_THROW((void)cropper.crop(blackImage(100, 80), margins), std::invalid_argument);
+}
+
+TEST(MarginCropperTest, NegativeMarginIsAnInvalidArgument)
+{
+    // A negative margin keeps the area's size positive but would start it outside the image: refused as
+    // the margins' fault, each side on its own, before libvips is asked.
+    const MarginCropper cropper;
+    for (const Models::Margins margins : {Models::Margins{-1, 0, 0, 0}, Models::Margins{0, -1, 0, 0},
+                                          Models::Margins{0, 0, -1, 0}, Models::Margins{0, 0, 0, -10}})
+        EXPECT_THROW((void)cropper.crop(blackImage(100, 80), margins), std::invalid_argument);
+}
+
+TEST(MarginCropperTest, MarginsThatOverflowAnIntLeaveNoSafeArea)
+{
+    // 100 - INT_MAX - INT_MAX wraps to a positive int; the area is computed in 64 bits instead.
+    const MarginCropper cropper;
+    const int big = std::numeric_limits<int>::max();
+    EXPECT_THROW((void)cropper.crop(blackImage(100, 80), Models::Margins{0, big, 0, big}), std::invalid_argument);
+    EXPECT_THROW((void)cropper.crop(blackImage(100, 80), Models::Margins{big, 0, big, 0}), std::invalid_argument);
+}
+
+TEST(MarginCropperTest, ThrowsWhenVerticalMarginsExceedTheHeight)
+{
+    const MarginCropper cropper;
+    // top + bottom > srcH → h < 0 → the second operand of (w <= 0 || h <= 0) fires.
+    const Models::Margins margins{50, 0, 40, 0};
+    EXPECT_THROW((void)cropper.crop(blackImage(100, 80), margins), std::invalid_argument);
+}
+
+// ---------------------------------------------------------------------------
 // Scaler — construction only (no file I/O)
 // ---------------------------------------------------------------------------
 
@@ -106,6 +217,76 @@ TEST(ScalerTest, ConstructorDefaultWidth)
 {
     // Scaler is stateless — constructing one should never throw.
     EXPECT_NO_THROW({ Scaler s; (void)s; });
+}
+
+TEST(ScalerTest, ScaleFileRejectsNonPositiveTargetWidth)
+{
+    // The file overload must reject a zero or negative target before it ever touches libvips
+    // (scaler.cpp:56-59). A unique path that is never created proves the guard runs first.
+    namespace fs = std::filesystem;
+    const std::string any = (fs::temp_directory_path() / "pm-unused-width-guard.png").string();
+    EXPECT_THROW((void)Scaler{}.scale(any, /*targetWidth=*/0),  std::runtime_error);
+    EXPECT_THROW((void)Scaler{}.scale(any, /*targetWidth=*/-5), std::runtime_error);
+}
+
+TEST(ScalerTest, ScaleBufferRejectsNonPositiveTargetWidth)
+{
+    VipsImage* img = nullptr;
+    ASSERT_EQ(vips_black(&img, 40, 20, nullptr), 0) << vips_error_buffer();
+    PixelBuffer buf{img};
+    EXPECT_THROW((void)Scaler{}.scale(std::move(buf), "src.png", /*targetWidth=*/0),
+                 std::runtime_error);
+}
+
+TEST(ScalerTest, ScaleBufferRejectsInvalidBuffer)
+{
+    // An empty buffer (null VipsImage) with a positive width must throw, never dereference null.
+    EXPECT_THROW((void)Scaler{}.scale(PixelBuffer{}, "src.png", /*targetWidth=*/100),
+                 std::runtime_error);
+}
+
+TEST(ScalerTest, ScaleBufferResizesToTargetWidthPreservingAspect)
+{
+    // The in-memory overload: a 40x20 buffer scaled to width 100 → 100x50 (aspect preserved).
+    VipsImage* img = nullptr;
+    ASSERT_EQ(vips_black(&img, 40, 20, nullptr), 0) << vips_error_buffer();
+    PixelBuffer buf{img};
+
+    const ScaledImage scaled = Scaler{}.scale(std::move(buf), "memory.png", /*targetWidth=*/100);
+    EXPECT_EQ(scaled.buffer.width(),  100);
+    EXPECT_EQ(scaled.buffer.height(), 50);
+    EXPECT_EQ(scaled.sourceFilePath, "memory.png") << "the source path must be carried through";
+}
+
+TEST(ScalerTest, ScaleBufferBeyondTheWidestImageThrows)
+{
+    // Size limit: no image is wider than VIPS_MAX_COORD, and past it libvips refuses the resize factor
+    // with only "parameter scale not set". One pixel more is refused first, saying which bound.
+    VipsImage* img = nullptr;
+    ASSERT_EQ(vips_black(&img, 1, 1, nullptr), 0) << vips_error_buffer();
+    try {
+        (void)Scaler{}.scale(PixelBuffer{img}, "src.png", VIPS_MAX_COORD + 1);
+        ADD_FAILURE() << "a width past VIPS_MAX_COORD was accepted";
+    } catch (const std::runtime_error& e) {
+        EXPECT_NE(std::string(e.what()).find("targetWidth must be 1 to"), std::string::npos) << e.what();
+    }
+}
+
+TEST(ScalerTest, ScaleFileBeyondTheWidestImageThrows)
+{
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "pm-scaler-limit";
+    fs::remove_all(dir); fs::create_directories(dir);
+    const std::string src = (dir / "one-pixel.png").string();
+    {
+        VipsImage* img = nullptr;
+        ASSERT_EQ(vips_black(&img, 1, 1, nullptr), 0) << vips_error_buffer();
+        ASSERT_EQ(vips_image_write_to_file(img, src.c_str(), nullptr), 0) << vips_error_buffer();
+        g_object_unref(img);
+    }
+    EXPECT_THROW((void)Scaler{}.scale(src, VIPS_MAX_COORD + 1), std::runtime_error);
+    vips_error_clear();
+    fs::remove_all(dir);
 }
 
 TEST(ScalerTest, ScaleNonExistentFileThrows)

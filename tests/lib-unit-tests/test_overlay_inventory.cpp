@@ -95,6 +95,13 @@ TEST(OverlayInventoryTest, DedupReusesPathForIdenticalContent)
     // The placement of the deduped overlay is still its own.
     EXPECT_DOUBLE_EQ(ovs[1].xFrac, 0.05);
     EXPECT_DOUBLE_EQ(ovs[1].yFrac, 0.05);
+
+    // An overlay of that content that lost its path has no path to share.
+    proj.getStripOverlays()[0].assetPath.clear();
+    proj.getStripOverlays()[1].assetPath.clear();
+    const std::string f4 = tmp.write("d.png", "SAME-BYTES");
+    (void)proj.addOverlay(f4, 0.0, 0.0, 0.0);
+    EXPECT_EQ(proj.getStripOverlays().back().assetPath, f4);
 }
 
 TEST(OverlayInventoryTest, RemoveOverlayById)
@@ -111,6 +118,21 @@ TEST(OverlayInventoryTest, RemoveOverlayById)
     EXPECT_FALSE(proj.removeOverlay("ovl-nonexistent"));
     ASSERT_EQ(proj.getStripOverlays().size(), 1u);
     EXPECT_EQ(proj.getStripOverlays().front().uid, u2);
+}
+
+TEST(OverlayInventoryTest, AnUnhashableAssetIsAddedWithoutDedup)
+{
+    // No hash, no content identity: two unreadable assets are kept as given, never merged by path.
+    TempDir     tmp("unhashable");
+    ProjectItem proj;
+    const std::string missingA = (fs::temp_directory_path() / "pm-ovl-missing-a.svg").string();
+    const std::string missingB = (fs::temp_directory_path() / "pm-ovl-missing-b.svg").string();
+    (void)proj.addOverlay(missingA, 0.0, 0.0, 0.0);
+    (void)proj.addOverlay(missingB, 0.0, 0.0, 0.0);
+    ASSERT_EQ(proj.getStripOverlays().size(), 2u);
+    EXPECT_TRUE(proj.getStripOverlays()[0].sha256.empty());
+    EXPECT_EQ(proj.getStripOverlays()[0].assetPath, missingA);
+    EXPECT_EQ(proj.getStripOverlays()[1].assetPath, missingB);
 }
 
 } // namespace Platemaker::Models

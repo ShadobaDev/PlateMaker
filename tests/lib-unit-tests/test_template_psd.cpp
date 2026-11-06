@@ -2,7 +2,8 @@
  * \file tests/lib-unit-tests/test_template_psd.cpp
  * \brief Tests for the PSD templates TemplateGenerator writes (through minipsd): read back with a small
  *        reader that follows the format description, so a field written wrong fails here rather than in a
- *        drawing app. minipsd's own tests, and its independent psd-tools round trip, live in its repository.
+ *        drawing app. The reader does not inflate: the ZIP layer's pixels are read through the plugin's
+ *        psdload. minipsd's own tests, and its independent psd-tools round trip, live in its repository.
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
  *
@@ -40,7 +41,7 @@ struct Layer {
     std::uint8_t opacity = 0, flags = 0;
     std::vector<int>  channelIds;
     std::vector<int>  compression;   // per channel
-    Bytes rgba;                      // decoded, interleaved; empty for an empty layer
+    Bytes rgba;                      // decoded, interleaved; empty for an empty layer or a ZIP one
 };
 
 struct Psd {
@@ -90,6 +91,8 @@ Bytes unpack(Reader &r, std::size_t packed, std::size_t expected)
 void readPlane(Reader &r, int compression, const std::vector<std::uint16_t> &counts,
                std::uint32_t w, std::uint32_t h, Bytes &rgba, int offset)
 {
+    if (compression != 0 && compression != 1)
+        throw std::runtime_error("a ZIP plane: this reader does not inflate");
     for (std::uint32_t y = 0; y < h; ++y) {
         Bytes row;
         if (compression == 0) { row.assign(r.at(), r.at() + w); r.skip(w); }
@@ -170,6 +173,11 @@ Psd read(const Bytes &b)
             const std::size_t start = r.pos();
             const int comp = r.u16();
             l.compression.push_back(comp);
+            if (comp == 2 || comp == 3) {   // ZIP: its length checked, its pixels read through psdload
+                r.skip(lengths[i][c] - 2);
+                l.rgba.clear();
+                continue;
+            }
             std::vector<std::uint16_t> counts;
             if (comp == 1) for (std::uint32_t y = 0; y < h; ++y) counts.push_back(r.u16());
             if (w && h) readPlane(r, comp, counts, w, h, l.rgba, rgbaOffset(l.channelIds[c]));
@@ -214,6 +222,22 @@ Platemaker::Models::CanvasProfile templateProfile(int w, int h)
     return cp;
 }
 
+/// \p im's pixels, interleaved, and \p im released; empty, and the test failed, when it is null.
+Bytes takePixels(VipsImage *im)
+{
+    if (!im) {
+        ADD_FAILURE() << vips_error_buffer();
+        vips_error_clear();
+        return {};
+    }
+    size_t size = 0;
+    void *mem = vips_image_write_to_memory(im, &size);
+    const Bytes pixels(static_cast<std::uint8_t *>(mem), static_cast<std::uint8_t *>(mem) + size);
+    g_free(mem);
+    g_object_unref(im);
+    return pixels;
+}
+
 Bytes readFile(const std::filesystem::path &file)
 {
     std::ifstream in(file, std::ios::binary);
@@ -246,13 +270,8 @@ TEST_F(TemplatePsdTest, PsdLayerHoldsThePngPixels)
     TemplateGenerator{}.generate(cp, op, path("t.png"), png);
     TemplateGenerator{}.generate(cp, op, path("t.psd"), psd);
 
-    VipsImage *im = vips_image_new_from_file(path("t.png").c_str(), nullptr);
-    ASSERT_NE(im, nullptr) << vips_error_buffer();
-    size_t size = 0;
-    void *mem = vips_image_write_to_memory(im, &size);
-    const Bytes pngPixels(static_cast<std::uint8_t *>(mem), static_cast<std::uint8_t *>(mem) + size);
-    g_free(mem);
-    g_object_unref(im);
+    const Bytes pngPixels = takePixels(vips_image_new_from_file(path("t.png").c_str(), nullptr));
+    ASSERT_FALSE(pngPixels.empty());
 
     const Psd p = read(readFile(m_dir / "t.psd"));
     EXPECT_EQ(p.width, 64u);
@@ -260,7 +279,13 @@ TEST_F(TemplatePsdTest, PsdLayerHoldsThePngPixels)
     EXPECT_DOUBLE_EQ(p.dpiX, 300.0);
     ASSERT_EQ(p.layers.size(), 1u) << "no empty layer unless asked";
     EXPECT_EQ(p.layers[0].pascalName, "Template");
-    EXPECT_EQ(p.layers[0].rgba, pngPixels) << "the same template, in either format";
+    EXPECT_EQ(p.layers[0].compression, std::vector<int>(4, 2)) << "the layer's four channels ZIP, unpredicted";
+
+    // The reader above does not inflate, so the layer's pixels come back through the plugin's psdload,
+    // named so that no other PSD loader libvips may have answers.
+    VipsImage *layer = nullptr;
+    vips_call("psdload", path("t.psd").c_str(), &layer, "layer", 0, nullptr);
+    EXPECT_EQ(takePixels(layer), pngPixels) << "the same template, in either format";
 }
 
 TEST_F(TemplatePsdTest, EmptyLayerAndDpiAreApplied)
@@ -296,4 +321,55 @@ TEST_F(TemplatePsdTest, OversizePsdIsAnInvalidArgument)
     EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(100, MINIPSD_MAX_SIDE + 1), {}, path("t.psd"), o),
                  std::invalid_argument);
     EXPECT_FALSE(std::filesystem::exists(m_dir / "t.psd")) << "refused before the file is opened";
+}
+
+TEST_F(TemplatePsdTest, OversizePsdWidthIsAlsoRejected)
+{
+    // The guard is on either side, not just the height the test above exercises.
+    TemplateOptions o;
+    o.format = TemplateFormat::Psd;
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(MINIPSD_MAX_SIDE + 1, 100), {}, path("t.psd"), o),
+                 std::invalid_argument);
+    EXPECT_FALSE(std::filesystem::exists(m_dir / "t.psd"));
+}
+
+TEST_F(TemplatePsdTest, ZeroOrNegativeCanvasIsRejected)
+{
+    // Boundary at the smallest invalid sizes, each operand of (W <= 0 || H <= 0) in turn.
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(0, 100),  {}, path("w.png"), {}),
+                 std::invalid_argument); // width == 0
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(100, 0),  {}, path("h.png"), {}),
+                 std::invalid_argument); // height == 0
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(100, -1), {}, path("n.png"), {}),
+                 std::invalid_argument); // height negative
+    EXPECT_FALSE(std::filesystem::exists(m_dir / "w.png")) << "rejected before anything is drawn";
+}
+
+TEST_F(TemplatePsdTest, MarginsLargerThanTheCanvasAreRejected)
+{
+    // templateProfile margins total 28px horizontally (left 16 + right 12) and 24px vertically
+    // (top 10 + bottom 14). A canvas narrower / shorter than that leaves no safe area — each operand
+    // of (safeW <= 0 || safeHpx <= 0) fired separately.
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(20, 200), {}, path("sw.png"), {}),
+                 std::invalid_argument); // safe width collapses
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(200, 20), {}, path("sh.png"), {}),
+                 std::invalid_argument); // safe height collapses
+}
+
+TEST_F(TemplatePsdTest, UnwritableOutputPathIsAnError)
+{
+    // The template is encoded in memory and then written; a destination in a missing folder must be
+    // reported, not return a hash for bytes that never reached disk.
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(40, 40), {}, path("missing/t.png"), {}),
+                 std::runtime_error);
+}
+
+TEST_F(TemplatePsdTest, NonPositiveDpiIsRejected)
+{
+    TemplateOptions zero; zero.dpi = 0.0;
+    TemplateOptions neg;  neg.dpi  = -72.0;
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(40, 40), {}, path("z.png"), zero),
+                 std::invalid_argument);
+    EXPECT_THROW(TemplateGenerator{}.generate(templateProfile(40, 40), {}, path("neg.png"), neg),
+                 std::invalid_argument);
 }

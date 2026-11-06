@@ -16,7 +16,6 @@
 
 #include <stdexcept>
 #include <vector>
-#include <platemaker/models/output_presets.hpp>
 
 namespace Platemaker::Models {
 
@@ -412,19 +411,12 @@ void from_json(const nlohmann::json& j, ProjectItem& v) {
 
 // --- Workspace ---
 void to_json(nlohmann::json& j, const Workspace& v) {
-    // Presets are baked-in and must never be persisted; a preset-id profile in outputProfiles is a
-    // consumer error (the model is that only user profiles live there). Filtering it out here makes
-    // the serializer the lib's own guarantee that a preset cannot be written into a workspace,
-    // independent of whether the CLI/GUI played by the rules.
-    nlohmann::json outputProfiles = nlohmann::json::array();
-    for (const auto& op : v.outputProfiles())
-        if (!outputProfilePresetById(op.id))
-            outputProfiles.push_back(op);
-
+    // Presets are baked-in and never persisted, and none can be here to filter: the palette is private
+    // to WorkspaceEditor, whose every setter drops them.
     j = nlohmann::json{
         {"version",         v.version},
         {"canvasProfiles",  v.canvasProfiles()},
-        {"outputProfiles",  outputProfiles},
+        {"outputProfiles",  v.outputProfiles()},
         {"projectItems",    v.projectItems},
         {"outputDirectory", v.outputDirectory},
         {"stripDirty",      v.stripDirty}

@@ -120,16 +120,12 @@ std::vector<LinkedComponent> linkedComponents()
                                        std::to_string(archive / 1000 % 1000) + '.' +
                                        std::to_string(archive % 1000);
 
-    return {
-        LinkedComponent{"libvips", vipsVersion, "LGPL-2.1-or-later",
-                        "https://github.com/libvips/libvips", "LGPL-2.1-or-later.txt"},
-        LinkedComponent{"libarchive", archiveVersion, "BSD-2-Clause",
-                        "https://github.com/libarchive/libarchive", "BSD-2-Clause.txt"},
-        LinkedComponent{"nlohmann/json", jsonVersion, "MIT",
-                        "https://github.com/nlohmann/json", "nlohmann_json.MIT.txt"},
-        LinkedComponent{"minipsd-vips", MINIPSD_VERSION_STRING, "MIT",
-                        "https://github.com/ShadobaDev/minipsd", "minipsd-vips.MIT.txt"},
-    };
+    const LinkedComponent libvips{"libvips", vipsVersion, "LGPL-2.1-or-later", "https://github.com/libvips/libvips", "LGPL-2.1-or-later.txt"};
+    const LinkedComponent libarchive{"libarchive", archiveVersion, "BSD-2-Clause", "https://github.com/libarchive/libarchive", "BSD-2-Clause.txt"};
+    const LinkedComponent json{"nlohmann/json", jsonVersion, "MIT", "https://github.com/nlohmann/json", "nlohmann_json.MIT.txt"};
+    const LinkedComponent minipsd{"minipsd-vips", MINIPSD_VERSION_STRING, "MIT", "https://github.com/ShadobaDev/minipsd", "minipsd-vips.MIT.txt"};
+
+    return {libvips, libarchive, json, minipsd};
 }
 
 } // namespace Platemaker::Infrastructure

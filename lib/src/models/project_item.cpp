@@ -169,14 +169,10 @@ std::string ProjectItem::addOverlay(const std::string& assetPath, double xFrac, 
     ov.enabled = true;
     ov.anchorInputUid = anchorInputUid;
 
-    // Hash the content (dedup + staleness). A hash failure is non-fatal: the overlay is still
+    // Hash the content (dedup + staleness). An unreadable asset is non-fatal: the overlay is still
     // registered with an empty sha (no dedup, and a later silent content change won't be caught until
     // it is re-added) — the same tolerance applyProcessingResults() gives an unhashable input.
-    try {
-        ov.sha256 = Infrastructure::FileMetaData::computeFileSha256(assetPath);
-    } catch (const std::exception&) {
-        ov.sha256.clear();
-    }
+    ov.sha256 = Infrastructure::FileMetaData::computeFileSha256(assetPath);
 
     // Dedup by content: if an existing overlay references an asset with the same hash, reuse that stored
     // path so identical content is kept once (the consumer can drop its duplicate file).
@@ -301,12 +297,9 @@ CanvasConfigChange ProjectItem::detectCanvasConfigChange(
     const std::vector<std::string> effectiveIds = effectiveCanvasProfileIds(workspaceProfiles);
     std::vector<const CanvasProfile*> effective;
     effective.reserve(effectiveIds.size());
-    for (const auto& id : effectiveIds) {
-        const auto it = std::find_if(workspaceProfiles.begin(), workspaceProfiles.end(),
-            [&id](const CanvasProfile& cp) { return cp.id == id; });
-        if (it != workspaceProfiles.end())
-            effective.push_back(&*it);
-    }
+    for (const auto& id : effectiveIds)
+        effective.push_back(&*std::find_if(workspaceProfiles.begin(), workspaceProfiles.end(),
+            [&id](const CanvasProfile& cp) { return cp.id == id; }));
 
     // Per-page re-match. For each input, decide whether the profile it would render with *now*
     // differs from the one recorded at the last render.

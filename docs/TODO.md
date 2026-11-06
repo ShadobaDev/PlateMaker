@@ -16,15 +16,13 @@ work happens in.
 - **Cascade.** Whichever section releases first takes its slot; the rest re-derive from the new
   baseline — ship a MINOR before a pending PATCH and the patch re-derives onto the new baseline.
 
-Baseline: **0.5.1 released; 0.6.0 in progress** (`CMakeLists.txt`). The next release bundles the additive
-profile-portability work once staged as 0.5.2 (never tagged — bundles, `WorkspaceEditor::importProfiles`,
-CLI `export/import-profiles`) with the new optional **processing steps** (colour correction + text/bubble
-overlays), and the pipeline API reshaped around `RenderRequest`. It is a **MINOR** in the 0.x shifted
-scale — i.e. breaking — because `ProcessingPipeline::run()` became `render(RenderRequest, …)`, the
-page-domain pair was renamed, and `ImageIO::load()` gained a trailing parameter; a GUI built against
-0.5.1 must be rebuilt (the same reason 0.5.0 bumped for `run()`).
-The additive 0.5.2 work re-derives onto this baseline per the cascade rule. (Released tags: 0.4.0 → 0.4.1
-→ 0.5.0 → 0.5.1.)
+Baseline: **0.6.0 released** (`CMakeLists.txt`). It bundled the additive profile-portability work once
+staged as 0.5.2 (never tagged — bundles, `WorkspaceEditor::importProfiles`, CLI `export/import-profiles`)
+with the new optional **processing steps** (colour correction + text/bubble overlays), and the pipeline
+API reshaped around `RenderRequest`. It is a **MINOR** in the 0.x shifted scale — i.e. breaking —
+because `ProcessingPipeline::run()` became `render(RenderRequest, …)`, the page-domain pair was renamed,
+and `ImageIO::load()` gained a trailing parameter; a GUI built against 0.5.1 must be rebuilt (the same
+reason 0.5.0 bumped for `run()`). (Released tags: 0.4.0 → 0.4.1 → 0.5.0 → 0.5.1 → 0.6.0.)
 
 ---
 
@@ -212,7 +210,7 @@ a `ProfileMatch` fatal path (reserved category — implicit render stays non-fat
 
 ### Import / export input and output profiles
 
-**Lib + CLI — DONE (additive, PATCH; see the `[Unreleased]` changelog).** A portable **profile bundle**
+**Lib + CLI — DONE (additive; shipped in 0.6.0, see its changelog).** A portable **profile bundle**
 (`.platemaker.profiles.json`) carries canvas + output profiles independent of a workspace:
 `Infrastructure::ProfileBundleSerializer` (save/load; strips `templateInfo` + presets on write) and
 `WorkspaceEditor::importProfiles` (fresh ids, template cleared, presets skipped — additive, so the
@@ -258,7 +256,7 @@ Both options could be implemented.
 ### Text and Text bubble creator
   Add to lib an additional step to overlay text and text bubbles during render.
 
-### Lib processing-steps framework — DONE (lib side, 0.6.0); GUI pending
+### Lib processing-steps framework — DONE (0.6.0); two GUI items open
   The lib now runs both features as optional, non-destructive **render-time steps** at two seams —
   **page domain** (colour correction: ICC P3→sRGB + brightness/contrast/saturation, project-wide with
   per-page exclusions) and **strip domain** (text/bubble RGBA overlays, anchored to an input page and
@@ -307,13 +305,18 @@ Both options could be implemented.
 
 ---
 
-## MINOR — pipeline readability and the specification split
+## MINOR — pipeline readability and the specification split — DONE (0.6.0)
+
+Shipped in 0.6.0, every item under *Planned work* below: the phases (`PageRenderer`, `StripBuilder`,
+`SliceWriter`), `render(RenderRequest)`, the renamed page-domain pair, one type per header and the naming
+pass, `ProjectItem`'s operations moved to `ProjectEditor`, and the specification split into the wiki. Kept
+as the record of why.
 
 Nothing here changes behaviour. The library works; it reads harder than it should, and the
 specification has outgrown one file. Both are legibility debts, and the goal is a public API and
 a specification that hold up to outside reading.
 
-Breaking, so a MINOR in the 0.x scale — but **free**, because 0.6.0 is unreleased and already
+Breaking, so a MINOR in the 0.x scale — but **free**, because 0.6.0 was still unreleased and already
 breaking (`ProcessingPipeline::run()` and `ImageIO::load()` changed their mangled symbols this
 cycle, and the GUI already pins in lockstep). Restructuring the same entry point again inside the
 same unreleased version costs no additional rebuild.
@@ -509,7 +512,7 @@ The `ScaledStrip` slice-policy cases were filled in during the black-band / orie
 `PixelBuffer` move-semantics cases and `ScalerTest.ScaleNonExistentFileThrows` were the last three, now
 done (`test_pixel_buffer.cpp`).
 
-### Custom libvips build — drop the GPL dep (licensing) + unused codecs (~9 MB)
+### Custom libvips build — drop the GPL dep (licensing) + unused codecs (~7 MB)
 
 Not for a near release, but strategically important — see the licensing driver below.
 
@@ -524,24 +527,26 @@ offer the lib under a proprietary licence while its shipped runtime contains GPL
 libimagequant is the prerequisite. If PNG quantisation is ever actually needed, libvips can use
 **quantizr (MIT)** instead — a GPL-free swap (needs a Rust toolchain).
 
-**Secondary driver — size (~9 MB).** The prebuilt build also pulls codecs we never use, imported
+**Secondary driver — size (~7 MB).** The prebuilt build also pulls codecs we never use, imported
 directly so the install-time closure cannot prune them:
 
 | DLL | Size | Format |
 |---|---|---|
 | `libaom.dll` | 5.3 MB | AV1 / AVIF |
-| `librsvg-2-2.dll` | 2.5 MB | SVG |
+| `librsvg-2-2.dll` | 2.5 MB | SVG — used since 0.6.0 (SVG overlays), stays |
 | `libheif.dll` | 1.3 MB | HEIF |
 
-~9 MB for formats we neither load nor save (PNG/JPEG/WebP/TIFF only).
+~7 MB of it for formats we neither load nor save. **librsvg stays:** since 0.6.0 an overlay may be SVG,
+loaded through libvips.
 
 **The work.** Replace the FetchContent of the prebuilt zip with a **custom libvips build** (meson) that
 disables the GPL quantiser and the unused loaders — `-Dimagequant=disabled` (the licensing fix), plus
-`-Dheif=disabled -Dsvg=disabled` and dropping aom (the size win) — bringing the package under ~17 MB and,
+`-Dheif=disabled` and dropping aom (the size win; not `-Dsvg=disabled`, see above) — bringing the package
+under ~19 MB and,
 crucially, making the bundled runtime **GPL-free**. This means owning a libvips build (meson/toolchain,
 per-arch, kept in step with the pinned version) instead of downloading an official zip — a real
 maintenance cost, which is why it waits. Applies to both MSVC and MinGW (they share the same web zip).
-No API/behaviour change for the formats we support. When done, update `cmake/third_party.json` +
+No API/behaviour change for the formats we support. When done, update `lib/cmake/third_party.json` +
 `THIRD-PARTY-NOTICES.txt` (the coverage guard will flag the removed DLLs) and this note.
 
 ---
@@ -549,7 +554,8 @@ No API/behaviour change for the formats we support. When done, update `cmake/thi
 ## Release history & coordination
 
 **Shipped:** `0.1.0` → `0.1.1` → `0.2.0` → `0.2.1` → `0.3.0` → `0.3.1` → `0.4.0` (lib);
-GUI `1.0.0` → `1.0.1` → `1.1.0` → `1.2.0` → `1.3.0` → `1.4.0`.
+`0.4.1` → `0.5.0` → `0.5.1` → `0.6.0`; GUI `1.0.0` → `1.0.1` → `1.1.0` → `1.2.0` → `1.3.0` → `1.4.0` →
+`1.4.1` → `1.4.2` → `1.4.3`.
 `0.2.0` broke the API against `0.1.1` (`ProjectItem::sanitize()` gained a required parameter,
 `applyProcessingResults()` two) — breaking, hence the minor. `0.2.1` was additive plus fixes, so a
 patch. `0.2.2`'s additive work (buildInfo, SBOM) folded into `0.3.0`, which also removes/changes the
@@ -557,20 +563,21 @@ preset & CLI API — breaking, hence the minor. `0.3.1` was additive only (edito
 presets, MinGW libvips slimming), so a patch. `0.4.0` (2026-08-05) shipped the **breaking structured-error
 system** (typed `ProcessingError`) plus `duplicateProject` and the checksums/release-CI infra — the first
 release cut through the CI workflow, and **the version used for public promotion (Reddit / itch.io)**.
-`0.4.1` (in progress) is metadata only (VERSIONINFO + `@(#)` marker), so a patch.
+`0.4.1` was metadata only (VERSIONINFO + `@(#)` marker), so a patch. `0.6.0` is breaking (see the
+baseline above), hence the minor.
 
 **Order is forced: lib first.** The GUI pins `LIBPLATEMAKER_VERSION`, which also builds the
 FetchContent URL, so until a lib version is on GitHub Releases anyone without a local
 `LIBPLATEMAKER_DIR` gets a 404. Tag and upload the lib, then the GUI.
 
 **⏭️ Cut releases through the GitHub Actions `Release` workflow**, not a manual local build + upload.
-Pushing a bare version tag runs `.github/workflows/release.yml`: matrix build (MinGW + Linux) →
-provenance attestation → `dist/*` archives + `.sha256` uploaded as Release assets → VirusTotal scan
-(VT_API_KEY secret is set) appended to the release body.
+Pushing a bare version tag runs `.github/workflows/release.yml`: matrix build (MinGW, MSVC, Linux) →
+provenance attestation → the Release, its notes the version's `docs/CHANGELOG.md` section
+(`scripts/release_notes.py`) → `dist/*` archives + `.sha256` uploaded as Release assets → VirusTotal
+scan (VT_API_KEY secret is set) appended to the release body. How to: `docs/GITHUB-RELEASE.md`.
 
 **Lockstep on a lib bump the GUI needs.** The GUI pins the lib version it requires — currently
-`find_package(platemaker 0.4.0 CONFIG REQUIRED)` / `LIBPLATEMAKER_VERSION 0.4.0` (the GUI adopts the
-0.4.0 typed errors) — so an older lib is rejected at configure time. With the config-version file
-`SameMinorVersion`, that pin also rejects a later breaking `0.MINOR`. For the **0.4.1 wave**, releasing
-the lib lets the GUI bump its pin to `0.4.1` so the bundled `libplatemaker.dll` carries the new metadata;
-0.4.1 is additive, so the bump is a one-liner with no code change.
+`LIBPLATEMAKER_VERSION 0.6.0` (`find_package(platemaker ${LIBPLATEMAKER_VERSION} CONFIG REQUIRED)`) —
+so an older lib is rejected at configure time. With the config-version file `SameMinorVersion`, that pin
+also rejects a later breaking `0.MINOR`. A lib PATCH lets the GUI bump its pin with a one-liner and no
+code change.

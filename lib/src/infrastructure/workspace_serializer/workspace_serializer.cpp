@@ -18,6 +18,7 @@
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 
 #include "infrastructure/file/folder_paths.hpp"        // genericUtf8(), relativeInside()
+#include "infrastructure/file/atomic_file.hpp"            // writeTextFileAtomically()
 #include "infrastructure/model_json/model_json.hpp"   // the shared Models JSON codec
 
 #include <platemaker/infrastructure/file/path_utf8.hpp>
@@ -130,17 +131,12 @@ bool isFolderRelative(const std::string& utf8)
 /// save(): writes the relative copy beside every overlay asset that lies inside \p folder.
 void addRelativePaths(nlohmann::json& j, const fs::path& folder)
 {
-    if (!j.contains("projectItems"))
-        return;
-    for (auto& project : j["projectItems"]) {
-        if (!project.contains("stripOverlays"))
-            continue;
+    // \p j is a Workspace just converted: every key is there, of its type.
+    for (auto& project : j["projectItems"])
         for (auto& overlay : project["stripOverlays"])
-            if (overlay.contains("assetPath") && overlay["assetPath"].is_string())
-                if (const std::string rel = relativeInside(utf8ToPath(overlay["assetPath"].get<std::string>()), folder);
-                    !rel.empty())
-                    overlay[k_assetPathRelative] = rel;
-    }
+            if (const std::string rel = relativeInside(utf8ToPath(overlay["assetPath"].get<std::string>()), folder);
+                !rel.empty())
+                overlay[k_assetPathRelative] = rel;
 }
 
 /// load(): turns every relative form back into the absolute path the model holds.
@@ -306,47 +302,14 @@ void WorkspaceSerializer::save(
     const Models::Workspace& workspace,
     const std::string&       filePath) const
 {
-    // Write to a sibling temp file then rename for near-atomic replacement.
-    // The appended name goes back through utf8ToPath() as well: operator/ with a narrow
-    // string would rebuild a path the ambiguous way, reintroducing the bug on the temp file.
-    const fs::path finalPath = utf8ToPath(filePath);
-
     // serialize(), plus what only a location can add: the relative copies of the overlay assets.
+    const fs::path finalPath = utf8ToPath(filePath);
     nlohmann::json j = workspace;
     addRelativePaths(j, fs::absolute(finalPath).parent_path());
     const std::string text = j.dump(4);
 
-    const fs::path tmpPath   =
-        finalPath.parent_path() / utf8ToPath(pathToUtf8(finalPath.filename()) + ".tmp");
-
-    {
-        std::ofstream tmp(tmpPath, std::ios::out | std::ios::trunc);
-        if (!tmp.is_open()) {
-            throw std::runtime_error(
-                "WorkspaceSerializer::save() — cannot open temp file '" +
-                pathToUtf8(tmpPath) + "' for writing");
-        }
-        tmp << text;
-        if (!tmp.good()) {
-            throw std::runtime_error(
-                "WorkspaceSerializer::save() — write error for '" +
-                pathToUtf8(tmpPath) + "'");
-        }
-    } // tmp closed and flushed here
-
-    std::error_code ec;
-    fs::rename(tmpPath, finalPath, ec);
-    if (ec) {
-        // Fallback for cross-device rename (uncommon but possible on Windows).
-        fs::copy_file(tmpPath, finalPath,
-                      fs::copy_options::overwrite_existing, ec);
-        if (!ec) fs::remove(tmpPath, ec);
-        if (ec) {
-            throw std::runtime_error(
-                "WorkspaceSerializer::save() — cannot move temp file to '" +
-                filePath + "': " + ec.message());
-        }
-    }
+    // Whole or not at all: a crash mid-write must not cost the user the workspace they had.
+    writeTextFileAtomically(finalPath, text, "WorkspaceSerializer::save()");
 }
 
 // ---------------------------------------------------------------------------
@@ -355,7 +318,7 @@ void WorkspaceSerializer::save(
 
 void WorkspaceSerializer::migrate(
     Models::Workspace& workspace,
-    int                fromVersion) const
+    int                /*fromVersion*/) const   // no step needs it yet: from_json does them all
 {
     // v1 → v2: removed activeCanvasProfileName / activeOutputProfileName from Workspace;
     //           added OutputProfile::id (back-compat: empty string for profiles missing it);
@@ -364,15 +327,11 @@ void WorkspaceSerializer::migrate(
     // v2 → v3: CanvasProfile::templateInfo (one file) became templates (one entry per format), with
     //           sha256 and format added. Handled in from_json (the "templateInfo" key, finished by
     //           migratedTemplateInfo) — no in-place fixup needed.
-    if (fromVersion < 3)
-        workspace.version = k_currentVersion;
-    if (fromVersion < 2) {
-        workspace.version = k_currentVersion;
-        // Ids for profiles deserialised without one are minted by mintMissingProfileIds()
-        // in load(), which runs for every file version — so there is nothing to do here.
-        // It also relinks the legacy "op-<name>" / "cp-<name>" references that a v1 file
-        // may carry, which this step could not do on its own.
-    }
+    // v1: ids for profiles deserialised without one are minted by mintMissingProfileIds() in load(),
+    //     which runs for every file version and also relinks the legacy "op-<name>" / "cp-<name>"
+    //     references a v1 file may carry — so there is nothing to do here.
+    // What is left is the version the file now has.
+    workspace.version = k_currentVersion;
 }
 
 } // namespace Platemaker::Infrastructure

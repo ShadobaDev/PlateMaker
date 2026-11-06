@@ -219,8 +219,10 @@ void ProcessingPipeline::decodePageToRgba(
     // The library does not own the vips lifecycle, and a consumer without the vips headers cannot call
     // VIPS_INIT itself — it may reach here before any render has initialised vips. VIPS_INIT only does
     // anything on its first successful call (same reasoning as ColourCorrector::applyToRgba).
+    // GCOVR_EXCL_START: VIPS_INIT fails only on a broken install, never once a test has started libvips
     if (VIPS_INIT("platemaker"))
         vips_error_clear(); // a genuine init failure surfaces as a throw from the vips calls below
+    // GCOVR_EXCL_STOP
 
     CanvasProfileMatcher matcher(canvasProfiles, canvasProfileIds);
     const PageRenderer   pages(matcher, /*hasProfiles=*/!canvasProfiles.empty(),

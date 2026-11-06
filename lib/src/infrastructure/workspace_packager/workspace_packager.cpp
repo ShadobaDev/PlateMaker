@@ -17,6 +17,7 @@
 #include <platemaker/infrastructure/workspace_packager/workspace_packager.hpp>
 
 #include "infrastructure/file/folder_paths.hpp"        // genericUtf8(), relativeInside()
+#include "infrastructure/file/atomic_file.hpp"         // publishTempFile()
 #include "infrastructure/model_json/model_json.hpp"   // the shared Models JSON codec
 
 #include <platemaker/infrastructure/file/path_utf8.hpp>
@@ -27,6 +28,10 @@
 
 #include <archive.h>
 #include <archive_entry.h>
+
+#ifndef _WIN32
+#include <locale.h>   // newlocale(), uselocale(): POSIX 2008
+#endif
 
 #include <algorithm>
 #include <cctype>
@@ -53,6 +58,37 @@ namespace fs = std::filesystem;
 constexpr const char* k_inputsDir   = "inputs";     //!< pages: a person opening the zip looks for them here
 constexpr const char* k_externalDir = "external";   //!< anything else the workspace named from elsewhere
 
+/// libarchive hands an entry's name over in the current locale, and on POSIX a process is in "C" (ASCII)
+/// until it calls setlocale(): there a non-ASCII name is lost (ARCHIVE_WARN, the name NULL), even through
+/// archive_entry_pathname_utf8(). The names are UTF-8 whatever the locale, so while it lives this object
+/// puts the calling thread alone in a UTF-8 locale; the process's locale, and other threads', stay as they
+/// are. Windows names files in UTF-16 and needs nothing.
+#ifdef _WIN32
+struct Utf8ThreadLocale {};
+#else
+class Utf8ThreadLocale {
+public:
+    Utf8ThreadLocale()
+        : m_utf8(newlocale(LC_CTYPE_MASK, "C.UTF-8", locale_t{}))
+        , m_previous(m_utf8 ? uselocale(m_utf8) : locale_t{})
+    {
+    }
+    ~Utf8ThreadLocale()
+    {
+        if (m_utf8) {
+            uselocale(m_previous);
+            freelocale(m_utf8);
+        }
+    }
+    Utf8ThreadLocale(const Utf8ThreadLocale&)            = delete;
+    Utf8ThreadLocale& operator=(const Utf8ThreadLocale&) = delete;
+
+private:
+    locale_t m_utf8;       // null where the system has no C.UTF-8: names stay as libarchive gives them
+    locale_t m_previous;
+};
+#endif
+
 /// Names in a package are compared the way the file systems it lands on compare them: without case.
 /// ponytail: ASCII case only — two names differing only in the case of a non-ASCII letter are kept apart.
 std::string foldCase(std::string s)
@@ -73,12 +109,12 @@ std::string foldCase(std::string s)
 class Planner {
 public:
     Planner(PackagePlan& plan, const fs::path& folder, const std::vector<std::string>& reserved)
-        : m_plan(plan)
+        : m_plan(plan), m_given(folder.lexically_normal())
     {
         std::error_code ec;
         m_folder = fs::weakly_canonical(folder, ec);
         if (ec)
-            m_folder = folder.lexically_normal();
+            m_folder = m_given;
         for (const auto& name : reserved)
             m_taken.insert(foldCase(name));
     }
@@ -143,11 +179,12 @@ private:
         return target;
     }
 
-    /// A path from the model, made absolute: a rootless one is in the workspace folder, as load() reads it.
+    /// A path from the model, made absolute: a rootless one is in the workspace folder, as load() reads it —
+    /// spelled as the caller spelled the folder, not canonically (which on Windows expands a short 8.3 name).
     fs::path absoluteOf(const std::string& modelPath) const
     {
         const fs::path p = utf8ToPath(modelPath);
-        return p.has_root_path() ? p : m_folder / p;
+        return p.has_root_path() ? p : m_given / p;
     }
 
     /// The first free name in \p dir (empty = the package root): \p name, then "stem (2).ext", "stem (3).ext", …
@@ -166,17 +203,18 @@ private:
     }
 
     PackagePlan&                                 m_plan;
-    fs::path                                     m_folder;
+    fs::path                                     m_given;    //!< the workspace folder as the caller spelled it
+    fs::path                                     m_folder;   //!< the same, canonical: what identities compare to
     std::vector<Reference>                       m_refs;
     std::unordered_map<std::string, std::string> m_placed;   //!< file identity → its place
     std::unordered_set<std::string>              m_taken;    //!< places given out, case-folded
 };
 
 /// Resets \p key to the empty value of its own type — "", [] or {} — so the copy stays well-formed.
+/// \p o is a model just converted: the key is there.
 void clear(nlohmann::json& o, const char* key)
 {
-    if (o.contains(key))
-        o[key] = nlohmann::json(o[key].type());
+    o[key] = nlohmann::json(o[key].type());
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -205,7 +243,7 @@ bool unsafeTarget(const std::string& target)
     if (target.empty() || target.find('\\') != std::string::npos)
         return true;
     const fs::path p = utf8ToPath(target);
-    if (p.has_root_name() || p.has_root_directory())
+    if (p.has_root_path())   // "/x", and on Windows "C:x" and "C:/x" too
         return true;
     return std::any_of(p.begin(), p.end(), [](const fs::path& part) { return part == ".."; });
 }
@@ -342,17 +380,16 @@ PackagePlan WorkspacePackager::plan(const Models::Workspace& workspace, const st
         }
 
         for (auto& overlay : project["stripOverlays"])
-            if (!overlay.value("assetPath", std::string{}).empty())
+            if (!overlay["assetPath"].get<std::string>().empty())
                 planner.refer(overlay["assetPath"], k_externalDir, name);
     }
 
     // Templates are named relative to the workspace folder already; a relative one is simply in it.
     // Every format a profile has is packaged: a PNG and a PSD are both the user's.
     for (auto& profile : j["canvasProfiles"])
-        if (auto& templates = profile["templates"]; templates.is_array())
-            for (auto& info : templates)
-                if (info.is_object() && !info.value("path", std::string{}).empty())
-                    planner.refer(info["path"], k_externalDir, {});
+        for (auto& info : profile["templates"])
+            if (!info["path"].get<std::string>().empty())
+                planner.refer(info["path"], k_externalDir, {});
 
     planner.settle();
     plan.workspaceJson = j.dump(4);
@@ -470,15 +507,8 @@ bool WorkspacePackager::write(const PackagePlan&       plan,
         fs::remove(tmpPath, ec);
         return false;
     }
-    fs::rename(tmpPath, finalPath, ec);
-    if (ec) {
-        // Across devices a rename cannot work; a copy then does the same job (as WorkspaceSerializer::save()).
-        fs::copy_file(tmpPath, finalPath, fs::copy_options::overwrite_existing, ec);
-        std::error_code ignored;
-        fs::remove(tmpPath, ignored);
-        if (ec)
-            throw refuse("cannot move the package to '" + zipPath + "': " + ec.message());
-    }
+    if (const std::error_code moved = publishTempFile(tmpPath, finalPath, /*copyFallback=*/true))
+        throw refuse("cannot move the package to '" + zipPath + "': " + moved.message());
     return true;
 }
 
@@ -503,6 +533,8 @@ std::optional<UnpackedPackage> WorkspacePackager::unpack(const std::string&     
     const auto     total = fs::file_size(zip, ec);
     if (ec)
         throw refuse("cannot read '" + zipPath + "': " + ec.message());
+
+    [[maybe_unused]] const Utf8ThreadLocale utf8Names{};
 
     // Owned from here on: whatever goes wrong, the half-unpacked folder goes with it.
     struct Reader {
@@ -563,6 +595,7 @@ std::optional<UnpackedPackage> WorkspacePackager::unpack(const std::string&     
                 if (progress)
                     progress(static_cast<std::uint64_t>(archive_filter_bytes(a, -1)), total);
             }
+            file.close();   // flushes: a full disk shows here, not in the destructor where nobody sees it
             if (!file)
                 throw refuse("cannot write '" + pathToUtf8(out) + "'");
         }

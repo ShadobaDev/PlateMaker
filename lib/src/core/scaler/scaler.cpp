@@ -43,7 +43,20 @@
 #include <stdexcept>
 #include <string>
 
-namespace { namespace Log = Platemaker::Infrastructure::Log; }
+namespace {
+
+namespace Log = Platemaker::Infrastructure::Log;
+
+/// Both overloads' bounds: positive, and no wider than libvips makes an image. Past that libvips refuses
+/// the resize factor with only "parameter scale not set".
+void checkTargetWidth(int targetWidth)
+{
+    if (targetWidth <= 0 || targetWidth > VIPS_MAX_COORD)
+        throw std::runtime_error("Scaler::scale() — targetWidth must be 1 to " + std::to_string(VIPS_MAX_COORD) +
+                                 " (got " + std::to_string(targetWidth) + ")");
+}
+
+} // namespace
 
 namespace Platemaker::Core {
 
@@ -53,11 +66,7 @@ namespace Platemaker::Core {
 
 ScaledImage Scaler::scale(const std::string& filePath, int targetWidth) const
 {
-    if (targetWidth <= 0) {
-        throw std::runtime_error(
-            "Scaler::scale() — targetWidth must be > 0 (got " +
-            std::to_string(targetWidth) + ")");
-    }
+    checkTargetWidth(targetWidth);
 
     // Load with VIPS_ACCESS_RANDOM so the whole image is decoded into a flat in-memory buffer, so every
     // downstream op (resize, extract, join, save) can read tiles in any order without the "out of order
@@ -124,11 +133,7 @@ ScaledImage Scaler::scale(const std::string& filePath, int targetWidth) const
 
 ScaledImage Scaler::scale(PixelBuffer buffer, std::string sourceFilePath, int targetWidth) const
 {
-    if (targetWidth <= 0) {
-        throw std::runtime_error(
-            "Scaler::scale() — targetWidth must be > 0 (got " +
-            std::to_string(targetWidth) + ")");
-    }
+    checkTargetWidth(targetWidth);
     if (!buffer.isValid()) {
         throw std::runtime_error(
             "Scaler::scale() — source buffer is invalid (null VipsImage)");

@@ -87,6 +87,20 @@
     },
 
     {
+      "name": "linux-coverage",
+      "displayName": "Linux · GCC · Debug + coverage (gcovr)",
+      "description": "Instrumented Debug build for the coverage report (CI) — NOT for packaging.",
+      "inherits": "linux-debug",
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "--coverage -fprofile-update=atomic",
+        "CMAKE_CXX_FLAGS": "--coverage -fprofile-update=atomic",
+        "CMAKE_EXE_LINKER_FLAGS": "--coverage",
+        "CMAKE_SHARED_LINKER_FLAGS": "--coverage",
+        "CMAKE_MODULE_LINKER_FLAGS": "--coverage"
+      }
+    },
+
+    {
       "name": "mingw-release",
       "displayName": "Windows · MinGW · Release",
       "description": "MinGW GCC (MSYS2) + Ninja, Release.",
@@ -125,6 +139,7 @@
     { "name": "linux-release", "displayName": "Build · Linux Release", "configurePreset": "linux-release", "jobs": 0 },
     { "name": "linux-debug",   "displayName": "Build · Linux Debug",   "configurePreset": "linux-debug",   "jobs": 0 },
     { "name": "linux-asan",    "displayName": "Build · Linux Debug+ASan", "configurePreset": "linux-asan", "jobs": 0 },
+    { "name": "linux-coverage", "displayName": "Build · Linux Debug+coverage", "configurePreset": "linux-coverage", "jobs": 0 },
 
     { "name": "mingw-release", "displayName": "Build · MinGW Release", "configurePreset": "mingw-release", "jobs": 0 },
     { "name": "mingw-debug",   "displayName": "Build · MinGW Debug",   "configurePreset": "mingw-debug",   "jobs": 0 },
@@ -139,6 +154,7 @@
     { "name": "linux-release", "displayName": "Test · Linux Release", "configurePreset": "linux-release", "output": { "outputOnFailure": true } },
     { "name": "linux-debug",   "displayName": "Test · Linux Debug",   "configurePreset": "linux-debug",   "output": { "outputOnFailure": true } },
     { "name": "linux-asan",    "displayName": "Test · Linux Debug+ASan", "configurePreset": "linux-asan",  "output": { "outputOnFailure": true } },
+    { "name": "linux-coverage", "displayName": "Test · Linux Debug+coverage", "configurePreset": "linux-coverage", "output": { "outputOnFailure": true } },
 
     { "name": "mingw-release", "displayName": "Test · MinGW Release", "configurePreset": "mingw-release", "output": { "outputOnFailure": true } },
     { "name": "mingw-debug",   "displayName": "Test · MinGW Debug",   "configurePreset": "mingw-debug",   "output": { "outputOnFailure": true } },

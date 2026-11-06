@@ -17,6 +17,7 @@
 #include <platemaker/infrastructure/profile_bundle_serializer/profile_bundle_serializer.hpp>
 
 #include "infrastructure/model_json/model_json.hpp"   // the shared Models JSON codec
+#include "infrastructure/file/atomic_file.hpp"            // writeTextFileAtomically()
 
 #include <platemaker/infrastructure/file/path_utf8.hpp>
 #include <platemaker/models/output_profile.hpp>        // outputPresetDefById
@@ -108,44 +109,11 @@ void ProfileBundleSerializer::save(
     const std::vector<Models::OutputProfile>& outputProfiles,
     const std::string&                        filePath) const
 {
-    namespace fs = std::filesystem;
-
     const std::string text = serialize(canvasProfiles, outputProfiles);
 
-    // Sibling temp file then rename, mirroring WorkspaceSerializer::save() — a mid-write crash must
-    // not corrupt an existing bundle (a GUI-managed library is the user's whole saved set). Paths go
-    // through utf8ToPath()/pathToUtf8() so non-ASCII locations round-trip on Windows.
-    const fs::path finalPath = utf8ToPath(filePath);
-    const fs::path tmpPath   =
-        finalPath.parent_path() / utf8ToPath(pathToUtf8(finalPath.filename()) + ".tmp");
-
-    {
-        std::ofstream tmp(tmpPath, std::ios::out | std::ios::trunc);
-        if (!tmp.is_open()) {
-            throw std::runtime_error(
-                "ProfileBundleSerializer::save() — cannot open temp file '" +
-                pathToUtf8(tmpPath) + "' for writing");
-        }
-        tmp << text;
-        if (!tmp.good()) {
-            throw std::runtime_error(
-                "ProfileBundleSerializer::save() — write error for '" +
-                pathToUtf8(tmpPath) + "'");
-        }
-    } // tmp closed and flushed here
-
-    std::error_code ec;
-    fs::rename(tmpPath, finalPath, ec);
-    if (ec) {
-        // Fallback for cross-device rename (uncommon but possible on Windows).
-        fs::copy_file(tmpPath, finalPath, fs::copy_options::overwrite_existing, ec);
-        if (!ec) fs::remove(tmpPath, ec);
-        if (ec) {
-            throw std::runtime_error(
-                "ProfileBundleSerializer::save() — cannot move temp file to '" +
-                filePath + "': " + ec.message());
-        }
-    }
+    // Whole or not at all, as WorkspaceSerializer::save(): a crash mid-write must not corrupt an
+    // existing bundle (a GUI-managed library is the user's whole saved set).
+    writeTextFileAtomically(utf8ToPath(filePath), text, "ProfileBundleSerializer::save()");
 }
 
 ProfileBundle ProfileBundleSerializer::load(const std::string& filePath) const

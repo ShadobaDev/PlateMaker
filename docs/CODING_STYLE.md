@@ -173,3 +173,14 @@ src/
 ## Source vs Header Layout
 * Keep matching `.hpp` and `.cpp` files in the **same directory** corresponding to their class or module. Do not separate them into isolated global `include/` and `src/` roots unless explicitly instructed.
 
+# Tests and Coverage
+
+CI fails when a line of the library goes uncovered, or its branches fall below the floor in
+`.github/workflows/ci.yml`. New library code comes with the test that runs it:
+* A path only a failing libvips, libarchive or C library reaches: make that function fail (or return
+  what it never would) from `tests/lib-fault-tests/`, adding a wrapper there if it has none.
+* Code that cannot run at all: delete it.
+* Code no test can reach: mark it `GCOVR_EXCL_LINE` or `GCOVR_EXCL_START`/`STOP` with the reason on the
+  marker, and add it to the table in the wiki's Platform page.
+
+When the branch figure rises, raise the floor to the new whole percent; never lower it.

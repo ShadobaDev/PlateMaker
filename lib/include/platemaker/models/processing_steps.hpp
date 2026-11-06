@@ -130,7 +130,7 @@ inline constexpr std::array<ProcessingStepDef, 2> k_processingStepDefs = {{
         for (const auto& p : pts)
             cs += "(" + std::to_string(p.x) + "," + std::to_string(p.y) + ")";
         return cs;
-    };
+    };   // GCOVR_EXCL_LINE: only exception cleanup is counted here, as at a lone brace
 
     std::string s;
 

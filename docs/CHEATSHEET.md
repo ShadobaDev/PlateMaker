@@ -130,6 +130,17 @@ cmake --build --preset linux-asan
 ctest --preset linux-asan
 ```
 
+## Local coverage report (Linux / WSL, as CI measures it)
+
+```bash
+cmake --preset linux-coverage
+cmake --build --preset linux-coverage
+ctest --preset linux-coverage          # the fault-injection tests run here only (ELF)
+gcovr --root . --filter lib/ --exclude-throw-branches --exclude-unreachable-branches \
+      --exclude-noncode-lines --txt-summary --fail-under-line 100 --fail-under-branch 90 \
+      build/linux-coverage
+```
+
 ## MSVC (secondary)
 
 ```powershell

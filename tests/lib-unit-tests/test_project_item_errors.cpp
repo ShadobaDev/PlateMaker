@@ -93,8 +93,12 @@ TEST(PostRenderErrorTest, InputsAllProcessedTreatsErrorAsSettled)
     ProjectItem p;
     InputFile a; a.uid = "u0"; a.status = FileStatus::Processed; p.getInputImages().push_back(a);
     InputFile b; b.uid = "u1"; b.status = FileStatus::Error;     p.getInputImages().push_back(b);
+    InputFile c; c.uid = "u2"; c.status = FileStatus::Skipped;   p.getInputImages().push_back(c);
 
     EXPECT_TRUE(p.inputsAllProcessed());
+
+    InputFile d; d.uid = "u3"; d.status = FileStatus::Pending;   p.getInputImages().push_back(d);
+    EXPECT_FALSE(p.inputsAllProcessed());
 }
 
 // sanitize() keeps an Error sticky while the file is unreadable, then recovers it once it can be hashed.
@@ -155,6 +159,27 @@ TEST(PostRenderErrorTest, ErrorStatusSurvivesSaveLoad)
     EXPECT_EQ(loaded.projectItems.front().getInputImages().front().status, FileStatus::Error);
 
     fs::remove_all(dir);
+}
+
+// The slices a partial re-render must regenerate: every output not Done, in list order.
+TEST(DirtyOutputsTest, EveryOutputNotDoneIsDirty)
+{
+    ProjectItem p;
+    EXPECT_TRUE(p.dirtyOutputNames().empty()) << "no outputs, nothing to redo";
+
+    const auto out = [](const char* name, FileStatus st) {
+        Models::OutputFile o;
+        o.fileName = name;
+        o.status   = st;
+        return o;
+    };
+    p.getOutputImages() = {out("output_001.png", FileStatus::Done),
+                           out("output_002.png", FileStatus::Modified),
+                           out("output_003.png", FileStatus::Done),
+                           out("output_004.png", FileStatus::Missing),
+                           out("output_005.png", FileStatus::Desynchronized)};
+    EXPECT_EQ(p.dirtyOutputNames(),
+              (std::vector<std::string>{"output_002.png", "output_004.png", "output_005.png"}));
 }
 
 } // namespace

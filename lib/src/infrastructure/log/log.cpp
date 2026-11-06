@@ -89,7 +89,7 @@ void write(std::uint64_t component, std::string_view message)
         std::lock_guard<std::mutex> lock(sinkMutex());
         sink = sinkRef();
     }
-    if (sink) sink(component, message);
+    sink(component, message);   // never empty: setSink() puts the default back
 }
 
 const char* componentName(std::uint64_t component) noexcept

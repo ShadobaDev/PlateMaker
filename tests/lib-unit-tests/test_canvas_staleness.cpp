@@ -21,9 +21,12 @@
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/project_item.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 #include <platemaker/infrastructure/project_editor/project_editor.hpp>
 
@@ -464,6 +467,12 @@ TEST(CanvasConfigChangePreciseTest, AddingAProfileThatMatchesNoPageStaysQuiet)
     EXPECT_FALSE(change.anyChanged()) << "a profile that matches nothing must not invalidate the project";
     EXPECT_FALSE(change.listChanged);
     EXPECT_TRUE(change.changedInputs.empty());
+
+    // Re-matching needs both dimensions, and a render records each only from a real reading, so a
+    // page can carry one. Such a page falls back to the coarse list comparison.
+    for (const auto& [w, h] : {std::pair{1600, 0}, std::pair{0, 10240}})
+        EXPECT_TRUE(makeSizedProject({ws[0]}, "p1", w, h).detectCanvasConfigChange(ws).listChanged)
+            << w << "x" << h;
 }
 
 TEST(CanvasConfigChangePreciseTest, AddingAProfileThatMatchesAPreviouslyUnmatchedPageFlagsOnlyIt)
@@ -631,6 +640,8 @@ TEST(SanitizeCanvasTest, MarginEditDesynchronizesOnlyTheAffectedPages)
 
     EXPECT_EQ(d.inputStatus(2),  FileStatus::Processed);
     EXPECT_EQ(d.outputStatus(2), FileStatus::Done);
+
+    EXPECT_TRUE(d.project.outputsForInput("not-a-page.png").empty()) << "a path that fed nothing";
 }
 
 TEST(SanitizeCanvasTest, AddingAMatchingProfileDesynchronizesOnlyThePagesItMatches)
@@ -752,6 +763,42 @@ TEST(OutputProfileSignatureTest, CatchesFormatAndQualityChanges)
     OutputProfile d = a;
     d.jpegOptions.quality = a.jpegOptions.quality - 1;
     EXPECT_NE(outputProfileSignature(a), outputProfileSignature(d));
+
+    // detectStaleness() compares the stored signature, and the stored slice names for the format.
+    auto project = makeRenderedProject({}, "");   // one slice, "output_001.png"
+    project.outputSignature = outputProfileSignature(a);
+    EXPECT_FALSE(project.detectStaleness({}, a).configurationChanged());
+
+    auto report = project.detectStaleness({}, c);
+    EXPECT_TRUE(report.outputProfileChanged);
+    EXPECT_FALSE(report.outputFormatChanged) << "still PNG";
+
+    report = project.detectStaleness({}, b);
+    EXPECT_TRUE(report.outputProfileChanged);
+    EXPECT_TRUE(report.outputFormatChanged);
+
+    // Without a stored signature only the names can tell, and a name without an extension tells nothing.
+    project.outputSignature.clear();
+    report = project.detectStaleness({}, b);
+    EXPECT_FALSE(report.outputProfileChanged);
+    EXPECT_TRUE(report.outputFormatChanged);
+
+    project.getOutputImages()[0].fileName = "output_001";
+    EXPECT_FALSE(project.detectStaleness({}, b).configurationChanged());
+
+    // Any one axis alone is a configuration change — of a project that has outputs to invalidate.
+    for (const auto& moved : std::vector<std::function<void(StalenessReport&)>>{
+             [](StalenessReport& r) { r.outputProfileChanged = true; },
+             [](StalenessReport& r) { r.outputFormatChanged = true; },
+             [](StalenessReport& r) { r.canvas.listChanged = true; },
+             [](StalenessReport& r) { r.inputCompositionChanged = true; },
+             [](StalenessReport& r) { r.processingStepsChanged = true; }}) {
+        StalenessReport r;
+        moved(r);
+        EXPECT_FALSE(r.configurationChanged());
+        r.hasOutputs = true;
+        EXPECT_TRUE(r.configurationChanged());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -766,6 +813,47 @@ TEST(DistinguishProfileTest, AUniqueNameNeedsNoDistinction)
     const auto d = distinguishProfile({a, b}, a);
     EXPECT_FALSE(d.duplicate);
     EXPECT_TRUE(d.differs.empty());
+}
+
+TEST(DistinguishProfileTest, ANameOfTheSameLengthButOtherLettersIsNotTheSameName)
+{
+    // "3p-m" and "3p-s" are the same length, so the case-insensitive comparison has to look at the
+    // letters; a profile identical in every field but named differently is neither duplicate nor rival.
+    auto a = makeProfile("a", 2200, 8280, 300);
+    a.name = "3p-m";
+    auto b = a;
+    b.id   = "b";
+    b.name = "3p-s";
+    const auto d = distinguishProfile({a, b}, a);
+    EXPECT_FALSE(d.duplicate);
+    EXPECT_TRUE(d.differs.empty());
+}
+
+TEST(DistinguishProfileTest, EveryComponentOfAFieldCounts)
+{
+    // Each colour channel, each margin side and the template format are compared on their own: a
+    // difference in any one of them alone must name its field.
+    const auto base = makeProfile("a", 800, 1280, 10);
+    const auto only = [&](auto change, const char* id) {
+        auto other = base;
+        other.id = id;
+        change(other);
+        return distinguishProfile({base, other}, base).differs;
+    };
+    using F = ProfileField;
+    EXPECT_EQ(only([](CanvasProfile& p) { p.visualColour.g = 1; }, "g"), std::vector<F>{F::Colours});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.visualColour.b = 1; }, "b"), std::vector<F>{F::Colours});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.visualColour.a = 1; }, "al"), std::vector<F>{F::Colours});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.backgroundColour.r = 9; }, "bg"), std::vector<F>{F::Colours});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.margins.top = 11; }, "mt"), std::vector<F>{F::Margins});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.margins.right = 11; }, "mr"), std::vector<F>{F::Margins});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.margins.bottom = 11; }, "mb"), std::vector<F>{F::Margins});
+    EXPECT_EQ(only([](CanvasProfile& p) { p.canvasSize.height = 1281; }, "h"), std::vector<F>{F::CanvasSize});
+    EXPECT_EQ(only([](CanvasProfile& p) {
+                  p.templateSettings.format = p.templateSettings.format == TemplateFormat::Psd
+                                                  ? TemplateFormat::Png : TemplateFormat::Psd;
+              }, "fmt"),
+              std::vector<F>{F::TemplateSettings});
 }
 
 TEST(DistinguishProfileTest, AnIdenticalProfileOfTheSameNameIsADuplicate)
@@ -863,6 +951,13 @@ TEST_F(TemplateCheckTest, AFreshTemplateIsUpToDate)
     EXPECT_EQ(m_entry.sha256, Platemaker::Infrastructure::FileMetaData::computeFileSha256(abs()))
         << "generate() returns the hash of exactly what it wrote";
     EXPECT_TRUE(check({m_profile}).upToDate());
+
+    // A margin of zero is a band of no pixels: it is skipped, not drawn.
+    auto edgeless    = m_profile;
+    edgeless.margins = Margins{0, 10, 10, 0};
+    EXPECT_FALSE(Platemaker::Core::TemplateGenerator{}.generate(
+        edgeless, {}, (m_dir / "templates" / "edgeless.png").string(),
+        Platemaker::Core::TemplateGenerator::optionsFor(edgeless)).empty());
 }
 
 TEST_F(TemplateCheckTest, AMissingFileIsReported)
@@ -871,12 +966,14 @@ TEST_F(TemplateCheckTest, AMissingFileIsReported)
     const auto c = check({m_profile});
     EXPECT_TRUE(c.fileMissing);
     EXPECT_FALSE(c.changedOutside) << "nothing to hash";
+    EXPECT_FALSE(c.upToDate());
 }
 
 TEST_F(TemplateCheckTest, AFileChangedOutsideIsReported)
 {
     { std::ofstream out(m_dir / m_entry.path, std::ios::binary | std::ios::app); out << "x"; }
     EXPECT_TRUE(check({m_profile}).changedOutside);
+    EXPECT_FALSE(check({m_profile}).upToDate());
 
     // An entry migrated from before hashes has none to compare, so it cannot say so.
     m_entry.sha256.clear();
@@ -895,6 +992,14 @@ TEST_F(TemplateCheckTest, AChangedFieldIsNamedWithBothValues)
     EXPECT_EQ(c.differences[1].field, "dpi");
     EXPECT_EQ(c.differences[1].was, "300");
     EXPECT_EQ(c.differences[1].now, "72");
+    EXPECT_FALSE(c.upToDate());
+
+    // A fingerprint of no known shape names every field, each as having had no value.
+    m_entry.fingerprint = "from-an-older-build";
+    const auto        all    = check({m_profile});
+    const std::string fields = Platemaker::Core::TemplateGenerator::canvasSignature(m_profile);
+    EXPECT_EQ(all.differences.size(), static_cast<std::size_t>(std::count(fields.begin(), fields.end(), '=')));
+    for (const auto& d : all.differences) EXPECT_EQ(d.was, "") << d.field;
 }
 
 TEST_F(TemplateCheckTest, AnEntryIsCheckedAsItsOwnFormat)
@@ -922,8 +1027,7 @@ TEST_F(TemplateCheckTest, ASharedPathMattersOnlyWhenTheFileWasOverwritten)
     EXPECT_EQ(c.sharedWith, "3p-m");
     EXPECT_FALSE(c.changedOutside);
 
-    // An identical one may share it — the file would be the same — and a path differing only in case or
-    // slash is the same file on Windows.
+    // An identical one may share it — the file would be the same.
     auto twin = m_profile;
     twin.id = "cp-3";
     twin.templates[0].path = "Templates\\3P-M.png";
@@ -943,6 +1047,16 @@ TEST_F(TemplateCheckTest, WithoutAHashTheLaterWriterDecides)
 
     other.templates[0].fingerprint = Platemaker::Core::TemplateGenerator::canvasSignature(other);
     EXPECT_EQ(check({m_profile, other}).sharedWith, "3p-m") << "later, and not this template";
+    EXPECT_FALSE(check({m_profile, other}).upToDate());
+
+    // A path differing only in case or slash is the same file on Windows; any other name is another file.
+    other.templates[0].path = "Templates\\3P-M.png";
+    EXPECT_EQ(check({m_profile, other}).sharedWith, "3p-m");
+    for (const char* elsewhere : {"templates/3p-n.png", "templates/3p-m-2.png"}) {
+        other.templates[0].path = elsewhere;
+        EXPECT_TRUE(check({m_profile, other}).upToDate()) << elsewhere;
+    }
+    other.templates[0].path = m_entry.path;
 
     other.templates[0].fingerprint = m_entry.fingerprint;
     EXPECT_TRUE(check({m_profile, other}).upToDate()) << "later, but written while the two were alike";

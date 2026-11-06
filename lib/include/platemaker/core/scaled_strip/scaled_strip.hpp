@@ -122,6 +122,8 @@ public:
      *
      * \param image A ScaledImage to append.  Must have the same width as the first
      *              image appended to this strip.
+     * \throws std::invalid_argument if \p image has no buffer, or a width other than the strip's.
+     * \throws std::length_error     if the strip would grow taller than an int counts.
      */
     void append(ScaledImage image);
 

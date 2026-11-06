@@ -221,15 +221,17 @@ TEST(OutputPresetLoadTest, AUserCopyOfAPresetSurvives)
 {
     // A profile with an ordinary id whose settings happen to equal the preset is a copy the user
     // made (e.g. via add-output-profile --from-preset). The migration must leave it alone — only a
-    // profile carrying a preset id, or the legacy op-<name> form, is collapsed.
+    // profile carrying a preset id, or the legacy op-<name> form still equal to it, is collapsed.
     const TempWorkspace ws("usercopy", workspaceJson(
-        presetShapedJson(R"("id": "op-mine", )", "My Webtoon"),
+        presetShapedJson(R"("id": "op-mine", )", "My Webtoon") + ","
+            + presetShapedJson(R"("id": "op-Webtoon Standard", )", "Webtoon Standard", "WebP"),
         projectJson("op-mine")));
 
     const auto loaded = Infrastructure::WorkspaceSerializer{}.load(ws.path());
 
-    ASSERT_EQ(loaded.outputProfiles().size(), 1u);
+    ASSERT_EQ(loaded.outputProfiles().size(), 2u);
     EXPECT_EQ(loaded.outputProfiles()[0].id, "op-mine");
+    EXPECT_EQ(loaded.outputProfiles()[1].id, "op-Webtoon Standard") << "the legacy form, edited since";
     EXPECT_EQ(loaded.projectItems[0].outputProfileId(), "op-mine");
 }
 
@@ -276,8 +278,7 @@ TEST(OutputPresetLoadTest, MigrationIsIdempotent)
 TEST(OutputPresetSaveTest, PresetIsRefusedByTheEditorAndNeverWritten)
 {
     // The palette is private and can only be set through WorkspaceEditor.  Hand it a preset among
-    // the profiles: the editor drops it on the way in (the front-line guarantee), so it is gone
-    // before anything can persist it — and the serializer's own guard keeps it out regardless.
+    // the profiles: the editor drops it on the way in, so it is gone before anything can persist it.
     Models::Workspace ws;
     Infrastructure::WorkspaceEditor(ws).replaceOutputProfiles(
         {Models::webtoonStandardPreset(),          // preset id — must be dropped

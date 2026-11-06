@@ -22,6 +22,8 @@
 
 #include <platemaker/core/processing_pipeline/processing_pipeline.hpp>
 #include <platemaker/core/processing_callbacks/processing_callbacks.hpp>
+#include <platemaker/infrastructure/log/log.hpp>
+#include <platemaker/infrastructure/thumbnail_cache/thumbnail_cache.hpp>
 #include <platemaker/infrastructure/control/cancellation_token.hpp>
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/output_profile.hpp>
@@ -32,6 +34,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <set>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -331,6 +335,376 @@ TEST(ColourCorrectionPipelineTest, ExcludedInputIsNotGraded)
     EXPECT_NEAR(pb[0], pb[1], 2.0) << "graded page must be desaturated (grey)";
     EXPECT_NEAR(pb[1], pb[2], 2.0);
     EXPECT_LT(pb[0], 120.0)        << "graded page must be the luminance grey of red";
+}
+
+// ---------------------------------------------------------------------------
+// Guards, cancellation and partial renders
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Three 100x100 pages → three 100px slices at smallOutput(): output_001..003.png.
+std::vector<Models::InputFile> threePages(const TempDir& tmp)
+{
+    return {input(writePng(tmp, "a.png", 100, 100)),
+            input(writePng(tmp, "b.png", 100, 100)),
+            input(writePng(tmp, "c.png", 100, 100))};
+}
+
+/// Collects the warning lines a render logs.
+struct LogCapture {
+    std::vector<std::string> warnings;
+
+    ProcessingCallbacks callbacks()
+    {
+        ProcessingCallbacks cb;
+        cb.onLog = [this](ProcessingLogLevel level, const std::string& line) {
+            if (level == ProcessingLogLevel::Warning) warnings.push_back(line);
+        };
+        return cb;
+    }
+
+    [[nodiscard]] bool any(const std::string& needle) const
+    {
+        return std::any_of(warnings.begin(), warnings.end(),
+                           [&](const std::string& w) { return w.find(needle) != std::string::npos; });
+    }
+};
+
+} // namespace
+
+// A slice height of 0 used to divide by zero (SIGFPE) before slicing could reject it. Both 0 and a
+// negative height must be the same typed SlicingFailed outcome, and write nothing.
+TEST(RenderGuardTest, NonPositiveSliceHeightIsATypedFailure)
+{
+    for (const int sliceHeight : {0, -100}) {
+        TempDir tmp("sliceh" + std::to_string(sliceHeight));
+        RenderRequest req = request({input(writePng(tmp, "a.png", 100, 300))}, {}, {}, tmp.dir());
+        req.outputProfile.sliceHeight = sliceHeight;
+
+        Infrastructure::CancellationToken cancel;
+        const auto outcome = ProcessingPipeline::render(req, cancel);
+        EXPECT_TRUE(outcome.failed) << "sliceHeight " << sliceHeight;
+        ASSERT_TRUE(outcome.error.has_value());
+        EXPECT_EQ(outcome.error->code,     Models::ProcessingErrorCode::SlicingFailed);
+        EXPECT_EQ(outcome.error->category, Models::ProcessingErrorCategory::Slice);
+        EXPECT_TRUE(outcome.records.empty());
+        EXPECT_FALSE(fs::exists(tmp.file("output_001.png")));
+    }
+}
+
+TEST(RenderCancellationTest, CancelledBeforeStartRendersNothing)
+{
+    TempDir tmp("cancel-early");
+    Infrastructure::CancellationToken cancel;
+    cancel.cancel();
+
+    const auto outcome = ProcessingPipeline::render(request(threePages(tmp), {}, {}, tmp.dir()), cancel);
+    EXPECT_TRUE(outcome.cancelled);
+    EXPECT_FALSE(outcome.failed);
+    EXPECT_TRUE(outcome.records.empty());
+    EXPECT_FALSE(fs::exists(tmp.file("output_001.png")));
+}
+
+TEST(RenderCancellationTest, CancelDuringSlicingKeepsWhatWasSavedAndFlagsTheOutcome)
+{
+    TempDir tmp("cancel-mid");
+    Infrastructure::CancellationToken cancel;
+    std::vector<std::string> saved;
+    ProcessingCallbacks cb;
+    cb.onSliceSaved = [&](const SliceSaved& s) {
+        saved.push_back(s.name);
+        cancel.cancel();   // the user presses Cancel as the first slice lands
+    };
+
+    const auto outcome = ProcessingPipeline::render(request(threePages(tmp), {}, {}, tmp.dir()), cancel, cb);
+    EXPECT_TRUE(outcome.cancelled);
+    EXPECT_FALSE(outcome.failed);
+    ASSERT_EQ(saved, std::vector<std::string>{"output_001.png"});
+    EXPECT_EQ(outcome.records.size(), 1u);
+    EXPECT_FALSE(fs::exists(tmp.file("output_002.png")));
+}
+
+TEST(PartialRenderTest, OnlyRequestedSlicesAreWrittenAndCounted)
+{
+    TempDir tmp("partial");
+    RenderRequest req = request(threePages(tmp), {}, {}, tmp.dir());
+    req.onlySlices = std::unordered_set<std::string>{"output_002.png"};
+
+    std::vector<std::string> skipped;
+    std::vector<int>         totals;
+    ProcessingCallbacks cb;
+    cb.onSliceSkipped = [&](const SliceSkipped& s) { skipped.push_back(s.name); };
+    cb.onProgress     = [&](const ProcessingProgress& p) { totals.push_back(p.sliceTotal); };
+
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::render(req, cancel, cb);
+    ASSERT_FALSE(outcome.failed) << (outcome.error ? outcome.error->message : "");
+    ASSERT_EQ(outcome.records.size(), 1u);
+    EXPECT_EQ(outcome.records[0].fileName, "output_002.png");
+    EXPECT_EQ(skipped, (std::vector<std::string>{"output_001.png", "output_003.png"}));
+    EXPECT_EQ(totals, std::vector<int>{1}) << "progress counts only the slices this run writes";
+    EXPECT_FALSE(fs::exists(tmp.file("output_001.png")));
+    EXPECT_TRUE(fs::exists(tmp.file("output_002.png")));
+}
+
+// ---------------------------------------------------------------------------
+// Slice output: previews, write errors and the safety net
+// ---------------------------------------------------------------------------
+
+TEST(SliceOutputTest, UnusableThumbnailDirectoryOnlyDisablesPreviews)
+{
+    TempDir tmp("thumbdir");
+    RenderRequest req = request(threePages(tmp), {}, {}, tmp.dir());
+    req.thumbnailCacheDir = (fs::path(tmp.file("a.png")) / "cache").string();   // under a file
+
+    LogCapture log;
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::render(req, cancel, log.callbacks());
+    EXPECT_FALSE(outcome.failed);
+    EXPECT_EQ(outcome.records.size(), 3u);
+    EXPECT_TRUE(log.any("Thumbnail previews disabled"));
+}
+
+TEST(SliceOutputTest, FailedPreviewDoesNotFailTheRender)
+{
+    TempDir tmp("thumbfail");
+    RenderRequest req = request(threePages(tmp), {}, {}, tmp.dir());
+    req.thumbnailCacheDir = tmp.file("cache");
+    // Occupy the first slice's thumbnail name with a non-empty directory so publishing it fails.
+    const std::string thumb =
+        Infrastructure::ThumbnailCache(req.thumbnailCacheDir).thumbnailPath(tmp.dir() + "/output_001.png");
+    fs::create_directories(fs::path(thumb) / "occupied");
+
+    LogCapture log;
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::render(req, cancel, log.callbacks());
+    EXPECT_FALSE(outcome.failed);
+    EXPECT_EQ(outcome.records.size(), 3u) << "every slice is still saved";
+    EXPECT_TRUE(log.any("Thumbnail preview for 'output_001.png' skipped"));
+}
+
+TEST(SliceOutputTest, UnwritableOutputDirectoryIsATypedEncodeError)
+{
+    TempDir tmp("nodir");
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::render(
+        request(threePages(tmp), {}, {}, tmp.file("does-not-exist")), cancel);
+
+    EXPECT_TRUE(outcome.failed);
+    ASSERT_TRUE(outcome.error.has_value());
+    EXPECT_EQ(outcome.error->code,     Models::ProcessingErrorCode::SliceEncodeFailed);
+    EXPECT_EQ(outcome.error->category, Models::ProcessingErrorCategory::Encode);
+    EXPECT_EQ(outcome.error->slice, "output_001.png");
+    EXPECT_TRUE(outcome.records.empty()) << "the run stops at the first failed save";
+}
+
+TEST(SliceOutputTest, OccupiedOutputNameIsReportedAsLocked)
+{
+    TempDir tmp("locked");
+    fs::create_directories(fs::path(tmp.file("output_002.png")) / "occupied");
+
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::render(request(threePages(tmp), {}, {}, tmp.dir()), cancel);
+    EXPECT_TRUE(outcome.failed);
+    ASSERT_TRUE(outcome.error.has_value());
+    EXPECT_EQ(outcome.error->code,     Models::ProcessingErrorCode::OutputLocked);
+    EXPECT_EQ(outcome.error->category, Models::ProcessingErrorCategory::Io);
+    EXPECT_EQ(outcome.error->slice, "output_002.png");
+    EXPECT_EQ(outcome.records.size(), 1u) << "output_001 was saved before the locked one";
+}
+
+TEST(SliceOutputTest, OverlayThatCannotBeCompositedFailsTheRender)
+{
+    // A complex-valued page (kept as such by the libvips-native format) renders into a slice no blend
+    // can be applied to. An overlay over it must fail the run with a typed encode error.
+    TempDir tmp("ovlfail");
+    std::string page = tmp.file("complex.v");
+    {
+        VipsImage* black = nullptr;
+        VipsImage* cx    = nullptr;
+        ASSERT_EQ(vips_black(&black, 100, 100, "bands", 3, nullptr), 0) << vips_error_buffer();
+        ASSERT_EQ(vips_cast(black, &cx, VIPS_FORMAT_COMPLEX, nullptr), 0) << vips_error_buffer();
+        g_object_unref(black);
+        ASSERT_EQ(vips_image_write_to_file(cx, page.c_str(), nullptr), 0) << vips_error_buffer();
+        g_object_unref(cx);
+    }
+    RenderRequest req = request({input(page)}, {}, {}, tmp.dir());
+    Models::StripOverlay ov;
+    ov.uid       = "ovl-1";
+    ov.assetPath = writeSolidPng(tmp, "bubble.png", 20, 20, 255, 255, 255);   // colour, absolute placement
+    req.stripOverlays = {ov};
+
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::render(req, cancel);
+    EXPECT_TRUE(outcome.failed);
+    ASSERT_TRUE(outcome.error.has_value());
+    EXPECT_EQ(outcome.error->code, Models::ProcessingErrorCode::SliceEncodeFailed);
+    EXPECT_NE(outcome.error->message.find("composite overlays"), std::string::npos) << outcome.error->message;
+    vips_error_clear();
+}
+
+// The outer guard turns anything that escapes the typed blocks — here a consumer callback that throws —
+// into a typed Unexpected/Internal failure instead of unwinding out of render().
+TEST(RenderSafetyNetTest, ThrowingCallbackBecomesATypedUnexpectedFailure)
+{
+    TempDir tmp("net");
+    const auto runWith = [&](std::function<void()> raise) {
+        ProcessingCallbacks cb;
+        cb.onSlicingStarted = [&](const SlicingStarted&) { raise(); };
+        Infrastructure::CancellationToken cancel;
+        return ProcessingPipeline::render(request(threePages(tmp), {}, {}, tmp.dir()), cancel, cb);
+    };
+
+    const auto standard = runWith([] { throw std::runtime_error("consumer broke"); });
+    EXPECT_TRUE(standard.failed);
+    ASSERT_TRUE(standard.error.has_value());
+    EXPECT_EQ(standard.error->code,     Models::ProcessingErrorCode::Unexpected);
+    EXPECT_EQ(standard.error->category, Models::ProcessingErrorCategory::Internal);
+    EXPECT_NE(standard.error->message.find("consumer broke"), std::string::npos);
+
+    const auto foreign = runWith([] { throw 42; });
+    EXPECT_TRUE(foreign.failed);
+    ASSERT_TRUE(foreign.error.has_value());
+    EXPECT_EQ(foreign.error->code, Models::ProcessingErrorCode::Unexpected);
+    EXPECT_NE(foreign.error->message.find("non-standard"), std::string::npos);
+}
+
+// With canvas profiles in play the header is read up front; a file without one is a typed skip — and
+// a render with no onInput listener still records it in skippedPages.
+TEST(ProcessingErrorTest, UnreadableHeaderWithProfilesIsSkippedWithoutAListener)
+{
+    TempDir tmp("noheader");
+    const std::string good = writePng(tmp, "good.png", 100, 100);
+    const std::string bad  = tmp.file("bad.png");
+    { std::ofstream(bad, std::ios::binary) << "not an image"; }
+
+    const auto cp = profile("cp-1", "Square", 100, 100);
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::render(
+        request({input(good), input(bad)}, {cp}, {cp.id}, tmp.dir()), cancel);
+    EXPECT_FALSE(outcome.failed);
+    EXPECT_TRUE(contains(outcome.skippedPages, bad));
+    EXPECT_EQ(outcome.records.size(), 1u);
+    vips_error_clear();
+}
+
+// A margin profile and a grade together: the page is graded, then cropped, then scaled.
+TEST(ColourCorrectionPipelineTest, GradeAndMarginCropApplyTogether)
+{
+    TempDir tmp("cc-margins");
+    const std::string page = writeSolidPng(tmp, "a.png", 200, 200, 220, 30, 30);
+    auto cp = profile("cp-1", "Margined", 200, 200);
+    cp.margins = {50, 0, 50, 0};   // 200x200 → crop to 200x100 → scale to 100x50
+
+    RenderRequest req = request({input(page)}, {cp}, {cp.id}, tmp.dir());
+    req.outputProfile.sliceHeight = 50;
+    req.colourCorrection.saturation = 0.0;
+
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::render(req, cancel);
+    ASSERT_FALSE(outcome.failed) << (outcome.error ? outcome.error->message : "");
+    ASSERT_EQ(outcome.records.size(), 1u) << "the crop leaves exactly one 50px slice";
+    const auto p = readPixel(tmp.file("output_001.png"), 50, 25);
+    ASSERT_GE(p.size(), 3u);
+    EXPECT_NEAR(p[0], p[1], 2.0) << "the grade ran on the margin path";
+    EXPECT_NEAR(p[1], p[2], 2.0);
+}
+
+TEST(PartialRenderTest, CropPolicyCountsOnlyFullSlices)
+{
+    // 100x250 → strip 250px, slices of 100: Crop drops the 50px tail, so the run announces 2 slices.
+    TempDir tmp("crop-count");
+    RenderRequest req = request({input(writePng(tmp, "tall.png", 100, 250))}, {}, {}, tmp.dir());
+    req.outputProfile.lastSlicePolicy = Models::LastSlicePolicy::Crop;
+
+    int announced = -1;
+    ProcessingCallbacks cb;
+    cb.onSlicingStarted = [&](const SlicingStarted& s) { announced = s.expectedSliceCount; };
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::render(req, cancel, cb);
+    ASSERT_FALSE(outcome.failed);
+    EXPECT_EQ(announced, 2);
+    EXPECT_EQ(outcome.records.size(), 2u);
+}
+
+TEST(PartialRenderTest, FilterWorksWithoutASkipListener)
+{
+    TempDir tmp("partial-quiet");
+    RenderRequest req = request(threePages(tmp), {}, {}, tmp.dir());
+    req.onlySlices = std::unordered_set<std::string>{"output_003.png"};
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::render(req, cancel);   // no callbacks at all
+    ASSERT_FALSE(outcome.failed);
+    ASSERT_EQ(outcome.records.size(), 1u);
+    EXPECT_EQ(outcome.records[0].fileName, "output_003.png");
+}
+
+TEST(RenderCancellationTest, CancelOnTheLastFullSliceDropsTheTail)
+{
+    // Boundary: the cancel lands while the last full slice is saved, so the short tail is never cut.
+    TempDir tmp("cancel-tail");
+    RenderRequest req = request({input(writePng(tmp, "tall.png", 100, 250))}, {}, {}, tmp.dir());
+    req.outputProfile.lastSlicePolicy = Models::LastSlicePolicy::KeepAsIs;
+
+    Infrastructure::CancellationToken cancel;
+    ProcessingCallbacks cb;
+    cb.onSliceSaved = [&](const SliceSaved& s) { if (s.sliceIndex == 1) cancel.cancel(); };
+    const auto outcome = ProcessingPipeline::render(req, cancel, cb);
+    EXPECT_TRUE(outcome.cancelled);
+    EXPECT_EQ(outcome.records.size(), 2u);
+    EXPECT_FALSE(fs::exists(tmp.file("output_003.png")));
+}
+
+// With every diagnostic channel switched on, a render that exercises each step must report from each
+// of them — the channels a user is told to enable when filing a bug.
+TEST(RenderDiagnosticsTest, EveryStepReportsOnItsChannelWhenEnabled)
+{
+    namespace Log = Infrastructure::Log;
+    TempDir tmp("diag");
+    const std::string a = writeSolidPng(tmp, "a.png", 200, 200, 220, 30, 30);
+    const std::string b = writeSolidPng(tmp, "b.png", 200, 200, 30, 220, 30);
+    auto cp = profile("cp-1", "Margined", 200, 200);
+    cp.margins = {10, 10, 10, 10};
+
+    RenderRequest req = request({input(a), input(b)}, {cp}, {cp.id}, tmp.dir());
+    req.colourCorrection.saturation = 0.5;
+    req.thumbnailCacheDir = tmp.file("thumbs");
+    Models::StripOverlay ov;
+    ov.uid       = "ovl-1";
+    ov.assetPath = writeSolidPng(tmp, "bubble.png", 20, 20, 255, 255, 255);
+    req.stripOverlays = {ov};
+
+    std::set<std::uint64_t> heard;
+    Log::setSink([&](std::uint64_t component, std::string_view) { heard.insert(component); });
+    Log::enable(Log::All);
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::render(req, cancel);
+    Log::disable(Log::All);
+    Log::setSink({});
+
+    ASSERT_FALSE(outcome.failed) << (outcome.error ? outcome.error->message : "");
+    for (const std::uint64_t c : {Log::ProcessingPipeline, Log::Scaler, Log::ScaledStrip, Log::Memory,
+                                  Log::ColourCorrector, Log::StripOverlayCompositor})
+        EXPECT_TRUE(heard.count(c)) << Log::componentName(c) << " stayed silent";
+}
+
+// A black-and-white bubble is the commonest overlay there is. Saved as a greyscale PNG it loads as one
+// band; unless it becomes sRGB before its alpha, compositing embeds a two-band layer with a four-value
+// transparent background, which libvips refuses, and the whole render fails.
+TEST(SliceOutputTest, GreyscaleOverlayIsComposited)
+{
+    TempDir tmp("grey-ovl");
+    RenderRequest req = request(threePages(tmp), {}, {}, tmp.dir());
+    Models::StripOverlay ov;
+    ov.uid       = "ovl-1";
+    ov.assetPath = writePng(tmp, "bubble.png", 20, 20);   // 1-band greyscale PNG
+    req.stripOverlays = {ov};
+
+    Infrastructure::CancellationToken cancel;
+    const auto outcome = ProcessingPipeline::render(req, cancel);
+    EXPECT_FALSE(outcome.failed) << (outcome.error ? outcome.error->message : "");
+    EXPECT_EQ(outcome.records.size(), 3u);
 }
 
 } // namespace Platemaker::Core

@@ -25,6 +25,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <regex>
 #include <string>
 #include <utility>
@@ -139,6 +140,16 @@ TEST(ThumbnailCacheTest, ReusesCacheWhenSourceUnchanged)
     const std::string thumb2 = cache.getOrGenerate(src);
     EXPECT_EQ(thumb2, thumb1);
     EXPECT_EQ(fs::last_write_time(thumb2), thumbT1) << "an unchanged source should not be regenerated";
+
+    // An empty thumbnail (a write cut short) is no thumbnail: it is made again.
+    std::ofstream(thumb1, std::ios::binary | std::ios::trunc).close();
+    EXPECT_FALSE(cache.isCached(src));
+    EXPECT_EQ(cache.getOrGenerate(src), thumb1);
+    EXPECT_GT(fs::file_size(thumb1), 0u);
+
+    // A source that is gone cannot vouch for its thumbnail, so it is read again — and that fails.
+    fs::remove(src);
+    EXPECT_THROW((void)cache.getOrGenerate(src), std::exception);
 }
 
 // --- in-RAM overload: generate(sourceFilePath, PixelBuffer) — the Arch C pre-warm path ---------------
@@ -214,6 +225,72 @@ TEST(ThumbnailCacheTest, ThumbnailFilenameCarriesCacheVersionToken)
     const std::string thumb = cache.thumbnailPath(tmp.file("photo.jpg"));
     EXPECT_TRUE(std::regex_search(thumb, std::regex(R"(\.v[0-9]+\.png$)")))
         << "thumbnail filename lacks a .vN cache-generation token: " << thumb;
+}
+
+// --- failures: every one is a throw, and none leaves a partial thumbnail behind --------------------
+
+TEST(ThumbnailCacheTest, CacheDirectoryThatCannotBeCreatedIsRejected)
+{
+    TempDir tmp("baddir");
+    const std::string file = writePng(tmp.file("not-a-dir.png"), 4, 4);
+    // A directory cannot be created beneath a regular file.
+    EXPECT_THROW(ThumbnailCache((fs::path(file) / "cache").string()), std::runtime_error);
+}
+
+TEST(ThumbnailCacheTest, UndecodableSourceThrows)
+{
+    TempDir tmp("undecodable");
+    ThumbnailCache cache(tmp.file("cache"));
+    EXPECT_THROW((void)cache.getOrGenerate(tmp.file("absent.png")), std::runtime_error);
+    EXPECT_FALSE(fs::exists(cache.thumbnailPath(tmp.file("absent.png"))));
+    vips_error_clear();
+}
+
+TEST(ThumbnailCacheTest, EmptyInRamImageThrows)
+{
+    TempDir tmp("emptyram");
+    ThumbnailCache cache(tmp.file("cache"));
+    EXPECT_THROW(cache.generateFromImage(tmp.file("output_001.png"), Core::PixelBuffer{}), std::runtime_error);
+}
+
+TEST(ThumbnailCacheTest, InRamImageThatCannotBeShrunkThrows)
+{
+    // A complex-valued image has no route to sRGB, so vips_thumbnail_image refuses it.
+    TempDir tmp("complexram");
+    ThumbnailCache cache(tmp.file("cache"));
+    VipsImage* cx = nullptr;
+    ASSERT_EQ(vips_cast(blackBuffer(8, 8).vipsImage(), &cx, VIPS_FORMAT_COMPLEX, nullptr), 0) << vips_error_buffer();
+    EXPECT_THROW(cache.generateFromImage(tmp.file("output_001.png"), Core::PixelBuffer{cx}), std::runtime_error);
+    EXPECT_FALSE(fs::exists(cache.thumbnailPath(tmp.file("output_001.png"))));
+    vips_error_clear();
+}
+
+TEST(ThumbnailCacheTest, TemporaryFileThatCannotBeWrittenThrows)
+{
+    // The thumbnail is written to "<thumb>.pmtmp" first; a non-empty directory in that place makes the
+    // PNG save fail, which must surface as a throw with no thumbnail published.
+    TempDir tmp("tmpblocked");
+    ThumbnailCache cache(tmp.file("cache"));
+    const std::string src = tmp.file("output_001.png");
+    fs::create_directories(fs::path(cache.thumbnailPath(src) + ".pmtmp") / "occupied");
+
+    EXPECT_THROW(cache.generateFromImage(src, blackBuffer(40, 20)), std::runtime_error);
+    EXPECT_FALSE(cache.isCached(src));
+    vips_error_clear();
+}
+
+TEST(ThumbnailCacheTest, ThumbnailThatCannotBePublishedThrows)
+{
+    // The final rename onto the thumbnail's own name fails when a non-empty directory holds it. The
+    // decoded-from-file path must throw and remove its temporary.
+    TempDir tmp("publishblocked");
+    ThumbnailCache cache(tmp.file("cache"));
+    const std::string src   = writePng(tmp.file("page.png"), 40, 20);
+    const std::string thumb = cache.thumbnailPath(src);
+    fs::create_directories(fs::path(thumb) / "occupied");
+
+    EXPECT_THROW((void)cache.getOrGenerate(src), std::runtime_error);
+    EXPECT_FALSE(fs::exists(thumb + ".pmtmp"));
 }
 
 } // namespace

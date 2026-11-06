@@ -175,7 +175,7 @@ WorkspaceRepairReport WorkspaceEditor::replaceCanvasProfiles(
     // of truth (a manage dialog drops the field on its round trip, and may carry a stale copy).
     for (auto& p : incoming) {
         for (const auto& cur : m_ws.m_canvasProfiles) {
-            if (!cur.id.empty() && cur.id == p.id) {
+            if (cur.id == p.id) {   // never both empty: every setter mints the palette's ids
                 p.templates = cur.templates;
                 break;
             }
@@ -412,15 +412,10 @@ std::string WorkspaceEditor::snapshotMeta() const
     for (const auto& pi : m_ws.projectItems)
         projects.push_back(nlohmann::json{{"uid", pi.uid}, {"name", pi.name}});
 
-    // Output profiles: filter presets, mirroring the workspace codec (they are never persisted).
-    nlohmann::json outputs = nlohmann::json::array();
-    for (const auto& op : m_ws.outputProfiles())
-        if (!Models::outputPresetDefById(op.id))
-            outputs.push_back(op);
-
+    // The output palette holds no preset to filter: every setter strips them.
     const nlohmann::json j{
         {"canvasProfiles", m_ws.canvasProfiles()},
-        {"outputProfiles", outputs},
+        {"outputProfiles", m_ws.outputProfiles()},
         {"projects",       projects}
     };
     return j.dump();

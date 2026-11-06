@@ -19,6 +19,7 @@
 #define PLATEMAKER_MODELS_COLOUR_CORRECTION_HPP
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -83,13 +84,26 @@ struct ColourCorrection {
 };
 
 /**
+ * \brief How far a grade setting may sit from its neutral value and still count as untouched.
+ *
+ * A setting off by \c d moves a pixel by at most \c d times its largest value (brightness lifts by
+ * \c d·max; contrast and saturation scale by \c d about a point inside the range). At a millionth that
+ * is under a tenth of one 16-bit level, the finest the renderer writes, so no pixel can change — while
+ * a value a slider or a JSON round trip leaves a hair off its default still reads as neutral.
+ */
+inline constexpr double k_neutralTolerance = 1e-6;
+
+//! True when \p value is within \c k_neutralTolerance of the setting's \p neutral value.
+[[nodiscard]] inline bool isNeutralValue(double value, double neutral) noexcept
+{
+    return std::abs(value - neutral) <= k_neutralTolerance;
+}
+
+/**
  * \brief True when this grade would leave every pixel exactly as it found it.
  *
  * The one test for "is this project graded", asked by the pipeline, by the staleness signature and by
  * any consumer previewing the grade — so that none of them can answer it differently.
- *
- * Compared exactly against the neutral values rather than within a tolerance: these are stored numbers
- * a user set, not computed ones, and a slider returned to its default has to read as untouched.
  *
  * \c excludedInputUids is deliberately not consulted.  Excluding pages from a grade that changes
  * nothing excludes them from nothing, and counting it would make a project "graded" with no way for
@@ -97,8 +111,8 @@ struct ColourCorrection {
  */
 [[nodiscard]] inline bool isNeutral(const ColourCorrection& cc) noexcept
 {
-    return cc.brightness == 0.0 && cc.contrast == 1.0 && cc.saturation == 1.0
-        && !hasAnyCurve(cc.curves);
+    return isNeutralValue(cc.brightness, 0.0) && isNeutralValue(cc.contrast, 1.0)
+        && isNeutralValue(cc.saturation, 1.0) && !hasAnyCurve(cc.curves);
 }
 
 } // namespace Platemaker::Models

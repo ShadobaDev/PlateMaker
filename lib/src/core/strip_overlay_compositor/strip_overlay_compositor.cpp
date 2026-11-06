@@ -94,6 +94,18 @@ PixelBuffer StripOverlayCompositor::rasterizeOverlay(const std::string& assetPat
         img = resized;
     }
 
+    // Into sRGB first, as ScaledStrip folds its pages: a greyscale bubble, the commonest there is, loads
+    // as one band (two with alpha), and compositing needs three colours. A 16-bit image comes down to
+    // 8 bits here too, its values scaled rather than clipped.
+    if (img->Type != VIPS_INTERPRETATION_sRGB && img->Type != VIPS_INTERPRETATION_RGB) {
+        VipsImage* rgb = nullptr;
+        const int rc = vips_colourspace(img, &rgb, VIPS_INTERPRETATION_sRGB, nullptr);
+        g_object_unref(img);
+        if (rc != 0)
+            return {};
+        img = rgb;
+    }
+
     // Promote to RGBA so compositing has a consistent 4-band layout (an opaque bubble gains a
     // fully-opaque alpha; an RGBA bubble is untouched — svgload already returns 4 bands).
     if (!vips_image_hasalpha(img)) {

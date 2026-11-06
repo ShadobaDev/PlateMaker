@@ -1,0 +1,118 @@
+# Builds and tests libplatemaker and the CLI on every released toolchain: the GoogleTest unit tests and
+# the pytest CLI tests (job "test"), then the same tests on Linux, instrumented, for the coverage report
+# sent to Coveralls (job "coverage"). The README's CI and coverage badges are this workflow's on main.
+# Branches run nothing until a pull request is ready for review (drafts are skipped); after that, each
+# push to it runs again and cancels the run it replaces.
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    types: [ opened, synchronize, reopened, ready_for_review ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    if: ${{ !github.event.pull_request.draft }}
+    name: ${{ matrix.preset }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # windows-2022, not windows-latest: the msvc preset's generator is "Visual Studio 17 2022".
+          - { os: windows-2022,   preset: msvc-release }
+          - { os: windows-latest, preset: mingw-release }
+          - { os: ubuntu-latest,  preset: linux-release }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # pytest for the CLI tests, in the Python CMake is pointed at below; without it they are skipped.
+      - id: python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: python -m pip install -r tests/cli-tests/requirements.txt
+
+      # Windows / MinGW: the toolchain release.yml builds with. path-type inherit keeps the Python above
+      # reachable from the msys2 shell.
+      - if: matrix.preset == 'mingw-release'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          path-type: inherit
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+
+      # Linux: the system's libvips through pkg-config, as release.yml.
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build pkg-config libvips-dev
+
+      - name: Configure, build, test (MinGW)
+        if: matrix.preset == 'mingw-release'
+        shell: msys2 {0}
+        run: |
+          cmake --preset mingw-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}"
+          cmake --build --preset mingw-release
+          ctest --preset mingw-release
+
+      - name: Configure, build, test
+        if: matrix.preset != 'mingw-release'
+        run: |
+          cmake --preset ${{ matrix.preset }} "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}"
+          cmake --build --preset ${{ matrix.preset }}
+          ctest --preset ${{ matrix.preset }}
+
+  # The same tests, instrumented (preset linux-coverage), and the coverage of the library.
+  coverage:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build pkg-config libvips-dev
+
+      - id: python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: python -m pip install gcovr -r tests/cli-tests/requirements.txt
+
+      - name: Configure, build, test
+        run: |
+          cmake --preset linux-coverage "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}"
+          cmake --build --preset linux-coverage
+          ctest --preset linux-coverage
+
+      # Library code only (lib/src, lib/include): the CLI, the tests and the fetched dependencies are
+      # compiled instrumented too, but are not what this report measures.
+      # --exclude-throw-branches: the exception edges every call adds would drown the real branches.
+      # --exclude-unreachable-branches: the branches gcc gives lines with no code (a closing brace's
+      # cleanup on an exception's way out), which no test can take.
+      # --exclude-noncode-lines: the same lines, uncovered — the cleanup is counted as a line there.
+      # Code no test can reach is marked GCOVR_EXCL with its reason (the list: wiki, Platform).
+      # The floors fail the job: every line is covered, and branches stay at 90% or above. Raise the
+      # branch floor as coverage grows; never lower it.
+      - name: Coverage report
+        run: |
+          status=0
+          gcovr --root . --filter lib/ --exclude-throw-branches --exclude-unreachable-branches \
+                --exclude-noncode-lines --cobertura coverage.xml --txt coverage.txt --txt-summary \
+                --fail-under-line 100 --fail-under-branch 90 build/linux-coverage || status=$?
+          { echo '```'; cat coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
+      - name: Upload to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          file: coverage.xml
+          fail-on-error: false   # a Coveralls outage must not turn CI red

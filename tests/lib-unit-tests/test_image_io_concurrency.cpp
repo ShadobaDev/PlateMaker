@@ -99,6 +99,11 @@ private:
 // reader this reproduces the exact failure the user hit ("unable to open for write, Invalid argument").
 TEST(ImageIoConcurrencyTest, InPlaceWriteRacesAConcurrentThumbnailReader)
 {
+#ifndef _WIN32
+    // On POSIX the write succeeds and truncates the file under the reader's mapping instead, and the
+    // reader dies of SIGBUS (or a libvips assertion), taking the whole test process with it.
+    GTEST_SKIP() << "the in-place race is Windows-specific; on POSIX it kills the reader's process";
+#endif
     const fs::path dir = fs::temp_directory_path() / "pm-ioconc-inplace";
     fs::remove_all(dir); fs::create_directories(dir);
     const std::string path = (dir / "output_001.jpg").string();

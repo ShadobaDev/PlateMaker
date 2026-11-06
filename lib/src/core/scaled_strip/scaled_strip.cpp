@@ -25,6 +25,7 @@
 #include <vips/vips.h>
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -77,6 +78,17 @@ void ScaledStrip::memTrace(const char* phase) const
 
 void ScaledStrip::append(ScaledImage image)
 {
+    // Refused here, by name, rather than as a libvips extract_area error when slicing reaches the page.
+    const std::string& name = image.sourceFilePath;
+    if (!image.buffer.isValid())
+        throw std::invalid_argument("ScaledStrip::append() — '" + name + "' has no image");
+    if (m_width != 0 && image.buffer.width() != m_width)
+        throw std::invalid_argument("ScaledStrip::append() — '" + name + "' is " +
+                                    std::to_string(image.buffer.width()) + " px wide; the strip is " +
+                                    std::to_string(m_width));
+    if (image.buffer.height() > std::numeric_limits<int>::max() - m_totalHeight)
+        throw std::length_error("ScaledStrip::append() — '" + name + "' would make the strip taller than " +
+                                std::to_string(std::numeric_limits<int>::max()) + " px");
     if (m_width == 0) {
         m_width = image.buffer.width();
     }
@@ -135,11 +147,10 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
         if (entryEndY <= sliceStartY) continue; // entirely above this slice
         if (entry.startY >= sliceEndY) break;   // entirely below — entries are ordered
 
-        // An overlapping entry must still hold its pixels. If it does not,
-        // releaseConsumedEntries() ran ahead of the slice cursor — a logic error here,
-        // not bad input, and one that would otherwise surface as a confusing vips failure.
+        // An overlapping entry must still hold its pixels. If it does not, an earlier sliceAll()
+        // released it — a strip is sliced once — and a refusal beats a confusing vips failure. Nothing
+        // is extracted yet: released entries are always the first ones.
         if (!entry.image.buffer.isValid()) {
-            for (VipsImage* p : parts) g_object_unref(p);
             throw std::runtime_error(
                 "ScaledStrip::buildSlice() — source '" + entry.image.sourceFilePath +
                 "' overlaps slice " + std::to_string(index) +
@@ -175,11 +186,13 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
         parts.push_back(part);
     }
 
+    // GCOVR_EXCL_START: our own invariant (sliceAll() asks only for slices inside the strip)
     if (parts.empty()) {
         throw std::runtime_error(
             "ScaledStrip::buildSlice() — no source entries overlap slice " +
             std::to_string(index));
     }
+    // GCOVR_EXCL_STOP
 
     if (parts.size() == 1) {
         // Single-source slice: no join needed.
@@ -298,12 +311,14 @@ void ScaledStrip::normalizeBandCounts()
         if (uniform) return;
     }
 
+    // Every buffer is live from here on: only a run that got past this point releases one, and that run
+    // left the strip uniform, so a later run returns above.
+
     // Pass 1: fold any non-RGB colourspace (grayscale, CMYK, …) into sRGB. Lossless for grayscale
     // (luma is replicated across the three bands); already-RGB/RGBA pixels are left untouched. After
     // this every entry is 3-band (RGB) or 4-band (RGBA).
     for (auto& entry : m_entries) {
         VipsImage* cur = entry.image.buffer.vipsImage();
-        if (!cur) continue;
         const VipsInterpretation interp = cur->Type;
         if (interp == VIPS_INTERPRETATION_sRGB || interp == VIPS_INTERPRETATION_RGB) continue;
 
@@ -319,13 +334,11 @@ void ScaledStrip::normalizeBandCounts()
     // Pass 2: promote every entry to the widest band count present by adding a fully-opaque alpha
     // channel. If no source carries alpha, maxBands stays 3 and nothing is touched.
     int maxBands = 0;
-    for (const auto& entry : m_entries) {
-        if (VipsImage* cur = entry.image.buffer.vipsImage())
-            maxBands = std::max(maxBands, vips_image_get_bands(cur));
-    }
+    for (const auto& entry : m_entries)
+        maxBands = std::max(maxBands, vips_image_get_bands(entry.image.buffer.vipsImage()));
     for (auto& entry : m_entries) {
         VipsImage* cur = entry.image.buffer.vipsImage();
-        if (!cur || vips_image_get_bands(cur) >= maxBands) continue;
+        if (vips_image_get_bands(cur) >= maxBands) continue;
 
         VipsImage* withAlpha = nullptr;
         if (vips_addalpha(cur, &withAlpha, nullptr) != 0) {
