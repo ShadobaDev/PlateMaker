@@ -100,12 +100,16 @@ jobs:
       # cleanup on an exception's way out), which no test can take.
       # --exclude-noncode-lines: the same lines, uncovered — the cleanup is counted as a line there.
       # Code no test can reach is marked GCOVR_EXCL with its reason (the list: wiki, Platform).
+      # The floors fail the job: every line is covered, and branches stay at 90% or above. Raise the
+      # branch floor as coverage grows; never lower it.
       - name: Coverage report
         run: |
+          status=0
           gcovr --root . --filter lib/ --exclude-throw-branches --exclude-unreachable-branches \
                 --exclude-noncode-lines --cobertura coverage.xml --txt coverage.txt --txt-summary \
-                build/linux-coverage
+                --fail-under-line 100 --fail-under-branch 90 build/linux-coverage || status=$?
           { echo '```'; cat coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
 
       - name: Upload to Coveralls
         uses: coverallsapp/github-action@v2
