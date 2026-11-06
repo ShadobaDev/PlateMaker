@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.6.0] — 03.11.2026
+## [0.6.0] — 06.11.2026
 
 Adds two optional, non-destructive **render-time processing steps** — project-wide **colour correction**
 (page domain) and text/bubble **overlays** (strip domain) — behind a small typed-step framework, and
