@@ -32,7 +32,8 @@ namespace {
 
 namespace fs = std::filesystem;
 
-/// A genuine sRGB RGBA buffer (vips_image_hasalpha() is true).
+/// A genuine sRGB RGBA buffer (vips_image_hasalpha() is true), half transparent: an encoder may drop an
+/// alpha band that is opaque throughout (libwebp does), and this one must not be droppable.
 Core::PixelBuffer rgbaImage(int w, int h)
 {
     VipsImage* black = nullptr;
@@ -42,7 +43,7 @@ Core::PixelBuffer rgbaImage(int w, int h)
         << vips_error_buffer();
     g_object_unref(black);
     VipsImage* rgba = nullptr;
-    EXPECT_EQ(vips_addalpha(srgb, &rgba, nullptr), 0) << vips_error_buffer();
+    EXPECT_EQ(vips_bandjoin_const1(srgb, &rgba, 128.0, nullptr), 0) << vips_error_buffer();
     g_object_unref(srgb);
     return Core::PixelBuffer{rgba};
 }
@@ -81,16 +82,20 @@ TEST(ImageIoSaveTest, JpegFlattensAlphaToThreeBands)
 }
 
 // PNG output: the same RGBA buffer keeps its alpha band end-to-end.
-TEST(ImageIoSaveTest, PngPreservesAlpha)
+TEST(ImageIoSaveTest, PngAndWebpPreserveAlpha)
 {
     const fs::path dir = fs::temp_directory_path() / "pm-io-alpha-png";
     fs::remove_all(dir); fs::create_directories(dir);
-    const std::string path = (dir / "slice.png").string();
 
-    ImageIO    io;
-    const auto prof = profileFor(Models::OutputFormat::PNG);
-    ASSERT_NO_THROW(io.encode(rgbaImage(64, 64), path, prof));
-    EXPECT_EQ(savedBands(path), 4) << "PNG must preserve the RGBA alpha channel";
+    ImageIO io;
+    auto    webp = profileFor(Models::OutputFormat::WebP);
+    webp.webpOptions.lossless = true;
+    for (const auto& [prof, name] : {std::pair{profileFor(Models::OutputFormat::PNG), "slice.png"},
+                                     std::pair{webp, "slice.webp"}}) {
+        const std::string path = (dir / name).string();
+        ASSERT_NO_THROW(io.encode(rgbaImage(64, 64), path, prof));
+        EXPECT_EQ(savedBands(path), 4) << name << " must preserve the RGBA alpha channel";
+    }
 
     fs::remove_all(dir);
 }

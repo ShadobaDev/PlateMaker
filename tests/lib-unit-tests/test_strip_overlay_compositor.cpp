@@ -296,6 +296,10 @@ TEST(StripOverlayCompositorTest, RgbaFormGivesTheSamePixelsAsTheBuffer)
     EXPECT_EQ(r.height, 100);
     EXPECT_EQ(r.rgba.size(), static_cast<std::size_t>(40 * 100 * 4))
         << "four straight-alpha bytes per pixel";
+    // Valid takes both sides and the bytes.
+    for (const OverlayRaster& broken : {OverlayRaster{0, r.height, r.rgba}, OverlayRaster{r.width, 0, r.rgba},
+                                        OverlayRaster{r.width, r.height, {}}})
+        EXPECT_FALSE(broken.isValid());
 
     // The consumer form must agree with the compositing form pixel for pixel, or a preview drawn from
     // one would not be what the render bakes from the other.
@@ -597,6 +601,19 @@ TEST(StripOverlayCompositorTest, RasterOfAnotherColourCodingBecomesRgba)
     EXPECT_NEAR(r.rgba[1], 200, 4);
     EXPECT_NEAR(r.rgba[2], 200, 4);
     EXPECT_EQ(r.rgba[3], 255) << "opaque: the asset had no alpha";
+
+    // Generic RGB is colour already: it is taken as it is.
+    VipsImage* rgb = nullptr;
+    ASSERT_EQ(vips_copy(makeSolid(4, 4, {10, 20, 30}).vipsImage(), &rgb,
+                        "interpretation", VIPS_INTERPRETATION_RGB, nullptr), 0) << vips_error_buffer();
+    ASSERT_EQ(vips_image_write_to_file(rgb, path.string().c_str(), nullptr), 0) << vips_error_buffer();
+    g_object_unref(rgb);
+    const OverlayRaster asIs = comp.rasterizeOverlayRgba(path.string(), 1.0);
+    std::filesystem::remove(path, ec);
+    ASSERT_TRUE(asIs.isValid()) << vips_error_buffer();
+    EXPECT_EQ(asIs.rgba[0], 10);
+    EXPECT_EQ(asIs.rgba[1], 20);
+    EXPECT_EQ(asIs.rgba[2], 30);
 }
 
 TEST(StripOverlayCompositorTest, GreyAlphaOverlayIsPromotedToRgba)
@@ -620,11 +637,12 @@ TEST(StripOverlayCompositorTest, RasterizeOverlaysSkipsUnusableEntriesAndKeepsOr
 
     // Already-resolved placements: rasterizeOverlays() takes pixels, never fractions, so the size and
     // the position can no longer come from two different scales.
-    std::vector<Models::PlacedOverlay> defs(4);
+    std::vector<Models::PlacedOverlay> defs(5);
     defs[0].uid = "ok-1";     defs[0].assetPath = svg.path();
     defs[1].uid = "disabled"; defs[1].assetPath = svg.path(); defs[1].enabled = false;
     defs[2].uid = "missing";  defs[2].assetPath = "no-such-file-anywhere.svg";
     defs[3].uid = "ok-2";     defs[3].assetPath = svg.path();  defs[3].x = 7; defs[3].y = 9;
+    defs[4].uid = "no-asset";
 
     StripOverlayCompositor comp;
     const auto loaded = comp.rasterizeOverlays(defs);

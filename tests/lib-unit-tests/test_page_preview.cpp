@@ -133,16 +133,28 @@ TEST(PagePreviewTest, LayoutHeightsMatchTheRenderedStrip)
     const std::string cropped = writeSolidPng(tmp, "a.png", 200, 400, 200, 100, 50);
     // 160x320, no profile of that size → rendered implicitly → scaled to width 80 → 80x160.
     const std::string plain   = writeSolidPng(tmp, "b.png", 160, 320, 50, 100, 200);
+    // One margin each, enough to crop: right 60 of 300x300 → 240x300 → 80x100; bottom 80 of 160x400 →
+    // 160x320 → 80x160; left 80 of 400x200 → 320x200 → 80x50.
+    const std::string right  = writeSolidPng(tmp, "c.png", 300, 300, 90, 90, 90);
+    const std::string bottom = writeSolidPng(tmp, "d.png", 160, 400, 90, 90, 90);
+    const std::string left   = writeSolidPng(tmp, "e.png", 400, 200, 90, 90, 90);
 
     const auto cp = profile("cp-1", "Margined", 200, 400, {20, 20, 20, 20});
-    const std::vector<Models::CanvasProfile> palette{cp};
-    const std::vector<std::string>           ids{cp.id};
+    const std::vector<Models::CanvasProfile> palette{cp,
+                                                     profile("cp-2", "Right",  300, 300, {0, 60, 0, 0}),
+                                                     profile("cp-3", "Bottom", 160, 400, {0, 0, 80, 0}),
+                                                     profile("cp-4", "Left",   400, 200, {0, 0, 0, 80})};
+    const std::vector<std::string>           ids{"cp-1", "cp-2", "cp-3", "cp-4"};
     const auto op = output(/*targetWidth=*/80, /*sliceHeight=*/20);
 
-    const std::vector<Models::InputFile> inputs{input(cropped), input(plain)};
+    const std::vector<Models::InputFile> inputs{input(cropped), input(plain), input(right), input(bottom),
+                                                input(left)};
 
     const auto layout = ProcessingPipeline::layoutPagesFromHeaders(inputs, op, palette, ids);
-    ASSERT_EQ(layout.size(), 2u);
+    ASSERT_EQ(layout.size(), 5u);
+    EXPECT_EQ(layout[2].height, 100);
+    EXPECT_EQ(layout[3].height, 160);
+    EXPECT_EQ(layout[4].height, 50);
 
     EXPECT_TRUE(layout[0].readable);
     EXPECT_EQ(layout[0].canvasProfileId, cp.id);
@@ -316,8 +328,12 @@ TEST(PagePreviewTest, PageRgbaRejectsBadArgs)
                  std::runtime_error);
     EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(page), op, {}, {}, rgba.data(), 0, h),
                  std::runtime_error);
+    EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(page), op, {}, {}, rgba.data(), w, 0),
+                 std::runtime_error);
     // A stale layout — the caller's dimensions no longer match the page.
     EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(page), op, {}, {}, rgba.data(), w, h + 1),
+                 std::runtime_error);
+    EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(page), op, {}, {}, rgba.data(), w + 1, h),
                  std::runtime_error);
     // An unreadable page.
     EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(tmp.file("nope.png")), op, {}, {},
@@ -349,6 +365,26 @@ TEST(PagePreviewTest, PageRgbaRejectsAPageWithoutAnSrgbRoute)
     ASSERT_EQ(vips_cast(black, &cx, VIPS_FORMAT_COMPLEX, nullptr), 0) << vips_error_buffer();
     g_object_unref(black);
     const std::string page = writeNative(tmp, "complex.v", cx);
+
+    std::vector<unsigned char> rgba(100 * 100 * 4, 0);
+    EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(page), output(100, 100), {}, {},
+                                                     rgba.data(), 100, 100),
+                 std::runtime_error);
+    vips_error_clear();
+}
+
+/// Four interleaved bands are the promise, so a page that already has more — sRGB plus two extra — is
+/// refused, not cut down to four.
+TEST(PagePreviewTest, PageRgbaRejectsAPageOfMoreThanFourBands)
+{
+    TempDir tmp("fiveband");
+    VipsImage* black = nullptr;
+    VipsImage* srgb  = nullptr;
+    ASSERT_EQ(vips_black(&black, 100, 100, "bands", 5, nullptr), 0) << vips_error_buffer();
+    ASSERT_EQ(vips_copy(black, &srgb, "interpretation", VIPS_INTERPRETATION_sRGB, nullptr), 0)
+        << vips_error_buffer();
+    g_object_unref(black);
+    const std::string page = writeNative(tmp, "five.v", srgb);
 
     std::vector<unsigned char> rgba(100 * 100 * 4, 0);
     EXPECT_THROW(ProcessingPipeline::decodePageToRgba(input(page), output(100, 100), {}, {},

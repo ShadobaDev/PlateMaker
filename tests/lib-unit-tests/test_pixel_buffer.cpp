@@ -84,6 +84,12 @@ TEST(PixelBufferTest, MoveAssignmentTransfersOwnership)
     EXPECT_EQ(dst.height(), 3);
     EXPECT_FALSE(src.isValid()) << "moved-from buffer must be left empty";  // NOLINT(bugprone-use-after-move)
     EXPECT_EQ(src.vipsImage(), nullptr);
+
+    // Onto itself, as a swap through a reference can: the image stays, and stays owned once.
+    PixelBuffer& same = dst;
+    dst = std::move(same);
+    EXPECT_EQ(dst.vipsImage(), raw);
+    EXPECT_EQ(G_OBJECT(raw)->ref_count, 1u);
 }
 
 // ---------------------------------------------------------------------------

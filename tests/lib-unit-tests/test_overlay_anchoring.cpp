@@ -134,6 +134,11 @@ TEST(ResolveOverlayAnchorsTest, DropsAndReportsAnOverlayWhoseAnchorPageIsNotInTh
     ASSERT_EQ(out.size(), 1u) << "an overlay with nothing to sit on must not fall through to strip-Y 10";
     EXPECT_EQ(out[0].uid, "ovl-keep");
     EXPECT_EQ(orphans, (std::vector<std::string>{"ovl-gone"}));
+
+    // Reporting is optional; dropping is not.
+    EXPECT_EQ(Models::resolveOverlayAnchors({overlay("ovl-gone", "file-deleted", 0.0, 0.0125)}, k_layout, k_target)
+                  .size(),
+              0u);
 }
 
 // ---------------------------------------------------------------------------

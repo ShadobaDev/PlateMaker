@@ -264,6 +264,7 @@ TEST(WorkspaceIdRepairTest, OutputProfileDuplicatesAreRepairedToo)
 
     ASSERT_EQ(report.outputProfiles.size(), 1u);
     EXPECT_EQ(report.outputProfiles[0].name, "WEBP");
+    EXPECT_TRUE(report.anyRepairs()) << "an output repair alone is a repair";
 
     // Reference keeps pointing at the profile it always resolved to.
     EXPECT_EQ(loaded.projectItems[0].outputProfileId(), loaded.outputProfiles()[0].id);

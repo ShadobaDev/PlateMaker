@@ -278,8 +278,7 @@ TEST(OutputPresetLoadTest, MigrationIsIdempotent)
 TEST(OutputPresetSaveTest, PresetIsRefusedByTheEditorAndNeverWritten)
 {
     // The palette is private and can only be set through WorkspaceEditor.  Hand it a preset among
-    // the profiles: the editor drops it on the way in (the front-line guarantee), so it is gone
-    // before anything can persist it — and the serializer's own guard keeps it out regardless.
+    // the profiles: the editor drops it on the way in, so it is gone before anything can persist it.
     Models::Workspace ws;
     Infrastructure::WorkspaceEditor(ws).replaceOutputProfiles(
         {Models::webtoonStandardPreset(),          // preset id — must be dropped

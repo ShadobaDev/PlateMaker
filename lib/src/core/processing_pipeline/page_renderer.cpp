@@ -18,6 +18,7 @@
 #include <platemaker/infrastructure/log/log.hpp>
 
 #include <stdexcept>
+#include <utility>
 
 #include <vips/vips.h>
 
@@ -44,19 +45,13 @@ HeaderGeometry headerGeometry(const std::string& filePath)
     }
     geo.width  = img->Xsize;
     geo.height = img->Ysize;
-    if (vips_image_get_typeof(img, VIPS_META_ORIENTATION) != 0) {
-        int o = 0;
-        if (vips_image_get_int(img, VIPS_META_ORIENTATION, &o) == 0) {
-            geo.orientation    = o;
-            geo.hasOrientation = true;
-        }
-    }
+    geo.hasOrientation = vips_image_get_typeof(img, VIPS_META_ORIENTATION) != 0;
+    geo.orientation    = vips_image_get_orientation(img);   // 1 when absent or not 1–8
     // Orientation 5–8 rotate by 90°/270°, transposing the displayed image. Report the display size
     // (what the autorotated scaler produces) so matching and rendering agree; 1–4 keep the stored
     // dimensions.
-    if (geo.orientation >= 5 && geo.orientation <= 8) {
-        const int t = geo.width; geo.width = geo.height; geo.height = t;
-    }
+    if (vips_image_get_orientation_swap(img))
+        std::swap(geo.width, geo.height);
     g_object_unref(img);
     return geo;
 }
@@ -80,7 +75,7 @@ PagePlan PageRenderer::planFromHeader(const std::string& filePath) const
     // a genuinely unreadable file fails loudly in the scaler instead.
     if (!m_hasProfiles) return plan;
 
-    if (plan.geo.width <= 0 || plan.geo.height <= 0)
+    if (plan.geo.width <= 0)   // -1: the header is unread (libvips never opens an image with a zero side)
         throw std::runtime_error("cannot determine image dimensions");
 
     const ProfileMatchResult result = m_matcher.resolveForSize(plan.geo.width, plan.geo.height);
@@ -93,8 +88,7 @@ PagePlan PageRenderer::planFromHeader(const std::string& filePath) const
         plan.candidateIds.reserve(result.workspaceCandidates.size());
         for (const auto* cand : result.workspaceCandidates)
             plan.candidateIds.push_back(cand->id);
-        if (!result.workspaceCandidates.empty())
-            plan.candidateName = result.workspaceCandidates.front()->name;
+        plan.candidateName = result.workspaceCandidates.front()->name;   // never empty for this status
     } else {
         // No profile of this size exists anywhere — render the page implicitly, exactly the
         // no-profiles path. Determinism is preserved by visibility (the input is flagged), not omission.

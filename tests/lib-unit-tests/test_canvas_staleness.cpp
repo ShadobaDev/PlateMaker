@@ -21,8 +21,10 @@
 #include <platemaker/models/output_profile.hpp>
 #include <platemaker/models/project_item.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -783,6 +785,20 @@ TEST(OutputProfileSignatureTest, CatchesFormatAndQualityChanges)
 
     project.getOutputImages()[0].fileName = "output_001";
     EXPECT_FALSE(project.detectStaleness({}, b).configurationChanged());
+
+    // Any one axis alone is a configuration change — of a project that has outputs to invalidate.
+    for (const auto& moved : std::vector<std::function<void(StalenessReport&)>>{
+             [](StalenessReport& r) { r.outputProfileChanged = true; },
+             [](StalenessReport& r) { r.outputFormatChanged = true; },
+             [](StalenessReport& r) { r.canvas.listChanged = true; },
+             [](StalenessReport& r) { r.inputCompositionChanged = true; },
+             [](StalenessReport& r) { r.processingStepsChanged = true; }}) {
+        StalenessReport r;
+        moved(r);
+        EXPECT_FALSE(r.configurationChanged());
+        r.hasOutputs = true;
+        EXPECT_TRUE(r.configurationChanged());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -935,6 +951,13 @@ TEST_F(TemplateCheckTest, AFreshTemplateIsUpToDate)
     EXPECT_EQ(m_entry.sha256, Platemaker::Infrastructure::FileMetaData::computeFileSha256(abs()))
         << "generate() returns the hash of exactly what it wrote";
     EXPECT_TRUE(check({m_profile}).upToDate());
+
+    // A margin of zero is a band of no pixels: it is skipped, not drawn.
+    auto edgeless    = m_profile;
+    edgeless.margins = Margins{0, 10, 10, 0};
+    EXPECT_FALSE(Platemaker::Core::TemplateGenerator{}.generate(
+        edgeless, {}, (m_dir / "templates" / "edgeless.png").string(),
+        Platemaker::Core::TemplateGenerator::optionsFor(edgeless)).empty());
 }
 
 TEST_F(TemplateCheckTest, AMissingFileIsReported)
@@ -943,12 +966,14 @@ TEST_F(TemplateCheckTest, AMissingFileIsReported)
     const auto c = check({m_profile});
     EXPECT_TRUE(c.fileMissing);
     EXPECT_FALSE(c.changedOutside) << "nothing to hash";
+    EXPECT_FALSE(c.upToDate());
 }
 
 TEST_F(TemplateCheckTest, AFileChangedOutsideIsReported)
 {
     { std::ofstream out(m_dir / m_entry.path, std::ios::binary | std::ios::app); out << "x"; }
     EXPECT_TRUE(check({m_profile}).changedOutside);
+    EXPECT_FALSE(check({m_profile}).upToDate());
 
     // An entry migrated from before hashes has none to compare, so it cannot say so.
     m_entry.sha256.clear();
@@ -967,6 +992,14 @@ TEST_F(TemplateCheckTest, AChangedFieldIsNamedWithBothValues)
     EXPECT_EQ(c.differences[1].field, "dpi");
     EXPECT_EQ(c.differences[1].was, "300");
     EXPECT_EQ(c.differences[1].now, "72");
+    EXPECT_FALSE(c.upToDate());
+
+    // A fingerprint of no known shape names every field, each as having had no value.
+    m_entry.fingerprint = "from-an-older-build";
+    const auto        all    = check({m_profile});
+    const std::string fields = Platemaker::Core::TemplateGenerator::canvasSignature(m_profile);
+    EXPECT_EQ(all.differences.size(), static_cast<std::size_t>(std::count(fields.begin(), fields.end(), '=')));
+    for (const auto& d : all.differences) EXPECT_EQ(d.was, "") << d.field;
 }
 
 TEST_F(TemplateCheckTest, AnEntryIsCheckedAsItsOwnFormat)
@@ -994,8 +1027,7 @@ TEST_F(TemplateCheckTest, ASharedPathMattersOnlyWhenTheFileWasOverwritten)
     EXPECT_EQ(c.sharedWith, "3p-m");
     EXPECT_FALSE(c.changedOutside);
 
-    // An identical one may share it — the file would be the same — and a path differing only in case or
-    // slash is the same file on Windows.
+    // An identical one may share it — the file would be the same.
     auto twin = m_profile;
     twin.id = "cp-3";
     twin.templates[0].path = "Templates\\3P-M.png";
@@ -1015,6 +1047,16 @@ TEST_F(TemplateCheckTest, WithoutAHashTheLaterWriterDecides)
 
     other.templates[0].fingerprint = Platemaker::Core::TemplateGenerator::canvasSignature(other);
     EXPECT_EQ(check({m_profile, other}).sharedWith, "3p-m") << "later, and not this template";
+    EXPECT_FALSE(check({m_profile, other}).upToDate());
+
+    // A path differing only in case or slash is the same file on Windows; any other name is another file.
+    other.templates[0].path = "Templates\\3P-M.png";
+    EXPECT_EQ(check({m_profile, other}).sharedWith, "3p-m");
+    for (const char* elsewhere : {"templates/3p-n.png", "templates/3p-m-2.png"}) {
+        other.templates[0].path = elsewhere;
+        EXPECT_TRUE(check({m_profile, other}).upToDate()) << elsewhere;
+    }
+    other.templates[0].path = m_entry.path;
 
     other.templates[0].fingerprint = m_entry.fingerprint;
     EXPECT_TRUE(check({m_profile, other}).upToDate()) << "later, but written while the two were alike";

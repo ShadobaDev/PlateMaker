@@ -216,8 +216,7 @@ void ColourCorrector::applyToRgba(unsigned char* rgba, int width, int height,
     // GCOVR_EXCL_STOP
 
     // Neutral grade → leave the bytes untouched (matches apply()'s no-op fast path).
-    if (cc.brightness == 0.0 && cc.contrast == 1.0 && cc.saturation == 1.0
-        && !Models::hasAnyCurve(cc.curves))
+    if (Models::isNeutral(cc))
         return;
 
     const std::size_t nbytes = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u;
@@ -241,8 +240,8 @@ void ColourCorrector::applyToRgba(unsigned char* rgba, int width, int height,
 
     // Grade through the shared engine (takes ownership of srgb), then read the result back into rgba.
     PixelBuffer graded = applyToBuffer(PixelBuffer{srgb}, cc);
-    VipsImage*  out    = graded.vipsImage();
-    if (!out || out->Xsize != width || out->Ysize != height
+    VipsImage*  out    = graded.vipsImage();   // never null: applyToBuffer() throws instead
+    if (out->Xsize != width || out->Ysize != height
         || out->Bands != 4 || out->BandFmt != VIPS_FORMAT_UCHAR)
         throw std::runtime_error("ColourCorrector::applyToRgba — unexpected graded image layout");
 

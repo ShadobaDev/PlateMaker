@@ -25,6 +25,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <regex>
 #include <string>
 #include <utility>
@@ -139,6 +140,16 @@ TEST(ThumbnailCacheTest, ReusesCacheWhenSourceUnchanged)
     const std::string thumb2 = cache.getOrGenerate(src);
     EXPECT_EQ(thumb2, thumb1);
     EXPECT_EQ(fs::last_write_time(thumb2), thumbT1) << "an unchanged source should not be regenerated";
+
+    // An empty thumbnail (a write cut short) is no thumbnail: it is made again.
+    std::ofstream(thumb1, std::ios::binary | std::ios::trunc).close();
+    EXPECT_FALSE(cache.isCached(src));
+    EXPECT_EQ(cache.getOrGenerate(src), thumb1);
+    EXPECT_GT(fs::file_size(thumb1), 0u);
+
+    // A source that is gone cannot vouch for its thumbnail, so it is read again — and that fails.
+    fs::remove(src);
+    EXPECT_THROW((void)cache.getOrGenerate(src), std::exception);
 }
 
 // --- in-RAM overload: generate(sourceFilePath, PixelBuffer) — the Arch C pre-warm path ---------------

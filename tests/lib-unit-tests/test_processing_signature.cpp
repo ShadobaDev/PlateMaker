@@ -58,11 +58,15 @@ TEST(ProcessingSignatureTest, GradingChangesTheSignature)
     brighter.brightness += 0.1;
     EXPECT_NE(processingConfigSignature(graded, {}), processingConfigSignature(brighter, {}));
 
-    // Each of the four knobs on its own is a grade: whichever one is touched, the chapter is stale.
+    // Each of the knobs on its own is a grade, every curve among them: whichever one is touched, the
+    // chapter is stale.
     for (const ColourCorrection& one : {
              [] { ColourCorrection c; c.contrast   = 1.2; return c; }(),
              [] { ColourCorrection c; c.saturation = 0.0; return c; }(),
              [] { ColourCorrection c; c.curves.master = {{0.0, 0.0}, {1.0, 0.5}}; return c; }(),
+             [] { ColourCorrection c; c.curves.red    = {{0.0, 0.0}, {1.0, 0.5}}; return c; }(),
+             [] { ColourCorrection c; c.curves.green  = {{0.0, 0.0}, {1.0, 0.5}}; return c; }(),
+             [] { ColourCorrection c; c.curves.blue   = {{0.0, 0.0}, {1.0, 0.5}}; return c; }(),
          })
         EXPECT_NE(processingConfigSignature(neutral, {}), processingConfigSignature(one, {}));
 }

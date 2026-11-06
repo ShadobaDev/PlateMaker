@@ -147,18 +147,15 @@ SliceResult ScaledStrip::buildSlice(int index, int sliceStartY, int sliceH) cons
         if (entryEndY <= sliceStartY) continue; // entirely above this slice
         if (entry.startY >= sliceEndY) break;   // entirely below — entries are ordered
 
-        // An overlapping entry must still hold its pixels. If it does not,
-        // releaseConsumedEntries() ran ahead of the slice cursor — a logic error here,
-        // not bad input, and one that would otherwise surface as a confusing vips failure.
-        // GCOVR_EXCL_START: our own invariant (sliceAll() releases only the entries behind its cursor)
+        // An overlapping entry must still hold its pixels. If it does not, an earlier sliceAll()
+        // released it — a strip is sliced once — and a refusal beats a confusing vips failure. Nothing
+        // is extracted yet: released entries are always the first ones.
         if (!entry.image.buffer.isValid()) {
-            for (VipsImage* p : parts) g_object_unref(p);
             throw std::runtime_error(
                 "ScaledStrip::buildSlice() — source '" + entry.image.sourceFilePath +
                 "' overlaps slice " + std::to_string(index) +
                 " but its buffer was already released");
         }
-        // GCOVR_EXCL_STOP
 
         // Intersection in virtual-strip coordinates.
         const int overlapStart = std::max(entry.startY, sliceStartY);
@@ -314,12 +311,14 @@ void ScaledStrip::normalizeBandCounts()
         if (uniform) return;
     }
 
+    // Every buffer is live from here on: only a run that got past this point releases one, and that run
+    // left the strip uniform, so a later run returns above.
+
     // Pass 1: fold any non-RGB colourspace (grayscale, CMYK, …) into sRGB. Lossless for grayscale
     // (luma is replicated across the three bands); already-RGB/RGBA pixels are left untouched. After
     // this every entry is 3-band (RGB) or 4-band (RGBA).
     for (auto& entry : m_entries) {
         VipsImage* cur = entry.image.buffer.vipsImage();
-        if (!cur) continue;
         const VipsInterpretation interp = cur->Type;
         if (interp == VIPS_INTERPRETATION_sRGB || interp == VIPS_INTERPRETATION_RGB) continue;
 
@@ -335,13 +334,11 @@ void ScaledStrip::normalizeBandCounts()
     // Pass 2: promote every entry to the widest band count present by adding a fully-opaque alpha
     // channel. If no source carries alpha, maxBands stays 3 and nothing is touched.
     int maxBands = 0;
-    for (const auto& entry : m_entries) {
-        if (VipsImage* cur = entry.image.buffer.vipsImage())
-            maxBands = std::max(maxBands, vips_image_get_bands(cur));
-    }
+    for (const auto& entry : m_entries)
+        maxBands = std::max(maxBands, vips_image_get_bands(entry.image.buffer.vipsImage()));
     for (auto& entry : m_entries) {
         VipsImage* cur = entry.image.buffer.vipsImage();
-        if (!cur || vips_image_get_bands(cur) >= maxBands) continue;
+        if (vips_image_get_bands(cur) >= maxBands) continue;
 
         VipsImage* withAlpha = nullptr;
         if (vips_addalpha(cur, &withAlpha, nullptr) != 0) {

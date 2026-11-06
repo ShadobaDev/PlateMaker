@@ -107,18 +107,26 @@ TEST_F(LibvipsFailureTest, AGradeOfRgbaBytesThatFailsSaysWhichStepAndLeaksNothin
     EXPECT_EQ(rgba, std::vector<unsigned char>(4 * 4 * 4, 128));   // untouched
 }
 
-TEST_F(LibvipsFailureTest, AGradeThatLosesTheAlphaBandIsRefused)
+TEST_F(LibvipsFailureTest, AGradeThatComesBackInAnotherLayoutIsRefused)
 {
     Models::ColourCorrection cc;
     cc.brightness = 0.1;
     std::vector<unsigned char> rgba(4 * 4 * 4, 128);
-    VipsImage* const rgb = Fault::blackImage(4, 4, 3);
 
-    Fault::returnImage("vips_bandjoin2", rgb);   // the alpha rejoined, but three bands come back
-    EXPECT_CONTAINS(thrown([&] { Core::ColourCorrector{}.applyToRgba(rgba.data(), 4, 4, cc); }),
-                    "unexpected graded image layout");
-    EXPECT_EQ(rgba, std::vector<unsigned char>(4 * 4 * 4, 128));
-    g_object_unref(rgb);
+    // The alpha rejoined, but what comes back is not the buffer handed in: three bands, another size,
+    // or sixteen bits.
+    VipsImage* const sixteen = Fault::blackImage(4, 4, 4);
+    VipsImage*       u16     = nullptr;
+    ASSERT_EQ(vips_cast(sixteen, &u16, VIPS_FORMAT_USHORT, nullptr), 0) << vips_error_buffer();
+    g_object_unref(sixteen);
+    for (VipsImage* const wrong : {Fault::blackImage(4, 4, 3), Fault::blackImage(5, 4, 4),
+                                   Fault::blackImage(4, 5, 4), u16}) {
+        Fault::returnImage("vips_bandjoin2", wrong);
+        EXPECT_CONTAINS(thrown([&] { Core::ColourCorrector{}.applyToRgba(rgba.data(), 4, 4, cc); }),
+                        "unexpected graded image layout");
+        EXPECT_EQ(rgba, std::vector<unsigned char>(4 * 4 * 4, 128));
+        g_object_unref(wrong);
+    }
 }
 
 // --- PixelBuffer --------------------------------------------------------------------------------------

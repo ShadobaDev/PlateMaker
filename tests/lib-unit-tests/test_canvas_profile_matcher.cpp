@@ -120,9 +120,10 @@ TEST(CanvasProfileMatcherTest, FoundInWorkspaceOnlyWhenNotLinkedToProject)
     const std::vector<CanvasProfile> profiles = {
         makeProfile("cp-1", "Webtoon 4p", 1600, 10240),
         makeProfile("cp-2", "Webtoon 2p", 1600, 5120),
+        makeProfile("cp-3", "Webtoon 1p", 1600, 2560),   // unlinked too, of another size
     };
 
-    // Project only links cp-1; cp-2 is in workspace but not in project list.
+    // Project only links cp-1; cp-2 and cp-3 are in workspace but not in project list.
     CanvasProfileMatcher matcher(profiles, {"cp-1"});
 
     const auto r = matcher.resolveForSize(1600, 5120);

@@ -40,8 +40,7 @@ std::string FileMetaData::computeFileSha256(const std::string& filePath)
             reinterpret_cast<const guchar*>(buf),
             static_cast<gssize>(file.gcount()));
         hashed += static_cast<std::uintmax_t>(file.gcount());
-        if (!file && !file.eof()) break; // IO error mid-file
-    }
+    }   // a read error reads nothing more, so it ends the loop as the end of the file does
     // A read error can end the stream as its end does, so only the count tells them apart: the hash of
     // part of a file (or of one that changed size meanwhile) would pass for the whole, and say a changed
     // file is unchanged. Empty is "cannot be read", as callers already take it.

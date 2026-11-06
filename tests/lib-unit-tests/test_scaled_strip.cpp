@@ -86,14 +86,15 @@ TrackedSource appendSource(ScaledStrip& strip, int width, int height, std::strin
 /// alpha, so vips_image_hasalpha() is true). Returns a handle that observes the image the strip
 /// stores — for the RGB case that is exactly the image normalizeBandCounts() wraps with addalpha,
 /// so releasing the wrapper cascades to releasing it, which is what releasedByStrip() detects.
-TrackedSource appendRgbSource(ScaledStrip& strip, int width, int height, int bands, std::string path)
+TrackedSource appendRgbSource(ScaledStrip& strip, int width, int height, int bands, std::string path,
+                              VipsInterpretation interpretation = VIPS_INTERPRETATION_sRGB)
 {
     VipsImage* black = nullptr;
     EXPECT_EQ(vips_black(&black, width, height, "bands", 3, nullptr), 0)
         << "vips_black failed: " << vips_error_buffer();
 
     VipsImage* srgb = nullptr;
-    EXPECT_EQ(vips_copy(black, &srgb, "interpretation", VIPS_INTERPRETATION_sRGB, nullptr), 0)
+    EXPECT_EQ(vips_copy(black, &srgb, "interpretation", interpretation, nullptr), 0)
         << "vips_copy failed: " << vips_error_buffer();
     g_object_unref(black);
 
@@ -226,6 +227,14 @@ TEST(ScaledStripTest, SliceAllReleasesSourcesTheCursorHasPassed)
         });
 
     EXPECT_EQ(seen, 3);
+
+    // A strip is sliced once: a second run finds the pixels gone and says so.
+    try {
+        strip.sliceAll(100, Models::LastSlicePolicy::KeepAsIs, cancel, [](SliceResult&&) { return true; });
+        ADD_FAILURE() << "a second run must not slice released sources";
+    } catch (const std::runtime_error& e) {
+        EXPECT_NE(std::string(e.what()).find("already released"), std::string::npos) << e.what();
+    }
 }
 
 TEST(ScaledStripTest, SliceAllKeepsSourceStraddlingASliceBoundary)
@@ -368,8 +377,9 @@ TEST(ScaledStripTest, SliceAllNormalisesMixedRgbAndRgbaStrip)
 {
     // 3-band RGB then 4-band RGBA; slice height 150 over two 100px sources → slice 0 straddles the
     // boundary and would join a 3-band part with a 4-band part. Every emitted slice must be RGBA.
+    // The RGB page is tagged generic RGB, which needs no colourspace fold either.
     ScaledStrip strip;
-    appendRgbSource(strip, 800, 100, 3, "rgb.jpg");
+    appendRgbSource(strip, 800, 100, 3, "rgb.jpg", VIPS_INTERPRETATION_RGB);
     appendRgbSource(strip, 800, 100, 4, "rgba.png");
 
     Infrastructure::CancellationToken cancel;
@@ -437,24 +447,34 @@ TEST(ScaledStripTest, SourcesThatStillDisagreeAfterNormalisingFailTheJoin)
 {
     // A one-band image tagged sRGB skips the colourspace fold (it claims to be sRGB already) and only
     // gains an alpha band, so it reaches the join with 2 bands against 3. The join must fail loudly at
-    // the straddling slice rather than emit a padded or mis-coloured panel.
-    ScaledStrip strip;
-    {
+    // the straddling slice rather than emit a padded or mis-coloured panel — whether it is the first
+    // join of the slice or a later one, after two colour pages already joined.
+    const auto appendLie = [](ScaledStrip& strip, int height) {
         VipsImage* black = nullptr;
         VipsImage* lie   = nullptr;
-        ASSERT_EQ(vips_black(&black, 800, 100, "bands", 1, nullptr), 0) << vips_error_buffer();
+        ASSERT_EQ(vips_black(&black, 800, height, "bands", 1, nullptr), 0) << vips_error_buffer();
         ASSERT_EQ(vips_copy(black, &lie, "interpretation", VIPS_INTERPRETATION_sRGB, nullptr), 0)
             << vips_error_buffer();
         g_object_unref(black);
         strip.append(ScaledImage{PixelBuffer{lie}, "mislabelled.png"});
-    }
-    appendRgbSource(strip, 800, 100, 3, "colour.jpg");
+    };
 
-    Infrastructure::CancellationToken cancel;
-    EXPECT_THROW(strip.sliceAll(150, Models::LastSlicePolicy::KeepAsIs, cancel,
-                                [](SliceResult&&) { return true; }),
-                 std::runtime_error);
-    vips_error_clear();
+    ScaledStrip first;
+    appendLie(first, 100);
+    appendRgbSource(first, 800, 100, 3, "colour.jpg");
+
+    ScaledStrip later;
+    appendRgbSource(later, 800, 50, 3, "colour-1.jpg");
+    appendRgbSource(later, 800, 50, 3, "colour-2.jpg");
+    appendLie(later, 100);
+
+    for (ScaledStrip* strip : {&first, &later}) {
+        Infrastructure::CancellationToken cancel;
+        EXPECT_THROW(strip->sliceAll(150, Models::LastSlicePolicy::KeepAsIs, cancel,
+                                     [](SliceResult&&) { return true; }),
+                     std::runtime_error);
+        vips_error_clear();
+    }
 }
 
 TEST(ScaledStripTest, SourceThatCannotTakeAnAlphaBandIsReported)
