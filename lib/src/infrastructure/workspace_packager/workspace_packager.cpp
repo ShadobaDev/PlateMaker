@@ -109,12 +109,12 @@ std::string foldCase(std::string s)
 class Planner {
 public:
     Planner(PackagePlan& plan, const fs::path& folder, const std::vector<std::string>& reserved)
-        : m_plan(plan)
+        : m_plan(plan), m_given(folder.lexically_normal())
     {
         std::error_code ec;
         m_folder = fs::weakly_canonical(folder, ec);
         if (ec)
-            m_folder = folder.lexically_normal();
+            m_folder = m_given;
         for (const auto& name : reserved)
             m_taken.insert(foldCase(name));
     }
@@ -179,11 +179,12 @@ private:
         return target;
     }
 
-    /// A path from the model, made absolute: a rootless one is in the workspace folder, as load() reads it.
+    /// A path from the model, made absolute: a rootless one is in the workspace folder, as load() reads it —
+    /// spelled as the caller spelled the folder, not canonically (which on Windows expands a short 8.3 name).
     fs::path absoluteOf(const std::string& modelPath) const
     {
         const fs::path p = utf8ToPath(modelPath);
-        return p.has_root_path() ? p : m_folder / p;
+        return p.has_root_path() ? p : m_given / p;
     }
 
     /// The first free name in \p dir (empty = the package root): \p name, then "stem (2).ext", "stem (3).ext", …
@@ -202,7 +203,8 @@ private:
     }
 
     PackagePlan&                                 m_plan;
-    fs::path                                     m_folder;
+    fs::path                                     m_given;    //!< the workspace folder as the caller spelled it
+    fs::path                                     m_folder;   //!< the same, canonical: what identities compare to
     std::vector<Reference>                       m_refs;
     std::unordered_map<std::string, std::string> m_placed;   //!< file identity → its place
     std::unordered_set<std::string>              m_taken;    //!< places given out, case-folded
