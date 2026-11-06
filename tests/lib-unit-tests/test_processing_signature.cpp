@@ -45,6 +45,15 @@ TEST(ProcessingSignatureTest, EmptyWhenNothingIsConfigured)
     // whose answer decides whether a chapter re-renders.
     cc.excludedInputUids = {"file-1"};
     EXPECT_TRUE(processingConfigSignature(cc, {}).empty());
+
+    // A knob a hair off its default, as arithmetic leaves it (0.1 + 0.2 - 0.3 is 5.6e-17, not 0), is
+    // still untouched; one past the tolerance is a grade.
+    cc.brightness = 0.1 + 0.2 - 0.3;
+    cc.contrast   = 0.3 * 3 + 0.1;     // 0.9999999999999999
+    EXPECT_TRUE(isNeutral(cc));
+    EXPECT_TRUE(processingConfigSignature(cc, {}).empty());
+    cc.saturation = 1.0 + 2 * k_neutralTolerance;
+    EXPECT_FALSE(isNeutral(cc));
 }
 
 TEST(ProcessingSignatureTest, GradingChangesTheSignature)

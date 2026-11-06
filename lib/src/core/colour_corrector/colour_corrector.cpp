@@ -81,8 +81,8 @@ PixelBuffer ColourCorrector::applyToBuffer(PixelBuffer buffer, const Models::Col
 {
     // A neutral grade touches no pixels — enabling the step with default scalars and no curves is a
     // true no-op. (ICC → sRGB is handled at load, not here; see the class doc.)
-    const bool neutralLevels = (cc.brightness == 0.0 && cc.contrast == 1.0);
-    const bool neutralSat    = (cc.saturation == 1.0);
+    const bool neutralLevels = Models::isNeutralValue(cc.brightness, 0.0) && Models::isNeutralValue(cc.contrast, 1.0);
+    const bool neutralSat    = Models::isNeutralValue(cc.saturation, 1.0);
     if (neutralLevels && neutralSat && !Models::hasAnyCurve(cc.curves))
         return buffer;
 
