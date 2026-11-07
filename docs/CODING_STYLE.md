@@ -5,7 +5,7 @@ Always use Doxygen style comments for documentation. Use backslash `\` notation.
 ## File heading
 
 /**
- * \file
+ * \file relative/file/path/name
  * \brief Short description of the file.
  *
  * Detailed description of the file.

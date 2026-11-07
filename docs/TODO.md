@@ -189,6 +189,17 @@ colourspaces → sRGB, then opaque alpha added where missing) — promote-only, 
 pixels. `ImageIO::save()` drops alpha only for JPEG (which can't carry it), keeping it for PNG/WebP.
 Reproduced on the win10 mixed set (now exits 0 to both PNG and JPEG) and pinned by lib + CLI tests.
 
+### CLI rejects a directory whose name is not ASCII (Windows)
+
+`platemaker-cli project create --input "…\Mój katalog"` fails with `is not a directory` (reproduced on
+0.6.0 msvc-release, a local folder as well as `G:\Mój dysk`; an ASCII folder works). `main()` rebuilds a
+UTF-8 argv, but `cli/main.cpp` then builds the path straight from that string —
+`fs::path inputDir = opts.get("input")` (three places: `process`, `project create`, `project mod`) — and
+on Windows `fs::path`'s narrow constructor reads the bytes in the ANSI code page. The library's
+`utf8ToPath()` is the fix; check every other `opts.get()` that reaches `fs::path` (output, workspace) and
+pin it with a `cli-tests` case on a non-ASCII folder. The 0.5.x CHANGELOG's "every filesystem boundary now
+converts explicitly" holds for the library only.
+
 ### Dynamic thread spawning for processing
 
 `ProcessingPipeline` runs single-threaded because the virtual strip is built
