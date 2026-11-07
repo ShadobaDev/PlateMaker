@@ -1,9 +1,13 @@
-# Coding style
+# Coding style — C++
+
+Rules for C++ code. The general sections apply to any C++ project; everything specific to this
+repository is in [This project](#this-project) at the end.
 
 Always use Doxygen style comments for documentation. Use backslash `\` notation.
 
 ## File heading
 
+```cpp
 /**
  * \file relative/file/path/name
  * \brief Short description of the file.
@@ -11,27 +15,31 @@ Always use Doxygen style comments for documentation. Use backslash `\` notation.
  * Detailed description of the file.
  *
  * SPDX-License-Identifier: [license]
- * 
+ *
  * \author [Author Name] <[Author Email]>
  * \date [Current Date in YYYY-MM-DD format]
- * 
+ *
  * \copyright Copyright (c) 2026 Owner
  */
+```
 
 ## Class description
 
+```cpp
 /**
  * \class ClassName
  * \brief Short description of the class.
  *
  * Detailed description of the class functionality and usage.
- * 
+ *
  * \note This is an optional note for the user of this class.
  * \warning This is an optional warning about potential side effects.
  */
- 
+```
+
 ## Method / Function description
 
+```cpp
 /**
  * \brief Short description of the method.
  *
@@ -40,27 +48,35 @@ Always use Doxygen style comments for documentation. Use backslash `\` notation.
  * \param firstParameter Description of the first input argument.
  * \param secondParameter Description of the second input argument.
  * \return Description of the return value and its meaning.
- * 
+ *
  * \retval true If the operation completed successfully.
  * \retval false If an error occurred during execution.
  */
+```
 
 ## Member / Global variable description
 
 ### Inline description (preferred for simple fields)
+
+```cpp
 int var; //!< Brief description of the variable.
+```
 
 ### Heading description (preferred for complex fields or globals)
+
+```cpp
 /**
  * \brief Short description of the variable.
  *
- * Detailed description of the variable's usage, constraints, 
+ * Detailed description of the variable's usage, constraints,
  * or allowed value ranges.
  */
 int var;
+```
 
 ## Enum description
 
+```cpp
 /**
  * \enum EnumName
  * \brief Short description of the enumeration type.
@@ -72,9 +88,11 @@ enum class EnumName {
     ValueSecond, //!< Brief description for the second value.
     ValueThird   //!< Brief description for the third value.
 };
+```
 
 ## Namespace description
 
+```cpp
 /**
  * \namespace NamespaceName
  * \brief Short description of the namespace's purpose.
@@ -85,10 +103,13 @@ enum class EnumName {
 namespace NamespaceName {
     // Code inside the namespace
 }
+```
 
 ## Template description
 
 ### Template Class
+
+```cpp
 /**
  * \brief Short description of the template class.
  *
@@ -100,8 +121,11 @@ template <typename T>
 class MyTemplateClass {
     // Class content
 };
+```
 
 ### Template Method / Function
+
+```cpp
 /**
  * \brief Short description of the template function.
  *
@@ -112,12 +136,14 @@ class MyTemplateClass {
  */
 template <std::size_t Size>
 void processArray(int (&arrayParam)[Size]);
+```
 
 # Project Architecture & Directory Structure
 
 You must strictly follow the directory layout rules below when organizing or creating new files.
 
 ## Namespace to Directory Mapping
+
 * Every **namespace** must have a direct reflection in the physical directory structure.
 * Example: Code inside `namespace Subsystem::Module` must be located inside the path `src/subsystem/module/`.
 
@@ -132,12 +158,8 @@ each thing it holds, and an *editor* that owns mutation of an aggregate legitima
 operation per member family — counting those as "responsibilities" is a category error, and
 splitting them to satisfy an arithmetic target makes the code worse, not better.
 
-Two classes are explicit exceptions, and each was measured before being exempted:
-
-| Class | Surface | Why it stands |
-|---|---|---|
-| `Models::ProjectItem` | ~23 public declarations | An entity. Its accessors are its shape: inputs, outputs, output directory, overlays, profile links. What did *not* belong were four whole-project operations driven by external state — they moved to `ProjectEditor`. |
-| `Infrastructure::WorkspaceEditor` | 16 public methods | An aggregate editor, already sectioned per entity family (canvas profiles 4, output profiles 3, projects 2, links 3, import 1, load 1, snapshot 2 — three to four each). Its private statics exist precisely to keep one copy of the invariants; splitting the class would duplicate them. |
+A class that exceeds the working number is an explicit exception: measure it, then list it in
+[This project](#this-project) with its surface and the reason it stands.
 
 The test to apply is not "how many methods" but: **can you name what this class is for in one
 sentence, without "and"?** If yes, it passes however many accessors it carries. If no, the split
@@ -148,13 +170,15 @@ aggregate's configuration, the result of a process — it belongs on the corresp
 not on the entity.
 
 ## Class Grouping & Component Directories
+
 To avoid flat, messy directories while preventing over-engineering, use the following rules for grouping:
 
 * **Primary Classes (Components):** Every major, standalone class representing a distinct component must have its own dedicated directory. This directory will contain its header (`.hpp`) and source (`.cpp`) files.
-* **Helper Classes and Enums:** Do NOT create separate directories for minor helper classes, utility structures, or enums. 
+* **Helper Classes and Enums:** Do NOT create separate directories for minor helper classes, utility structures, or enums.
 * **Grouping Rule:** Place helper classes, internal structures, and enums directly inside the directory of the **Primary Class** they support, or inside the parent module directory if shared.
 
 ### Example Directory Tree
+
 ```text
 src/
 └── network/                           # Reflects: namespace Network
@@ -171,9 +195,23 @@ src/
 ```
 
 ## Source vs Header Layout
+
 * Keep matching `.hpp` and `.cpp` files in the **same directory** corresponding to their class or module. Do not separate them into isolated global `include/` and `src/` roots unless explicitly instructed.
 
-# Tests and Coverage
+---
+
+# This project
+
+## Class-size exceptions
+
+Each was measured before being exempted:
+
+| Class | Surface | Why it stands |
+|---|---|---|
+| `Models::ProjectItem` | ~23 public declarations | An entity. Its accessors are its shape: inputs, outputs, output directory, overlays, profile links. What did *not* belong were four whole-project operations driven by external state — they moved to `ProjectEditor`. |
+| `Infrastructure::WorkspaceEditor` | 16 public methods | An aggregate editor, already sectioned per entity family (canvas profiles 4, output profiles 3, projects 2, links 3, import 1, load 1, snapshot 2 — three to four each). Its private statics exist precisely to keep one copy of the invariants; splitting the class would duplicate them. |
+
+## Tests and Coverage
 
 CI fails when a line of the library goes uncovered, or its branches fall below the floor in
 `.github/workflows/ci.yml`. New library code comes with the test that runs it:
