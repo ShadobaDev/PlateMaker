@@ -86,6 +86,7 @@
 #include <platemaker/infrastructure/workspace_packager/workspace_packager.hpp>
 #include <platemaker/infrastructure/workspace_serializer/workspace_serializer.hpp>
 #include <platemaker/infrastructure/file/file_meta_data.hpp>
+#include <platemaker/infrastructure/file/path_utf8.hpp>
 #include <platemaker/models/canvas_profile.hpp>
 #include <platemaker/models/common_types.hpp>
 #include <platemaker/models/output_profile.hpp>
@@ -347,7 +348,7 @@ static std::vector<fs::path> scanImageDir(const fs::path& dir)
     std::vector<fs::path> files;
     for (const auto& entry : fs::directory_iterator(dir)) {
         if (!entry.is_regular_file()) continue;
-        std::string ext = entry.path().extension().string();
+        std::string ext = pathToUtf8(entry.path().extension());
         for (auto& c : ext)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (kExts.count(ext)) files.push_back(entry.path());
@@ -545,7 +546,7 @@ static int cmdWorkspaceCreate(const Opts& opts)
     }
 
     try {
-        const auto dir = fs::path(outputFile).parent_path();
+        const auto dir = utf8ToPath(outputFile).parent_path();
         if (!dir.empty()) fs::create_directories(dir);
         WorkspaceSerializer{}.save(ws, outputFile);
     } catch (const std::exception& e) {
@@ -553,7 +554,7 @@ static int cmdWorkspaceCreate(const Opts& opts)
         return 2;
     }
 
-    std::cerr << "Workspace created: " << fs::absolute(outputFile).string() << '\n';
+    std::cerr << "Workspace created: " << pathToUtf8(fs::absolute(utf8ToPath(outputFile))) << '\n';
     std::cerr << "Tip: add canvas profiles with:\n"
               << "  workspace add-canvas-profile --workspace " << outputFile
               << " --name NAME --canvas WxH --margins T,R,B,L\n";
@@ -1079,7 +1080,7 @@ static int cmdWorkspaceImportProfiles(const Opts& opts)
     std::vector<CanvasProfile> canvas;
     std::vector<OutputProfile> output;
     try {
-        std::ifstream in(fromFile);
+        std::ifstream in(utf8ToPath(fromFile));
         if (!in.is_open())
             throw std::runtime_error("cannot open '" + fromFile + "'");
         const nlohmann::json probe = nlohmann::json::parse(in);
@@ -1471,13 +1472,13 @@ static int cmdProcess(const Opts& opts)
             return 1;
         }
     } else if (opts.has("input")) {
-        fs::path inputDir = opts.get("input");
+        const fs::path inputDir = utf8ToPath(opts.get("input"));
         if (!fs::is_directory(inputDir)) {
-            std::cerr << "Error: --input '" << inputDir.string()
+            std::cerr << "Error: --input '" << opts.get("input")
                       << "' is not a directory\n";
             return 2;
         }
-        const std::string absInput = fs::absolute(inputDir).string();
+        const std::string absInput = pathToUtf8(fs::absolute(inputDir));
 
         // Look for an existing project matching this directory.
         for (int i = 0; i < static_cast<int>(ws.projectItems.size()); ++i)
@@ -1486,7 +1487,7 @@ static int cmdProcess(const Opts& opts)
 
         if (projectIdx < 0) {
             // No match — create a new project via the library (which mints the uid) and append.
-            ProjectItem& newProj = WorkspaceEditor(ws).addProject(inputDir.filename().string());
+            ProjectItem& newProj = WorkspaceEditor(ws).addProject(pathToUtf8(inputDir.filename()));
             newProj.inputDirectory = absInput;
             // Use mergeFileScan() on the empty project to populate the file
             // list via the library layer (same path as updates later on).
@@ -1494,7 +1495,7 @@ static int cmdProcess(const Opts& opts)
             std::vector<std::string> paths;
             paths.reserve(files.size());
             for (const auto& f : files)
-                paths.push_back(fs::absolute(f).string());
+                paths.push_back(pathToUtf8(fs::absolute(f)));
             Platemaker::Infrastructure::ProjectEditor{newProj}.mergeFileScan(paths);
             projectIdx = static_cast<int>(ws.projectItems.size()) - 1;
         }
@@ -1637,7 +1638,7 @@ static int cmdProcess(const Opts& opts)
         return 1;
     }
     try {
-        fs::create_directories(outputDir);
+        fs::create_directories(utf8ToPath(outputDir));
     } catch (const std::exception& e) {
         std::cerr << "Error: cannot create output directory: " << e.what() << '\n';
         return 2;
@@ -1727,7 +1728,7 @@ static int cmdProcess(const Opts& opts)
             for (const auto& fileName : oldOutputNames) {
                 if (produced.count(fileName)) continue;
                 std::error_code ec;
-                if (fs::remove(fs::path(oldOutputDir) / fileName, ec) && !ec) {
+                if (fs::remove(utf8ToPath(oldOutputDir) / utf8ToPath(fileName), ec) && !ec) {
                     ++removed;
                     if (!jsonMode)
                         std::cerr << "  Removed stale output: " << fileName << '\n';
@@ -1874,20 +1875,20 @@ static int cmdProjectCreate(const Opts& opts)
     ProjectItem& newProj = WorkspaceEditor(ws).addProject(opts.get("name"));
 
     if (opts.has("input")) {
-        const fs::path inputDir = opts.get("input");
+        const fs::path inputDir = utf8ToPath(opts.get("input"));
         if (!fs::is_directory(inputDir)) {
             std::cerr << "Error: --input '" << opts.get("input")
                       << "' is not a directory\n";
             return 2;
         }
-        newProj.inputDirectory = fs::absolute(inputDir).string();
+        newProj.inputDirectory = pathToUtf8(fs::absolute(inputDir));
         // mergeFileScan() on an empty project just populates the input list;
         // sha256-based rename detection is available on the first mod later.
         const auto files = scanImageDir(inputDir);
         std::vector<std::string> paths;
         paths.reserve(files.size());
         for (const auto& f : files)
-            paths.push_back(fs::absolute(f).string());
+            paths.push_back(pathToUtf8(fs::absolute(f)));
         Platemaker::Infrastructure::ProjectEditor{newProj}.mergeFileScan(paths);
     }
 
@@ -1955,20 +1956,20 @@ static int cmdProjectMod(const Opts& opts)
     }
 
     if (opts.has("input")) {
-        const fs::path inputDir = opts.get("input");
+        const fs::path inputDir = utf8ToPath(opts.get("input"));
         if (!fs::is_directory(inputDir)) {
             std::cerr << "Error: --input '" << opts.get("input")
                       << "' is not a directory\n";
             return 2;
         }
-        pi->inputDirectory = fs::absolute(inputDir).string();
+        pi->inputDirectory = pathToUtf8(fs::absolute(inputDir));
         // mergeFileScan() detects renames via sha256 and only invalidates
         // outputs when the strip structure changes (add / remove / reorder).
         const auto files = scanImageDir(inputDir);
         std::vector<std::string> paths;
         paths.reserve(files.size());
         for (const auto& f : files)
-            paths.push_back(fs::absolute(f).string());
+            paths.push_back(pathToUtf8(fs::absolute(f)));
         const auto scanResult = Platemaker::Infrastructure::ProjectEditor{*pi}.mergeFileScan(paths);
         std::cerr << "  Input updated: " << pi->getInputImages().size()
                   << " file(s) from " << opts.get("input");
@@ -2343,7 +2344,7 @@ static int cmdTemplate(const Opts& opts)
     // extension appended, so the output file is recognised correctly by all tools.
     TemplateOptions options = TemplateGenerator::optionsFor(cp);
     {
-        std::string ext = fs::path(outputPath).extension().string();
+        std::string ext = pathToUtf8(utf8ToPath(outputPath).extension());
         for (auto& c : ext)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (ext == ".psd") {
@@ -2377,7 +2378,7 @@ static int cmdTemplate(const Opts& opts)
     }
 
     // --- Ensure output directory exists ---
-    const fs::path outPath(outputPath);
+    const fs::path outPath = utf8ToPath(outputPath);
     if (const auto parent = outPath.parent_path(); !parent.empty()) {
         try {
             fs::create_directories(parent);
@@ -2398,7 +2399,7 @@ static int cmdTemplate(const Opts& opts)
         return 3;
     }
 
-    std::cerr << "Template written: " << fs::absolute(outPath).string() << '\n';
+    std::cerr << "Template written: " << pathToUtf8(fs::absolute(outPath)) << '\n';
     std::cerr << "  Profile    : " << cp.name << '\n';
     std::cerr << "  Canvas     : " << cp.canvasSize.width << 'x' << cp.canvasSize.height << '\n';
     std::cerr << "  Safe area  : " << cp.safeArea().width << 'x' << cp.safeArea().height << '\n';
