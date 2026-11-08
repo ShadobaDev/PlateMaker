@@ -44,6 +44,26 @@
 namespace Platemaker::Infrastructure {
 
 /**
+ * \brief One file the disk pass has to look at: whether it exists and, when asked, its content hash.
+ *
+ * Returned by \c ProjectEditor::diskCheckRequests(). It is plain data, so a consumer can hand a list of
+ * them to worker threads and run \c ProjectEditor::checkOnDisk() on each, in any order.
+ */
+struct DiskCheckRequest {
+    std::string path;          //!< Absolute path, spelled as the project spells it; the key a result is applied by.
+    bool        hash = false;  //!< Whether the content hash is needed, not only whether the file exists.
+};
+
+/**
+ * \brief What the disk said about one \c DiskCheckRequest, as \c ProjectEditor::checkOnDisk() found it.
+ */
+struct DiskCheck {
+    std::string path;           //!< The request's path.
+    bool        exists = false; //!< Whether a file is there.
+    std::string sha256;         //!< Its SHA-256 hex digest; empty when not asked for or when it could not be read.
+};
+
+/**
  * \class ProjectEditor
  * \brief Intent-level edits to a single \c Models::ProjectItem's content.
  */
@@ -145,7 +165,11 @@ public:
     // -----------------------------------------------------------------------
 
     /**
-     * \brief Refreshes the status of every tracked file against disk *and* config.
+     * \brief Refreshes the status of every tracked file against disk.
+     *
+     * The three steps below, run here one file after another: \c diskCheckRequests(), \c checkOnDisk()
+     * for each, \c applyDiskChecks(). A consumer that must not wait on the disk runs the middle step on
+     * its own threads instead.
      *
      * For each \c Models::InputFile:
      * - \c Missing   — file no longer exists on disk.
@@ -169,6 +193,40 @@ public:
      * \return \c true if every input is \c Processed and every output is \c Done.
      */
     bool sanitize();
+
+    /**
+     * \brief The files the disk pass has to look at, and which of them it has to hash.
+     *
+     * Every input and every output. A file is hashed only where a hash decides its status: an input
+     * with a recorded hash, or one marked \c Error (whose hash is retried); an output with a recorded
+     * hash. Reads the model only.
+     *
+     * \return One request per tracked file.
+     */
+    [[nodiscard]] std::vector<DiskCheckRequest> diskCheckRequests() const;
+
+    /**
+     * \brief Looks one file up on disk: whether it exists, and its hash when the request asks for it.
+     *
+     * Touches no project, so it is safe on any thread, for any number of files at once.
+     *
+     * \param request What to look at.
+     * \return What the disk said.
+     */
+    [[nodiscard]] static DiskCheck checkOnDisk(const DiskCheckRequest& request);
+
+    /**
+     * \brief Sets each file's status from what the disk said, by the rules \c sanitize() documents.
+     *
+     * Results are matched to files by path. A file with no result is left as it is, and a result for a
+     * path the project no longer has is ignored, so results that arrive after the project changed do
+     * no harm.
+     *
+     * \param checks Results from \c checkOnDisk(), in any order.
+     * \return \c true if every input is settled (\c Processed, \c Skipped or \c Error) and every
+     *         output is \c Done.
+     */
+    bool applyDiskChecks(const std::vector<DiskCheck>& checks);
 
     /**
      * \brief Applies the results of a pipeline run to all tracked records.

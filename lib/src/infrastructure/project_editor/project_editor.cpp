@@ -158,104 +158,120 @@ void ProjectEditor::restore(const std::string& snapshot)
 
 bool ProjectEditor::sanitize()
 {
-    namespace fs = std::filesystem;
+    std::vector<DiskCheck> checks;
+    for (const auto& request : diskCheckRequests())
+        checks.push_back(checkOnDisk(request));
+    return applyDiskChecks(checks);
+}
 
-    m_project.m_isUpToDate = true;
+std::vector<DiskCheckRequest> ProjectEditor::diskCheckRequests() const
+{
+    std::vector<DiskCheckRequest> requests;
+    requests.reserve(m_project.m_inputImages.size() + m_project.m_outputImages.size());
+    for (const auto& file : m_project.m_inputImages)
+        requests.push_back({file.filePath,
+                            !file.sha256.empty() || file.status == Models::FileStatus::Error});
+    for (const auto& out : m_project.m_outputImages)
+        requests.push_back({m_project.m_outputDirectory + "/" + out.fileName, !out.sha256.empty()});
+    return requests;
+}
+
+DiskCheck ProjectEditor::checkOnDisk(const DiskCheckRequest& request)
+{
+    DiskCheck check;
+    check.path = request.path;
+    // utf8ToPath() rather than the bare string: on MSVC a narrow path is read in the ANSI
+    // code page, so a non-ASCII path would report as Missing even though the file is there.
+    check.exists = std::filesystem::exists(Infrastructure::utf8ToPath(request.path));
+    if (check.exists && request.hash)
+        check.sha256 = Infrastructure::FileMetaData::computeFileSha256(request.path);
+    return check;
+}
+
+bool ProjectEditor::applyDiskChecks(const std::vector<DiskCheck>& checks)
+{
+    std::unordered_map<std::string, const DiskCheck*> byPath;
+    byPath.reserve(checks.size());
+    for (const auto& check : checks)
+        byPath[check.path] = &check;
+    const auto find = [&byPath](const std::string& path) -> const DiskCheck* {
+        const auto it = byPath.find(path);
+        return it == byPath.end() ? nullptr : it->second;
+    };
 
     for (auto& file : m_project.m_inputImages) {
-        // utf8ToPath() rather than the bare string: on MSVC a narrow path is read in the ANSI
-        // code page, so a non-ASCII path would report as Missing even though the file is there.
-        if (!fs::exists(Infrastructure::utf8ToPath(file.filePath))) {
-            file.status  = Models::FileStatus::Missing;
-            m_project.m_isUpToDate = false;
+        const DiskCheck* check = find(file.filePath);
+        if (!check)
+            continue;   // not looked at this time: what it was stays
+        if (!check->exists) {
+            file.status = Models::FileStatus::Missing;
             continue;
         }
 
         // An input the last render produced output for but could not hash afterwards (locked /
-        // permission / offline) stays Error until the file becomes readable again. Try to hash now:
-        // success means access was restored → recover to Processed and adopt the current content as the
-        // verification baseline; failure means still unreachable → remain Error. Like Skipped, Error
+        // permission / offline) stays Error until the file becomes readable again. A hash now means
+        // access was restored → recover to Processed and adopt the current content as the
+        // verification baseline; none means still unreachable → remain Error. Like Skipped, Error
         // has an empty sha256 and does NOT mark the project out of date — that is exactly what stops the
         // silent re-render loop (falling through to the empty-sha256 branch below would re-mark it
         // Pending and reprocess everything forever).
         if (file.status == Models::FileStatus::Error) {
-            const std::string h =
-                Infrastructure::FileMetaData::computeFileSha256(file.filePath);
-            if (h.empty())
+            if (check->sha256.empty())
                 continue; // still unreadable — stay Error, do not force a re-render
-            file.sha256 = h;
+            file.sha256 = check->sha256;
             file.status = Models::FileStatus::Processed;
             continue;
         }
 
-        // A page the last render skipped (no matching / linked canvas profile) stays Skipped as long
-        // as the file is unchanged.  sanitize() is disk-based and cannot re-derive the profile match,
-        // so it must NOT silently "un-skip" the page to Processed/Pending — doing so lost the render's
-        // result on every reopen, and made the project look permanently out of date (a never-rendered
-        // skipped page has no hash → Pending → forces a re-render forever, even with every output Done).
-        // Skipped is terminal: nothing more can be rendered for it without a profile change, so it does
-        // NOT mark the project out of date.  A canvas-profile *list* change is caught separately by
-        // detectCanvasConfigChange() below (listChanged), which forces a full re-render and
-        // re-evaluates every page — so a page becoming matchable is not missed.
+        // A page the last render skipped (its file missing or failed to load) stays Skipped as long
+        // as the file is unchanged. The disk cannot re-derive why it was skipped, so it must NOT
+        // silently "un-skip" the page to Processed/Pending — doing so lost the render's result on every
+        // reopen, and made the project look permanently out of date (a never-rendered skipped page has
+        // no hash → Pending → forces a re-render forever, even with every output Done). Skipped is
+        // terminal, so it does NOT mark the project out of date.
         if (file.status == Models::FileStatus::Skipped) {
-            if (file.sha256.empty())
-                continue; // no content baseline, but still deliberately skipped — leave it
-            if (Infrastructure::FileMetaData::computeFileSha256(file.filePath) == file.sha256)
-                continue; // unchanged → remain Skipped
+            if (file.sha256.empty() || check->sha256 == file.sha256)
+                continue; // no content baseline, or unchanged → remain Skipped
             // The file changed since it was skipped: fall through so it becomes Modified and the next
             // render re-includes or re-skips it.
         }
 
-        if (file.sha256.empty()) {
-            // Never processed — mark as Pending so the pipeline knows to run.
-            file.status  = Models::FileStatus::Pending;
-            m_project.m_isUpToDate = false;
-            continue;
-        }
-
-        const std::string currentHash =
-            Infrastructure::FileMetaData::computeFileSha256(file.filePath);
-
-        if (currentHash != file.sha256) {
-            file.status  = Models::FileStatus::Modified;
-            m_project.m_isUpToDate = false;
-        } else {
-            file.status = Models::FileStatus::Processed;
-        }
+        if (file.sha256.empty())
+            file.status = Models::FileStatus::Pending;   // never processed — the pipeline has to run
+        else
+            file.status = check->sha256 == file.sha256 ? Models::FileStatus::Processed
+                                                       : Models::FileStatus::Modified;
     }
 
     // Validate output slices against disk: a deleted or externally-edited
     // output makes the project out-of-date even when every input is unchanged.
     for (auto& out : m_project.m_outputImages) {
-        const std::string path = m_project.m_outputDirectory + "/" + out.fileName;
-
-        if (!fs::exists(Infrastructure::utf8ToPath(path))) {
-            out.status   = Models::FileStatus::Missing;
-            m_project.m_isUpToDate = false;
+        const DiskCheck* check = find(m_project.m_outputDirectory + "/" + out.fileName);
+        if (!check)
             continue;
-        }
-
-        // No stored hash to compare against (legacy record) — trust existence.
-        if (out.sha256.empty()) {
-            out.status = Models::FileStatus::Done;
-            continue;
-        }
-
-        const std::string currentHash =
-            Infrastructure::FileMetaData::computeFileSha256(path);
-
-        if (currentHash != out.sha256) {
-            out.status   = Models::FileStatus::Modified;
-            m_project.m_isUpToDate = false;
-        } else {
-            out.status = Models::FileStatus::Done;
-        }
+        if (!check->exists)
+            out.status = Models::FileStatus::Missing;
+        else if (out.sha256.empty())
+            out.status = Models::FileStatus::Done;   // no stored hash to compare (legacy record) — trust existence
+        else
+            out.status = check->sha256 == out.sha256 ? Models::FileStatus::Done
+                                                     : Models::FileStatus::Modified;
     }
 
     // What the configuration has put out of sync is not recorded here: a profile edit, a reorder or a
     // grade leaves every file byte-identical, and a status written now would be wrong after the next
     // edit or its undo. ProjectItem::detectFileStaleness() answers it from the model when asked.
-
+    //
+    // Up to date is read off the statuses, so a file this call had no result for counts as it stands.
+    const auto settled = [](Models::FileStatus s) {
+        return s != Models::FileStatus::Missing && s != Models::FileStatus::Pending
+            && s != Models::FileStatus::Modified;
+    };
+    m_project.m_isUpToDate =
+        std::all_of(m_project.m_inputImages.begin(), m_project.m_inputImages.end(),
+                    [&](const Models::InputFile& f) { return settled(f.status); })
+        && std::all_of(m_project.m_outputImages.begin(), m_project.m_outputImages.end(),
+                       [&](const Models::OutputFile& o) { return settled(o.status); });
     return m_project.m_isUpToDate;
 }
 

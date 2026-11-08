@@ -15,6 +15,10 @@
   out of sync since the render: a canvas profile, the page order, an unrendered page, the output profile,
   or the grade and overlays. It reads no file, so it can be asked on every repaint, and it accepts any
   canvas-profile list, such as one still being edited.
+- **`sanitize()`'s disk pass in three parts**, so a consumer can check files on its own threads:
+  `ProjectEditor::diskCheckRequests()` lists what to look at, the static `checkOnDisk()` looks at one
+  file and is safe on any thread, and `applyDiskChecks()` sets the statuses from the results, ignoring
+  any for a file the project no longer has. `sanitize()` is the three run in sequence.
 
 ### Fixed
 

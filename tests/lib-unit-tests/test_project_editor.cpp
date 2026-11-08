@@ -464,6 +464,52 @@ OutputFile outputNamed(const std::string& name, const std::string& sha256, FileS
 
 } // namespace
 
+TEST(ProjectEditorTest, DiskPassHashesOnlyWhereAHashDecides)
+{
+    ProjectItem p = makeProject(3);
+    p.getOutputDirectory() = "out";
+    p.getInputImages()[0].sha256 = "a";                       // recorded hash → compare it
+    p.getInputImages()[1].status = FileStatus::Error;         // unverified → retry the hash
+    p.getInputImages()[2].status = FileStatus::Pending;       // never rendered → existence only
+    OutputFile hashed;  hashed.fileName = "s1.png"; hashed.sha256 = "b";
+    OutputFile legacy;  legacy.fileName = "s2.png";            // no recorded hash → existence only
+    p.getOutputImages() = {hashed, legacy};
+
+    const auto requests = Infrastructure::ProjectEditor{p}.diskCheckRequests();
+    ASSERT_EQ(requests.size(), 5u);
+    EXPECT_EQ(requests[0].path, "p0.png"); EXPECT_TRUE(requests[0].hash);
+    EXPECT_TRUE(requests[1].hash);
+    EXPECT_FALSE(requests[2].hash);
+    EXPECT_EQ(requests[3].path, "out/s1.png"); EXPECT_TRUE(requests[3].hash);
+    EXPECT_FALSE(requests[4].hash);
+}
+
+TEST(ProjectEditorTest, DiskResultsApplyByPathAndLateOnesDoNoHarm)
+{
+    // Results computed elsewhere may arrive after the project changed: a result for a path it no
+    // longer has is ignored, and a file with no result keeps the status it had.
+    ProjectItem p = makeProject(2);
+    p.getOutputDirectory() = "out";
+    p.getInputImages()[0].sha256 = "a";
+    p.getInputImages()[1].sha256 = "b";
+    OutputFile out; out.fileName = "s1.png"; out.sha256 = "c"; out.status = FileStatus::Missing;
+    p.getOutputImages() = {out};
+
+    const std::vector<Infrastructure::DiskCheck> checks{
+        {"p0.png", true, "changed"},       // this page was edited on disk
+        {"gone.png", true, "x"},           // a page the project no longer has
+    };
+    EXPECT_FALSE(Infrastructure::ProjectEditor{p}.applyDiskChecks(checks));
+    EXPECT_EQ(p.getInputImages()[0].status, FileStatus::Modified);
+    EXPECT_EQ(p.getInputImages()[1].status, FileStatus::Processed) << "no result: left as it was";
+    EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Missing)  << "no result: left as it was";
+
+    // checkOnDisk() itself: a file that is not there has no hash, whatever was asked.
+    const auto absent = Infrastructure::ProjectEditor::checkOnDisk({"no/such/file.png", true});
+    EXPECT_FALSE(absent.exists);
+    EXPECT_TRUE(absent.sha256.empty());
+}
+
 TEST(ProjectEditorTest, MoveInputNeedsTwoInputs)
 {
     ProjectItem none = makeProject(0);
