@@ -478,6 +478,7 @@ TEST(ProjectEditorTest, DiskPassHashesOnlyWhereAHashDecides)
     const auto requests = Infrastructure::ProjectEditor{p}.diskCheckRequests();
     ASSERT_EQ(requests.size(), 5u);
     EXPECT_EQ(requests[0].path, "p0.png"); EXPECT_TRUE(requests[0].hash);
+    EXPECT_EQ(requests[0].recordedSha256, "a");
     EXPECT_TRUE(requests[1].hash);
     EXPECT_FALSE(requests[2].hash);
     EXPECT_EQ(requests[3].path, "out/s1.png"); EXPECT_TRUE(requests[3].hash);
@@ -496,16 +497,17 @@ TEST(ProjectEditorTest, DiskResultsApplyByPathAndLateOnesDoNoHarm)
     p.getOutputImages() = {out};
 
     const std::vector<Infrastructure::DiskCheck> checks{
-        {"p0.png", true, "changed"},       // this page was edited on disk
-        {"gone.png", true, "x"},           // a page the project no longer has
+        {"p0.png", "a", true, "changed"},   // this page was edited on disk
+        {"gone.png", "x", true, "x"},       // a page the project no longer has
+        {"out/s1.png", "old", true, "c"},   // measured before a render recorded "c": describes a file that is gone
     };
     EXPECT_FALSE(Infrastructure::ProjectEditor{p}.applyDiskChecks(checks));
     EXPECT_EQ(p.getInputImages()[0].status, FileStatus::Modified);
     EXPECT_EQ(p.getInputImages()[1].status, FileStatus::Processed) << "no result: left as it was";
-    EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Missing)  << "no result: left as it was";
+    EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Missing)  << "a stale result: left as it was";
 
     // checkOnDisk() itself: a file that is not there has no hash, whatever was asked.
-    const auto absent = Infrastructure::ProjectEditor::checkOnDisk({"no/such/file.png", true});
+    const auto absent = Infrastructure::ProjectEditor::checkOnDisk({"no/such/file.png", true, ""});
     EXPECT_FALSE(absent.exists);
     EXPECT_TRUE(absent.sha256.empty());
 }

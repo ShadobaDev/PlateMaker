@@ -17,8 +17,9 @@
   canvas-profile list, such as one still being edited.
 - **`sanitize()`'s disk pass in three parts**, so a consumer can check files on its own threads:
   `ProjectEditor::diskCheckRequests()` lists what to look at, the static `checkOnDisk()` looks at one
-  file and is safe on any thread, and `applyDiskChecks()` sets the statuses from the results, ignoring
-  any for a file the project no longer has. `sanitize()` is the three run in sequence.
+  file and is safe on any thread, and `applyDiskChecks()` sets the statuses from the results. A result
+  is ignored when the project no longer has the file, or when a render has recorded a new hash for it
+  since the result was asked for. `sanitize()` is the three run in sequence.
 
 ### Fixed
 

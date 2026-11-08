@@ -50,8 +50,9 @@ namespace Platemaker::Infrastructure {
  * them to worker threads and run \c ProjectEditor::checkOnDisk() on each, in any order.
  */
 struct DiskCheckRequest {
-    std::string path;          //!< Absolute path, spelled as the project spells it; the key a result is applied by.
-    bool        hash = false;  //!< Whether the content hash is needed, not only whether the file exists.
+    std::string path;           //!< Absolute path, spelled as the project spells it; the key a result is applied by.
+    bool        hash = false;   //!< Whether the content hash is needed, not only whether the file exists.
+    std::string recordedSha256; //!< The hash the project recorded for the file when this was asked for.
 };
 
 /**
@@ -59,6 +60,7 @@ struct DiskCheckRequest {
  */
 struct DiskCheck {
     std::string path;           //!< The request's path.
+    std::string recordedSha256; //!< The request's recorded hash: what this result was measured against.
     bool        exists = false; //!< Whether a file is there.
     std::string sha256;         //!< Its SHA-256 hex digest; empty when not asked for or when it could not be read.
 };
@@ -201,7 +203,8 @@ public:
      * with a recorded hash, or one marked \c Error (whose hash is retried); an output with a recorded
      * hash. Reads the model only.
      *
-     * \return One request per tracked file.
+     * \return One request per tracked file: the inputs first, in \c getInputImages() order, then the
+     *         outputs, in \c getOutputImages() order.
      */
     [[nodiscard]] std::vector<DiskCheckRequest> diskCheckRequests() const;
 
@@ -218,9 +221,10 @@ public:
     /**
      * \brief Sets each file's status from what the disk said, by the rules \c sanitize() documents.
      *
-     * Results are matched to files by path. A file with no result is left as it is, and a result for a
-     * path the project no longer has is ignored, so results that arrive after the project changed do
-     * no harm.
+     * Results are matched to files by path. A file with no result is left as it is, and a result is
+     * ignored when the project no longer has its path, or when the file's recorded hash is no longer
+     * the one the result was measured against (a render recorded a new one since). So results that
+     * arrive after the project changed do no harm.
      *
      * \param checks Results from \c checkOnDisk(), in any order.
      * \return \c true if every input is settled (\c Processed, \c Skipped or \c Error) and every

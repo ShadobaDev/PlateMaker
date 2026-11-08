@@ -170,16 +170,18 @@ std::vector<DiskCheckRequest> ProjectEditor::diskCheckRequests() const
     requests.reserve(m_project.m_inputImages.size() + m_project.m_outputImages.size());
     for (const auto& file : m_project.m_inputImages)
         requests.push_back({file.filePath,
-                            !file.sha256.empty() || file.status == Models::FileStatus::Error});
+                            !file.sha256.empty() || file.status == Models::FileStatus::Error,
+                            file.sha256});
     for (const auto& out : m_project.m_outputImages)
-        requests.push_back({m_project.m_outputDirectory + "/" + out.fileName, !out.sha256.empty()});
+        requests.push_back({m_project.m_outputDirectory + "/" + out.fileName, !out.sha256.empty(), out.sha256});
     return requests;
 }
 
 DiskCheck ProjectEditor::checkOnDisk(const DiskCheckRequest& request)
 {
     DiskCheck check;
-    check.path = request.path;
+    check.path           = request.path;
+    check.recordedSha256 = request.recordedSha256;
     // utf8ToPath() rather than the bare string: on MSVC a narrow path is read in the ANSI
     // code page, so a non-ASCII path would report as Missing even though the file is there.
     check.exists = std::filesystem::exists(Infrastructure::utf8ToPath(request.path));
@@ -194,13 +196,15 @@ bool ProjectEditor::applyDiskChecks(const std::vector<DiskCheck>& checks)
     byPath.reserve(checks.size());
     for (const auto& check : checks)
         byPath[check.path] = &check;
-    const auto find = [&byPath](const std::string& path) -> const DiskCheck* {
+    // A result measured against a record that has changed since (a render wrote the file and recorded its
+    // new hash) describes a file that is gone; it counts as no result.
+    const auto find = [&byPath](const std::string& path, const std::string& recorded) -> const DiskCheck* {
         const auto it = byPath.find(path);
-        return it == byPath.end() ? nullptr : it->second;
+        return (it == byPath.end() || it->second->recordedSha256 != recorded) ? nullptr : it->second;
     };
 
     for (auto& file : m_project.m_inputImages) {
-        const DiskCheck* check = find(file.filePath);
+        const DiskCheck* check = find(file.filePath, file.sha256);
         if (!check)
             continue;   // not looked at this time: what it was stays
         if (!check->exists) {
@@ -246,7 +250,7 @@ bool ProjectEditor::applyDiskChecks(const std::vector<DiskCheck>& checks)
     // Validate output slices against disk: a deleted or externally-edited
     // output makes the project out-of-date even when every input is unchanged.
     for (auto& out : m_project.m_outputImages) {
-        const DiskCheck* check = find(m_project.m_outputDirectory + "/" + out.fileName);
+        const DiskCheck* check = find(m_project.m_outputDirectory + "/" + out.fileName, out.sha256);
         if (!check)
             continue;
         if (!check->exists)
