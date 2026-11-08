@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **The CLI accepts folders and files whose names are not ASCII on Windows.** Such a folder was rejected
+  as "not a directory", and a file could not be opened or written.
+
 ## [0.6.0] — 06.11.2026
 
 Adds two optional, non-destructive **render-time processing steps** — project-wide **colour correction**

@@ -183,6 +183,10 @@ def _cli_call_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def run_with_timeout(*args: object, **kwargs: object):
         kwargs.setdefault("timeout", _CLI_CALL_TIMEOUT)
+        # The CLI writes UTF-8; Python's text default on Windows is the ANSI code page, which
+        # garbles a non-ASCII path in the output or fails to decode it at all.
+        if kwargs.get("text"):
+            kwargs.setdefault("encoding", "utf-8")
         return real_run(*args, **kwargs)
 
     monkeypatch.setattr(subprocess, "run", run_with_timeout)
