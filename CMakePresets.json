@@ -130,7 +130,14 @@
       "description": "MSVC toolchain via VS 2022, Debug.",
       "inherits": "msvc-base",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
-    }
+    },
+
+    {"name": "dist-linux-release", "displayName": "Dist · linux-release (no tests)", "description": "linux-release for the release script: tests are not built, and it installs where linux-release does.", "inherits": "linux-release", "installDir": "${sourceDir}/install/linux-release", "cacheVariables": {"PLATEMAKER_BUILD_TESTS": "OFF"}},
+    {"name": "dist-linux-debug", "displayName": "Dist · linux-debug (no tests)", "description": "linux-debug for the release script: tests are not built, and it installs where linux-debug does.", "inherits": "linux-debug", "installDir": "${sourceDir}/install/linux-debug", "cacheVariables": {"PLATEMAKER_BUILD_TESTS": "OFF"}},
+    {"name": "dist-mingw-release", "displayName": "Dist · mingw-release (no tests)", "description": "mingw-release for the release script: tests are not built, and it installs where mingw-release does.", "inherits": "mingw-release", "installDir": "${sourceDir}/install/mingw-release", "cacheVariables": {"PLATEMAKER_BUILD_TESTS": "OFF"}},
+    {"name": "dist-mingw-debug", "displayName": "Dist · mingw-debug (no tests)", "description": "mingw-debug for the release script: tests are not built, and it installs where mingw-debug does.", "inherits": "mingw-debug", "installDir": "${sourceDir}/install/mingw-debug", "cacheVariables": {"PLATEMAKER_BUILD_TESTS": "OFF"}},
+    {"name": "dist-msvc-release", "displayName": "Dist · msvc-release (no tests)", "description": "msvc-release for the release script: tests are not built, and it installs where msvc-release does.", "inherits": "msvc-release", "installDir": "${sourceDir}/install/msvc-release", "cacheVariables": {"PLATEMAKER_BUILD_TESTS": "OFF"}},
+    {"name": "dist-msvc-debug", "displayName": "Dist · msvc-debug (no tests)", "description": "msvc-debug for the release script: tests are not built, and it installs where msvc-debug does.", "inherits": "msvc-debug", "installDir": "${sourceDir}/install/msvc-debug", "cacheVariables": {"PLATEMAKER_BUILD_TESTS": "OFF"}}
 
   ],
 
@@ -145,7 +152,14 @@
     { "name": "mingw-debug",   "displayName": "Build · MinGW Debug",   "configurePreset": "mingw-debug",   "jobs": 0 },
 
     { "name": "msvc-release", "displayName": "Build · MSVC Release", "configurePreset": "msvc-release", "configuration": "Release" },
-    { "name": "msvc-debug",   "displayName": "Build · MSVC Debug",   "configurePreset": "msvc-debug",   "configuration": "Debug" }
+    { "name": "msvc-debug",   "displayName": "Build · MSVC Debug",   "configurePreset": "msvc-debug",   "configuration": "Debug" },
+
+    {"name": "dist-linux-release", "displayName": "Build · Dist linux-release", "configurePreset": "dist-linux-release", "jobs": 0},
+    {"name": "dist-linux-debug", "displayName": "Build · Dist linux-debug", "configurePreset": "dist-linux-debug", "jobs": 0},
+    {"name": "dist-mingw-release", "displayName": "Build · Dist mingw-release", "configurePreset": "dist-mingw-release", "jobs": 0},
+    {"name": "dist-mingw-debug", "displayName": "Build · Dist mingw-debug", "configurePreset": "dist-mingw-debug", "jobs": 0},
+    {"name": "dist-msvc-release", "displayName": "Build · Dist msvc-release", "configurePreset": "dist-msvc-release", "configuration": "Release"},
+    {"name": "dist-msvc-debug", "displayName": "Build · Dist msvc-debug", "configurePreset": "dist-msvc-debug", "configuration": "Debug"}
 
   ],
 
@@ -207,7 +221,14 @@
       "configurePreset": "msvc-debug",
       "configurations": ["Debug"],
       "generators": ["ZIP"]
-    }
+    },
+
+    {"name": "dist-linux-release", "displayName": "Package · Linux Release (dev + cli)", "description": "Produces platemaker-dev-<ver>-linux-x86_64-release.tar.gz and platemaker-cli-... in dist/", "configurePreset": "dist-linux-release", "generators": ["TGZ"]},
+    {"name": "dist-linux-debug", "displayName": "Package · Linux Debug (dev + cli)", "configurePreset": "dist-linux-debug", "generators": ["TGZ"]},
+    {"name": "dist-mingw-release", "displayName": "Package · MinGW Release (dev + cli)", "description": "Produces platemaker-dev-<ver>-windows-mingw-release.zip and platemaker-cli-... in dist/", "configurePreset": "dist-mingw-release", "generators": ["ZIP"]},
+    {"name": "dist-mingw-debug", "displayName": "Package · MinGW Debug (dev + cli)", "configurePreset": "dist-mingw-debug", "generators": ["ZIP"]},
+    {"name": "dist-msvc-release", "displayName": "Package · MSVC Release (dev + cli)", "configurePreset": "dist-msvc-release", "configurations": ["Release"], "generators": ["ZIP"]},
+    {"name": "dist-msvc-debug", "displayName": "Package · MSVC Debug (dev + cli)", "configurePreset": "dist-msvc-debug", "configurations": ["Debug"], "generators": ["ZIP"]}
 
   ],
 
@@ -218,9 +239,9 @@
       "displayName": "Dist · Linux Release",
       "description": "Configure → Build → Package (dev + cli tarballs)",
       "steps": [
-        { "type": "configure", "name": "linux-release" },
-        { "type": "build",     "name": "linux-release" },
-        { "type": "package",   "name": "linux-release" }
+        { "type": "configure", "name": "dist-linux-release" },
+        { "type": "build",     "name": "dist-linux-release" },
+        { "type": "package",   "name": "dist-linux-release" }
       ]
     },
     {
@@ -228,9 +249,9 @@
       "displayName": "Dist · Linux Debug",
       "description": "Configure → Build → Package (dev + cli tarballs, unstripped)",
       "steps": [
-        { "type": "configure", "name": "linux-debug" },
-        { "type": "build",     "name": "linux-debug" },
-        { "type": "package",   "name": "linux-debug" }
+        { "type": "configure", "name": "dist-linux-debug" },
+        { "type": "build",     "name": "dist-linux-debug" },
+        { "type": "package",   "name": "dist-linux-debug" }
       ]
     },
 
@@ -239,9 +260,9 @@
       "displayName": "Dist · MinGW Release",
       "description": "Configure → Build → Package (dev + cli ZIPs)",
       "steps": [
-        { "type": "configure", "name": "mingw-release" },
-        { "type": "build",     "name": "mingw-release" },
-        { "type": "package",   "name": "mingw-release" }
+        { "type": "configure", "name": "dist-mingw-release" },
+        { "type": "build",     "name": "dist-mingw-release" },
+        { "type": "package",   "name": "dist-mingw-release" }
       ]
     },
     {
@@ -249,9 +270,9 @@
       "displayName": "Dist · MinGW Debug",
       "description": "Configure → Build → Package (dev + cli ZIPs, unstripped)",
       "steps": [
-        { "type": "configure", "name": "mingw-debug" },
-        { "type": "build",     "name": "mingw-debug" },
-        { "type": "package",   "name": "mingw-debug" }
+        { "type": "configure", "name": "dist-mingw-debug" },
+        { "type": "build",     "name": "dist-mingw-debug" },
+        { "type": "package",   "name": "dist-mingw-debug" }
       ]
     },
 
@@ -260,9 +281,9 @@
       "displayName": "Dist · MSVC Release",
       "description": "Configure → Build → Package (dev + cli ZIPs)",
       "steps": [
-        { "type": "configure", "name": "msvc-release" },
-        { "type": "build",     "name": "msvc-release" },
-        { "type": "package",   "name": "msvc-release" }
+        { "type": "configure", "name": "dist-msvc-release" },
+        { "type": "build",     "name": "dist-msvc-release" },
+        { "type": "package",   "name": "dist-msvc-release" }
       ]
     },
     {
@@ -270,9 +291,9 @@
       "displayName": "Dist · MSVC Debug",
       "description": "Configure → Build → Package (dev + cli ZIPs, unstripped)",
       "steps": [
-        { "type": "configure", "name": "msvc-debug" },
-        { "type": "build",     "name": "msvc-debug" },
-        { "type": "package",   "name": "msvc-debug" }
+        { "type": "configure", "name": "dist-msvc-debug" },
+        { "type": "build",     "name": "dist-msvc-debug" },
+        { "type": "package",   "name": "dist-msvc-debug" }
       ]
     }
 

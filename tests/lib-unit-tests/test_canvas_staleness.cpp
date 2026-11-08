@@ -178,19 +178,21 @@ void expectQueryAgreesWithSanitize(const ProjectItem& p, const std::vector<Canva
 
     for (std::size_t i = 0; i < report.inputs.size(); ++i) {
         const FileStatus status = p.getInputImages()[i].status;
-        if (status == FileStatus::Desynchronized)
+        if (status == FileStatus::Desynchronized) {
             EXPECT_TRUE(report.inputs[i].canvasProfile) << "input " << i;
-        else if (status == FileStatus::Processed)
+        } else if (status == FileStatus::Processed) {
             EXPECT_FALSE(report.inputs[i].any()) << "input " << i;
+        }
     }
     for (std::size_t o = 0; o < report.outputs.size(); ++o) {
         const FileStaleness& f      = report.outputs[o];
         const FileStatus     status = p.getOutputImages()[o].status;
         const bool           marked = f.canvasProfile || f.composition || f.unrenderedPage;
-        if (status == FileStatus::Desynchronized)
+        if (status == FileStatus::Desynchronized) {
             EXPECT_TRUE(marked) << "output " << o;
-        else if (status == FileStatus::Done)
+        } else if (status == FileStatus::Done) {
             EXPECT_FALSE(marked) << "output " << o;
+        }
     }
 }
 

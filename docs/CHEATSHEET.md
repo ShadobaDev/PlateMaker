@@ -89,6 +89,19 @@ cpack --preset linux-release      # or linux-debug / mingw-release / mingw-debug
 Installs to `install/<preset>/` (no archive). Point the GUI's `LIBPLATEMAKER_DIR`
 at that folder.
 
+One step, without building the tests: the release script runs the `dist-<preset>` workflow (in
+`build/dist-<preset>`, so the development tree is left alone), then installs it to `install/<preset>/`.
+
+```powershell
+.\scripts\make_release.ps1 -Preset msvc-release    # or several: msvc-release, msvc-debug; none = all four
+```
+
+```bash
+scripts/make_release.sh linux-release              # none = both
+```
+
+By hand, with the tests built:
+
 ```powershell
 cmake --preset mingw-debug
 cmake --build --preset mingw-debug

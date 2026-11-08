@@ -372,6 +372,10 @@ cmake --workflow --preset dist-linux-release
 # …and dist-linux-debug for the debug variants
 ```
 
+The `dist-*` presets build without the tests, in `build/dist-<platform>-<type>`. They install where
+the development presets do (`install/<platform>-<type>/`). `scripts/make_release.ps1` (Windows) and
+`scripts/make_release.sh` (Linux) run the chosen workflows and install each result.
+
 To re-package an existing build without rebuilding: `cpack --preset <platform>-<type>`
 (e.g. `cpack --preset mingw-release`).
 
