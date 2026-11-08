@@ -414,6 +414,54 @@ StalenessReport ProjectItem::detectStaleness(
 }
 
 // ---------------------------------------------------------------------------
+// detectFileStaleness
+// ---------------------------------------------------------------------------
+
+FileStalenessReport ProjectItem::detectFileStaleness(
+    const std::vector<CanvasProfile>& workspaceProfiles,
+    const OutputProfile&              outputProfile) const
+{
+    FileStalenessReport report;
+    report.inputs.resize(m_inputImages.size());
+    report.outputs.resize(m_outputImages.size());
+    if (m_outputImages.empty())
+        return report;   // nothing rendered, so nothing a configuration could have put out of sync
+
+    const StalenessReport project = detectStaleness(workspaceProfiles, outputProfile);
+
+    // Canvas: precise per page, plus the slices each page fed. The coarse list change cannot say
+    // which page got which profile, so it takes every file.
+    if (project.canvas.listChanged) {
+        for (auto& in : report.inputs)   in.canvasProfile  = true;
+        for (auto& out : report.outputs) out.canvasProfile = true;
+    } else {
+        for (const auto& path : project.canvas.changedInputs) {
+            for (std::size_t i = 0; i < m_inputImages.size(); ++i)
+                if (m_inputImages[i].filePath == path)
+                    report.inputs[i].canvasProfile = true;
+            for (const auto& outName : outputsForInput(path))
+                for (std::size_t o = 0; o < m_outputImages.size(); ++o)
+                    if (m_outputImages[o].fileName == outName)
+                        report.outputs[o].canvasProfile = true;
+        }
+    }
+
+    // A page added or replaced since the render has no output of its own yet, and its height moves
+    // every slice below it. Pending is exactly that page: never rendered, or reset by a replacement.
+    const bool unrenderedPage = std::any_of(m_inputImages.begin(), m_inputImages.end(),
+        [](const InputFile& in) { return in.status == FileStatus::Pending; });
+
+    // The remaining axes change the whole strip at once.
+    for (auto& out : report.outputs) {
+        out.composition     = project.inputCompositionChanged;
+        out.unrenderedPage  = unrenderedPage;
+        out.outputProfile   = project.outputProfileChanged || project.outputFormatChanged;
+        out.processingSteps = project.processingStepsChanged;
+    }
+    return report;
+}
+
+// ---------------------------------------------------------------------------
 // rebuildLookupTables
 // ---------------------------------------------------------------------------
 

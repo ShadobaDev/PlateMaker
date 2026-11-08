@@ -387,6 +387,25 @@ public:
         const OutputProfile&              outputProfile) const;
 
     /**
+     * \brief Which files the current configuration has put out of sync, and why.
+     *
+     * The per-file form of \c detectStaleness(), for drawing each file's state. Pure: it reads the
+     * model and touches no file, so it is cheap enough to ask on every repaint, and it can be asked
+     * about a palette that is not the workspace's yet, such as one being edited in a dialog.
+     *
+     * The file-content verdict is not part of it: that is \c FileStatus, recorded by
+     * \c ProjectEditor::sanitize(). The outputs a page fed are found through \c outputsForInput(),
+     * so the lookup tables must be current.
+     *
+     * \param workspaceProfiles The canvas-profile palette to judge against.
+     * \param outputProfile     The **resolved** output profile, as for \c detectStaleness().
+     * \return One entry per input and per output; see \c FileStalenessReport.
+     */
+    [[nodiscard]] FileStalenessReport detectFileStaleness(
+        const std::vector<CanvasProfile>& workspaceProfiles,
+        const OutputProfile&              outputProfile) const;
+
+    /**
      * \brief Rebuilds the non-serialised runtime lookup tables from the
      *        current \c m_inputImages and \c m_outputImages data.
      *

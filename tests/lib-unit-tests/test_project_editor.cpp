@@ -151,6 +151,8 @@ TEST(ProjectEditorTest, ReplaceInputFileKeepsThePageAndForgetsTheOldFile)
     EXPECT_TRUE(after.canvasProfileId.empty());
     // A page of another height moves every slice below it.
     EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Desynchronized);
+    // The query says the same from the model alone, so it outlives the next sanitize().
+    EXPECT_TRUE(p.detectFileStaleness({}, Models::OutputProfile{}).outputs[0].unrenderedPage);
     EXPECT_EQ(orderSeqUids(p), (std::vector<std::string>{"u0", "u1", "u2"}));
 }
 
@@ -245,9 +247,11 @@ TEST(InputCompositionTest, DetectsReorderAgainstBaseline)
     p.inputOrderAtRender = {"u0", "u1", "u2"};
 
     EXPECT_FALSE(p.detectInputCompositionChange());          // unchanged
+    EXPECT_FALSE(p.detectFileStaleness({}, Models::OutputProfile{}).outputs[0].composition);
 
     Infrastructure::ProjectEditor(p).setInputOrder({"u1", "u0", "u2"});
     EXPECT_TRUE(p.detectInputCompositionChange());           // reordered
+    EXPECT_TRUE(p.detectFileStaleness({}, Models::OutputProfile{}).outputs[0].composition);
 }
 
 TEST(InputCompositionTest, NoOutputsOrNoBaselineReportsNoChange)

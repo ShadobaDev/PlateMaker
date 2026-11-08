@@ -166,6 +166,34 @@ private:
     std::filesystem::path m_dir;
 };
 
+/// detectFileStaleness() must agree with what sanitize() just marked: a file it turned
+/// Desynchronized is flagged by the query, and a file it left clean is not. Disk facts (Missing,
+/// Modified, Skipped…) are sanitize()'s alone, so they are not compared. Only the axes sanitize()
+/// marks are compared; the output profile is not one of them.
+void expectQueryAgreesWithSanitize(const ProjectItem& p, const std::vector<CanvasProfile>& ws)
+{
+    const FileStalenessReport report = p.detectFileStaleness(ws, OutputProfile{});
+    ASSERT_EQ(report.inputs.size(), p.getInputImages().size());
+    ASSERT_EQ(report.outputs.size(), p.getOutputImages().size());
+
+    for (std::size_t i = 0; i < report.inputs.size(); ++i) {
+        const FileStatus status = p.getInputImages()[i].status;
+        if (status == FileStatus::Desynchronized)
+            EXPECT_TRUE(report.inputs[i].canvasProfile) << "input " << i;
+        else if (status == FileStatus::Processed)
+            EXPECT_FALSE(report.inputs[i].any()) << "input " << i;
+    }
+    for (std::size_t o = 0; o < report.outputs.size(); ++o) {
+        const FileStaleness& f      = report.outputs[o];
+        const FileStatus     status = p.getOutputImages()[o].status;
+        const bool           marked = f.canvasProfile || f.composition || f.unrenderedPage;
+        if (status == FileStatus::Desynchronized)
+            EXPECT_TRUE(marked) << "output " << o;
+        else if (status == FileStatus::Done)
+            EXPECT_FALSE(marked) << "output " << o;
+    }
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -403,6 +431,12 @@ TEST(CanvasConfigChangeTest, NeverRenderedProjectReportsNothing)
     p.getInputImages().push_back(std::move(inf));
 
     EXPECT_FALSE(p.detectCanvasConfigChange(ws).anyChanged());
+
+    // Nor anything per file: a Pending page of a project never rendered has no slice to move.
+    const FileStalenessReport files = p.detectFileStaleness(ws, OutputProfile{});
+    ASSERT_EQ(files.inputs.size(), 1u);
+    EXPECT_FALSE(files.inputs[0].any());
+    EXPECT_TRUE(files.outputs.empty());
 }
 
 TEST(CanvasConfigChangeTest, LegacyWorkspaceWithoutFingerprintsReRendersOnce)
@@ -566,6 +600,7 @@ TEST(SanitizeCanvasTest, UnchangedConfigLeavesEverythingClean)
         EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed) << "input " << i;
         EXPECT_EQ(d.outputStatus(i), FileStatus::Done)      << "output " << i;
     }
+    expectQueryAgreesWithSanitize(d.project, ws);
 }
 
 TEST(SanitizeCanvasTest, SkippedInputIsStickyAndDoesNotForceARender)
@@ -608,6 +643,7 @@ TEST(SanitizeCanvasTest, SkippedInputIsStickyAndDoesNotForceARender)
     std::ofstream(pages[1].filePath, std::ios::binary) << "CHANGED-CONTENT";
     EXPECT_FALSE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
     EXPECT_EQ(d.inputStatus(1), FileStatus::Modified);
+    expectQueryAgreesWithSanitize(d.project, ws);
 }
 
 TEST(SanitizeCanvasTest, MarginEditDesynchronizesOnlyTheAffectedPages)
@@ -642,6 +678,7 @@ TEST(SanitizeCanvasTest, MarginEditDesynchronizesOnlyTheAffectedPages)
     EXPECT_EQ(d.outputStatus(2), FileStatus::Done);
 
     EXPECT_TRUE(d.project.outputsForInput("not-a-page.png").empty()) << "a path that fed nothing";
+    expectQueryAgreesWithSanitize(d.project, ws);
 }
 
 TEST(SanitizeCanvasTest, AddingAMatchingProfileDesynchronizesOnlyThePagesItMatches)
@@ -666,6 +703,7 @@ TEST(SanitizeCanvasTest, AddingAMatchingProfileDesynchronizesOnlyThePagesItMatch
     EXPECT_EQ(d.outputStatus(1), FileStatus::Desynchronized) << "the slice it fed";
     EXPECT_EQ(d.inputStatus(2),  FileStatus::Processed);
     EXPECT_EQ(d.outputStatus(2), FileStatus::Done);
+    expectQueryAgreesWithSanitize(d.project, ws);
 }
 
 TEST(SanitizeCanvasTest, AddingANonMatchingProfileLeavesEverythingClean)
@@ -683,6 +721,7 @@ TEST(SanitizeCanvasTest, AddingANonMatchingProfileLeavesEverythingClean)
         EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed) << "input " << i;
         EXPECT_EQ(d.outputStatus(i), FileStatus::Done)      << "output " << i;
     }
+    expectQueryAgreesWithSanitize(d.project, ws);
 }
 
 TEST(SanitizeCanvasTest, LegacyWorkspaceDesynchronizesEverything)
@@ -703,6 +742,7 @@ TEST(SanitizeCanvasTest, LegacyWorkspaceDesynchronizesEverything)
         EXPECT_EQ(d.inputStatus(i),  FileStatus::Desynchronized) << "input " << i;
         EXPECT_EQ(d.outputStatus(i), FileStatus::Desynchronized) << "output " << i;
     }
+    expectQueryAgreesWithSanitize(d.project, ws);
 }
 
 TEST(SanitizeCanvasTest, ColourEditLeavesEverythingClean)
@@ -720,6 +760,7 @@ TEST(SanitizeCanvasTest, ColourEditLeavesEverythingClean)
         EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed);
         EXPECT_EQ(d.outputStatus(i), FileStatus::Done);
     }
+    expectQueryAgreesWithSanitize(d.project, ws);
 }
 
 TEST(SanitizeCanvasTest, MissingFileIsNotMaskedByConfigChange)
@@ -737,6 +778,7 @@ TEST(SanitizeCanvasTest, MissingFileIsNotMaskedByConfigChange)
     EXPECT_EQ(d.inputStatus(0), FileStatus::Missing)
         << "Missing must survive the config pass";
     EXPECT_EQ(d.inputStatus(1), FileStatus::Desynchronized);
+    expectQueryAgreesWithSanitize(d.project, ws);
 }
 
 // ---------------------------------------------------------------------------
@@ -768,6 +810,7 @@ TEST(OutputProfileSignatureTest, CatchesFormatAndQualityChanges)
     auto project = makeRenderedProject({}, "");   // one slice, "output_001.png"
     project.outputSignature = outputProfileSignature(a);
     EXPECT_FALSE(project.detectStaleness({}, a).configurationChanged());
+    EXPECT_FALSE(project.detectFileStaleness({}, a).outputs[0].any()) << "the per-file form agrees";
 
     auto report = project.detectStaleness({}, c);
     EXPECT_TRUE(report.outputProfileChanged);
@@ -776,6 +819,14 @@ TEST(OutputProfileSignatureTest, CatchesFormatAndQualityChanges)
     report = project.detectStaleness({}, b);
     EXPECT_TRUE(report.outputProfileChanged);
     EXPECT_TRUE(report.outputFormatChanged);
+    EXPECT_TRUE(project.detectFileStaleness({}, b).outputs[0].outputProfile);
+    EXPECT_FALSE(project.detectFileStaleness({}, b).inputs[0].any()) << "a page does not change with the output profile";
+
+    // A grade made after the render puts every slice out of sync, and no page.
+    project.colourCorrection.brightness = 0.25;
+    EXPECT_TRUE(project.detectFileStaleness({}, a).outputs[0].processingSteps);
+    EXPECT_FALSE(project.detectFileStaleness({}, a).inputs[0].any());
+    project.colourCorrection = ColourCorrection{};
 
     // Without a stored signature only the names can tell, and a name without an extension tells nothing.
     project.outputSignature.clear();
