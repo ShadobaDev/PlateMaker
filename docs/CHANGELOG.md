@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking — `ProjectEditor::sanitize()` records disk facts only.** It takes no arguments and no
+  longer writes `FileStatus::Desynchronized`: a configuration change leaves every status clean. Ask
+  `ProjectItem::detectFileStaleness()` which files are out of sync, and `detectStaleness()` whether the
+  project needs a render. `replaceInputFile()` and `mergeFileScan()` no longer mark the slices either.
+
+### Added
+
+- **`ProjectItem::detectFileStaleness()`**, which says for each input and output which setting has put it
+  out of sync since the render: a canvas profile, the page order, an unrendered page, the output profile,
+  or the grade and overlays. It reads no file, so it can be asked on every repaint, and it accepts any
+  canvas-profile list, such as one still being edited.
+
 ### Fixed
 
 - **The CLI accepts folders and files whose names are not ASCII on Windows.** Such a folder was rejected

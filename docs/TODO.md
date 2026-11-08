@@ -159,7 +159,7 @@ FetchContent URL, so until a lib version is on GitHub Releases anyone without a 
 local build + upload. How to: `docs/GITHUB-RELEASE.md`.
 
 **Lockstep on a lib bump the GUI needs.** The GUI pins the lib version it requires — currently
-`LIBPLATEMAKER_VERSION 0.6.0` (`find_package(platemaker ${LIBPLATEMAKER_VERSION} CONFIG REQUIRED)`) —
+`LIBPLATEMAKER_VERSION 0.7.0` (`find_package(platemaker ${LIBPLATEMAKER_VERSION} CONFIG REQUIRED)`) —
 so an older lib is rejected at configure time. With the config-version file `SameMinorVersion`, that pin
 also rejects a later breaking `0.MINOR`. A lib PATCH lets the GUI bump its pin with a one-liner and no
 code change.

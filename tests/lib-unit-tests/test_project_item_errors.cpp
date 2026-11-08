@@ -115,7 +115,7 @@ TEST(PostRenderErrorTest, SanitizeRecoversErrorWhenFileBecomesReadable)
     p.getInputImages().front().status = FileStatus::Error;
     p.getInputImages().front().sha256.clear();
 
-    Infrastructure::ProjectEditor{p}.sanitize(/*workspaceProfiles*/ {});
+    Infrastructure::ProjectEditor{p}.sanitize();
 
     const InputFile& inf = p.getInputImages().front();
     EXPECT_EQ(inf.status, FileStatus::Processed) << "readable again → recovered";
@@ -130,7 +130,7 @@ TEST(PostRenderErrorTest, SanitizeErrorWithMissingFileBecomesMissing)
     ProjectItem p = projectWithInput("truly-gone.png");
     p.getInputImages().front().status = FileStatus::Error;
 
-    Infrastructure::ProjectEditor{p}.sanitize(/*workspaceProfiles*/ {});
+    Infrastructure::ProjectEditor{p}.sanitize();
 
     EXPECT_EQ(p.getInputImages().front().status, FileStatus::Missing);
 }

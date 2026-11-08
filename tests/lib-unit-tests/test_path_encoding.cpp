@@ -189,7 +189,7 @@ TEST(NonAsciiPathTest, SanitizeReportsProcessedRatherThanPending)
     ASSERT_FALSE(inf.sha256.empty());
     project.getInputImages().push_back(inf);
 
-    Infrastructure::ProjectEditor{project}.sanitize({});
+    Infrastructure::ProjectEditor{project}.sanitize();
 
     ASSERT_EQ(project.getInputImages().size(), 1u);
     EXPECT_EQ(project.getInputImages()[0].status, Models::FileStatus::Processed);

@@ -1554,14 +1554,14 @@ static int cmdProcess(const Opts& opts)
     }
 
     // --no-profile is honoured by passing an empty canvas-profile palette (no margin
-    // matching). Declared before sanitize() because status refresh, staleness detection
-    // and the pipeline run must all agree on which palette is in effect.
+    // matching). Staleness detection and the pipeline run must agree on which palette is
+    // in effect, so both read this one.
     const std::vector<CanvasProfile> noProfiles;
     const std::vector<CanvasProfile>& effectiveProfiles =
         noProfile ? noProfiles : ws.canvasProfiles();
 
-    // --- Sanitize — update file statuses (disk + config) and check if reprocess is needed ---
-    Platemaker::Infrastructure::ProjectEditor{project}.sanitize(effectiveProfiles);
+    // --- Sanitize — update file statuses from disk ---
+    Platemaker::Infrastructure::ProjectEditor{project}.sanitize();
 
     // Every reason the outputs could be stale, from the one place that owns the rule. This and the
     // GUI each used to assemble the same five terms by hand — one rule kept in two repositories, and
@@ -2202,10 +2202,21 @@ static int cmdProjectStatus(const Opts& opts)
         return 1;
     }
 
-    // Sanitize updates file statuses from disk hashes and from the canvas profiles in
-    // effect, so pages whose profile changed since their render report DESYNCHRONIZED
-    // rather than a misleading PROCESSED.
-    const bool upToDate = Platemaker::Infrastructure::ProjectEditor{*pi}.sanitize(ws.canvasProfiles());
+    // Disk facts from sanitize(); what the configuration has moved on since the render from the
+    // staleness queries, against the output profile a render of this project would use.
+    Platemaker::Infrastructure::ProjectEditor{*pi}.sanitize();
+    const auto selected = Platemaker::Models::resolveOutputProfile(ws, pi->outputProfileId());
+    const OutputProfile outProfile = selected ? *selected
+                                   : ws.outputProfiles().empty()
+                                         ? Platemaker::Models::webtoonStandardPreset()
+                                         : ws.outputProfiles().front();
+    const bool upToDate = !pi->detectStaleness(ws.canvasProfiles(), outProfile).needsRender();
+    const auto files    = pi->detectFileStaleness(ws.canvasProfiles(), outProfile);
+
+    // A file the disk calls clean but the configuration has moved on from reads DESYNC.
+    const auto shown = [](FileStatus status, FileStatus clean, bool stale) {
+        return (status == clean && stale) ? FileStatus::Desynchronized : status;
+    };
 
     static const auto statusStr = [](FileStatus s) -> const char* {
         switch (s) {
@@ -2259,8 +2270,9 @@ static int cmdProjectStatus(const Opts& opts)
               << '\n'
               << "  Input files (" << pi->getInputImages().size() << "):\n";
 
-    for (const auto& inf : pi->getInputImages()) {
-        std::cout << "    [" << statusStr(inf.status) << "] "
+    for (std::size_t i = 0; i < pi->getInputImages().size(); ++i) {
+        const auto& inf = pi->getInputImages()[i];
+        std::cout << "    [" << statusStr(shown(inf.status, FileStatus::Processed, files.inputs[i].any())) << "] "
                   << inf.filePath << '\n';
         if (!inf.lastProcessed.empty())
             std::cout << "      last processed: " << inf.lastProcessed << '\n';
@@ -2268,9 +2280,11 @@ static int cmdProjectStatus(const Opts& opts)
 
     if (!pi->getOutputImages().empty()) {
         std::cout << "\n  Output files (" << pi->getOutputImages().size() << "):\n";
-        for (const auto& outf : pi->getOutputImages())
-            std::cout << "    [" << statusStr(outf.status) << "] "
+        for (std::size_t o = 0; o < pi->getOutputImages().size(); ++o) {
+            const auto& outf = pi->getOutputImages()[o];
+            std::cout << "    [" << statusStr(shown(outf.status, FileStatus::Done, files.outputs[o].any())) << "] "
                       << outf.fileName << '\n';
+        }
     }
 
     return 0;

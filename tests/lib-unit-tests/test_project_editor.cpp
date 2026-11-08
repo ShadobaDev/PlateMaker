@@ -149,9 +149,9 @@ TEST(ProjectEditorTest, ReplaceInputFileKeepsThePageAndForgetsTheOldFile)
     EXPECT_EQ(after.width, 0);
     EXPECT_EQ(after.height, 0);
     EXPECT_TRUE(after.canvasProfileId.empty());
-    // A page of another height moves every slice below it.
-    EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Desynchronized);
-    // The query says the same from the model alone, so it outlives the next sanitize().
+    // A page of another height moves every slice below it. That is the query's to say, from the
+    // Pending page; the slice's own status is a disk fact and stays as it was.
+    EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Done);
     EXPECT_TRUE(p.detectFileStaleness({}, Models::OutputProfile{}).outputs[0].unrenderedPage);
     EXPECT_EQ(orderSeqUids(p), (std::vector<std::string>{"u0", "u1", "u2"}));
 }
@@ -367,10 +367,11 @@ TEST_F(SerializedProject, BackfillsBaselineFromOutputProvenance)
 }
 
 // ---------------------------------------------------------------------------
-// sanitize() marks outputs out-of-sync on a reorder (disk-backed — sanitize hashes files)
+// A reorder leaves every file clean on disk and puts every slice out of sync (disk-backed —
+// sanitize hashes files)
 // ---------------------------------------------------------------------------
 
-TEST(InputCompositionSanitizeTest, ReorderMarksOutputsDesynchronized)
+TEST(InputCompositionSanitizeTest, ReorderLeavesFilesCleanAndPutsSlicesOutOfSync)
 {
     const fs::path dir = fs::temp_directory_path() / "pm-reorder-sanitize";
     fs::remove_all(dir);
@@ -402,15 +403,19 @@ TEST(InputCompositionSanitizeTest, ReorderMarksOutputsDesynchronized)
     p.inputOrderAtRender = {"u0", "u1", "u2"};   // baseline from the "render"
     p.rebuildLookupTables();
 
-    EXPECT_TRUE(Infrastructure::ProjectEditor{p}.sanitize(/*workspaceProfiles*/ {}));   // unchanged → everything settled
+    EXPECT_TRUE(Infrastructure::ProjectEditor{p}.sanitize());   // unchanged → everything settled
 
-    // Reorder, then re-sanitize: outputs go out of sync, inputs stay Processed.
+    // Reorder, then re-sanitize: every file is still clean on disk, and every slice is out of sync.
     Infrastructure::ProjectEditor(p).setInputOrder({"u2", "u1", "u0"});
-    EXPECT_FALSE(Infrastructure::ProjectEditor{p}.sanitize({}));
+    EXPECT_TRUE(Infrastructure::ProjectEditor{p}.sanitize());
     for (const auto& out : p.getOutputImages())
-        EXPECT_EQ(out.status, FileStatus::Desynchronized);
+        EXPECT_EQ(out.status, FileStatus::Done);
     for (const auto& inf : p.getInputImages())
         EXPECT_EQ(inf.status, FileStatus::Processed);
+    const auto report = p.detectFileStaleness({}, Models::OutputProfile{});
+    for (const auto& out : report.outputs)
+        EXPECT_TRUE(out.composition);
+    EXPECT_TRUE(p.detectStaleness({}, Models::OutputProfile{}).needsRender());
 
     std::error_code ec; fs::remove_all(dir, ec);
 }
@@ -487,7 +492,7 @@ TEST(SanitizeOutputsTest, MissingLegacyAndEditedOutputsAreToldApart)
         outputNamed("output_003.png", oldHash,    FileStatus::Done),   // edited after the render
     };
 
-    EXPECT_FALSE(Infrastructure::ProjectEditor{p}.sanitize({}));
+    EXPECT_FALSE(Infrastructure::ProjectEditor{p}.sanitize());
     EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Missing);
     EXPECT_EQ(p.getOutputImages()[1].status, FileStatus::Done);
     EXPECT_EQ(p.getOutputImages()[2].status, FileStatus::Done) << "existence is trusted without a hash";
@@ -512,7 +517,7 @@ TEST(SanitizeInputsTest, ErrorInputStaysErrorWhileStillUnreadable)
     inf.status   = FileStatus::Error;
     p.getInputImages().push_back(inf);
 
-    (void)Infrastructure::ProjectEditor{p}.sanitize({});
+    (void)Infrastructure::ProjectEditor{p}.sanitize();
     EXPECT_EQ(p.getInputImages()[0].status, FileStatus::Error);
     EXPECT_TRUE(p.getInputImages()[0].sha256.empty());
     fs::permissions(page, fs::perms::owner_all);

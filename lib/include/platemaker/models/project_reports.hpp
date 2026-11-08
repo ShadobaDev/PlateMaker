@@ -130,9 +130,9 @@ struct StalenessReport {
  * \brief Why one file no longer matches the project's configuration, axis by axis.
  *
  * The per-file counterpart of \c StalenessReport, returned inside \c FileStalenessReport by
- * \c ProjectItem::detectFileStaleness().  It answers what \c FileStatus::Desynchronized marks, but
- * as a query: derived from the model on every call, so a configuration edit and its undo are both
- * reflected without anything having to be reset.
+ * \c ProjectItem::detectFileStaleness().  The configuration's verdict on a file, derived from the
+ * model on every call rather than recorded as a \c FileStatus, so a configuration edit and its
+ * undo are both reflected without anything having to be reset.
  *
  * Only an input's \c canvasProfile can be set; the other axes move every slice of the strip at
  * once and are reported on outputs.

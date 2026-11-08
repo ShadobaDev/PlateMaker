@@ -87,8 +87,8 @@ public:
      * This keeps \c uid and \c order, the page's identity and its place in the strip, and resets
      * exactly the state that described the *old* file: its hash, status, recorded size, thumbnail and
      * the canvas profile it was matched to. The new file is \c Pending until the next \c sanitize()
-     * hashes it. Every output is marked \c Desynchronized, as \c mergeFileScan() does for any
-     * structural change — a page of a different height moves every slice below it.
+     * hashes it. A page of a different height moves every slice below it, which
+     * \c ProjectItem::detectFileStaleness() reports for the Pending page; no status is written.
      *
      * \param uid     The input to repoint.
      * \param newPath Path of the replacement file, in the same form the project's other paths use.
@@ -158,21 +158,17 @@ public:
      * - \c Modified  — slice exists but its SHA-256 differs from the stored hash.
      * - \c Done      — slice exists and (if hashed) matches.
      *
-     * Finally, pages whose canvas profile changed since the render that produced them
-     * — or was never recorded at all — are marked \c Desynchronized, along with the
-     * outputs they fed.  A profile edit changes neither the input nor the output file,
-     * so hashes alone can never notice it; this is what surfaces it (and what makes the
-     * GUI colour those tiles "out of sync").  See \c detectCanvasConfigChange().
+     * These are disk facts only. What a configuration change (a canvas or output profile, the
+     * page order, the grade or the overlays) has put out of sync is never written as a status,
+     * because no file changed: ask \c ProjectItem::detectFileStaleness() for it, and
+     * \c ProjectItem::detectStaleness() for whether the project needs a render.
      *
      * Sets the internal up-to-date flag to \c false if any input is not
      * \c Processed or any output is not \c Done.
      *
-     * \param workspaceProfiles The canvas profiles currently in effect. Required rather
-     *        than optional: an overload without it could be called by accident and would
-     *        silently skip the config check — exactly the class of bug this detects.
      * \return \c true if every input is \c Processed and every output is \c Done.
      */
-    bool sanitize(const std::vector<Models::CanvasProfile>& workspaceProfiles);
+    bool sanitize();
 
     /**
      * \brief Applies the results of a pipeline run to all tracked records.
@@ -249,9 +245,9 @@ public:
      * - Old files no longer present: removed.
      *
      * If any structural change is detected (file added, removed, or
-     * reordered at a different strip position), all \c Models::OutputFile entries are
-     * marked \c Desynchronized and \c Models::ScanMergeResult::outputsInvalidated is
-     * set to \c true.
+     * reordered at a different strip position), \c Models::ScanMergeResult::outputsInvalidated
+     * is set to \c true. The slices' statuses are left alone; \c ProjectItem::detectFileStaleness()
+     * reports them out of sync from the model.
      *
      * \param newFilePaths Absolute paths from the new directory scan, in
      *                     the desired strip order (typically sorted by name).

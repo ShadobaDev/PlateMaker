@@ -117,8 +117,8 @@ bool ProjectEditor::replaceInputFile(const std::string& uid, const std::string& 
     target->width  = 0;
     target->height = 0;
 
-    for (auto& outf : m_project.m_outputImages)
-        outf.status = Models::FileStatus::Desynchronized;
+    // The slices are not marked: a Pending page in a rendered project is what detectFileStaleness()
+    // reports as putting every slice out of sync.
     m_project.m_isUpToDate = false;
 
     m_project.rebuildLookupTables();   // keyed by path, and the path just changed
@@ -156,7 +156,7 @@ void ProjectEditor::restore(const std::string& snapshot)
 // sanitize
 // ---------------------------------------------------------------------------
 
-bool ProjectEditor::sanitize(const std::vector<Models::CanvasProfile>& workspaceProfiles)
+bool ProjectEditor::sanitize()
 {
     namespace fs = std::filesystem;
 
@@ -252,55 +252,9 @@ bool ProjectEditor::sanitize(const std::vector<Models::CanvasProfile>& workspace
         }
     }
 
-    // Config axis: a canvas-profile edit leaves every file byte-identical, so nothing
-    // above can see it. Mark what it invalidated as Desynchronized ("out of sync with
-    // config") — the status the UI already renders in amber.
-    //
-    // Only files the disk pass found clean are re-flagged: Missing / Modified / Pending
-    // are more specific and more urgent, so a config change must not mask them.
-    const auto markDesynchronized = [](Models::FileStatus& status, Models::FileStatus cleanValue) {
-        if (status == cleanValue)
-            status = Models::FileStatus::Desynchronized;
-    };
-
-    const auto canvasChange = m_project.detectCanvasConfigChange(workspaceProfiles);
-    if (canvasChange.anyChanged()) {
-        m_project.m_isUpToDate = false;
-
-        if (canvasChange.listChanged) {
-            // The effective profile list itself changed (or, for a workspace written
-            // before fingerprints existed, there is no baseline at all). Which page got
-            // which profile can no longer be attributed, so everything is suspect.
-            for (auto& inf : m_project.m_inputImages)
-                markDesynchronized(inf.status, Models::FileStatus::Processed);
-            for (auto& out : m_project.m_outputImages)
-                markDesynchronized(out.status, Models::FileStatus::Done);
-        } else {
-            // Precise: only the pages whose applied profile changed, plus the slices
-            // they fed (provenance already records that mapping).
-            for (const auto& path : canvasChange.changedInputs) {
-                for (auto& inf : m_project.m_inputImages)
-                    if (inf.filePath == path)
-                        markDesynchronized(inf.status, Models::FileStatus::Processed);
-
-                for (const auto& outName : m_project.outputsForInput(path))
-                    for (auto& out : m_project.m_outputImages)
-                        if (out.fileName == outName)
-                            markDesynchronized(out.status, Models::FileStatus::Done);
-            }
-        }
-    }
-
-    // Composition axis: reordering / adding / removing inputs shifts the continuous strip, so every
-    // downstream slice changes while each input file stays byte-identical — no hash notices. The strip
-    // is one concatenation, so a change anywhere invalidates the whole output; mark every clean output
-    // Desynchronized (the inputs themselves are unchanged and stay Processed). See
-    // detectInputCompositionChange().
-    if (m_project.detectInputCompositionChange()) {
-        m_project.m_isUpToDate = false;
-        for (auto& out : m_project.m_outputImages)
-            markDesynchronized(out.status, Models::FileStatus::Done);
-    }
+    // What the configuration has put out of sync is not recorded here: a profile edit, a reorder or a
+    // grade leaves every file byte-identical, and a status written now would be wrong after the next
+    // edit or its undo. ProjectItem::detectFileStaleness() answers it from the model when asked.
 
     return m_project.m_isUpToDate;
 }
@@ -573,11 +527,10 @@ Models::ScanMergeResult ProjectEditor::mergeFileScan(
     // -------------------------------------------------------------------
     // Apply structural change consequences.
     // -------------------------------------------------------------------
-    if (structuralChange) {
-        for (auto& outf : m_project.m_outputImages)
-            outf.status = Models::FileStatus::Desynchronized;
+    // The slices are not marked: an added page is Pending and a removed one changes the composition,
+    // and detectFileStaleness() reports either from the model.
+    if (structuralChange)
         result.outputsInvalidated = true;
-    }
 
     // Replace the old input list with the new one.
     m_project.m_inputImages = std::move(newList);
