@@ -51,12 +51,16 @@ struct ProcessingSliceRecord {
 // ---------------------------------------------------------------------------
 
 /**
- * \brief Which canvas profile a processing run actually applied to one input.
+ * \brief Which canvas profile a processing run actually applied to one input, and the
+ *        content it rendered.
  *
  * Editing a profile leaves both the input file and the output file byte-identical, so
  * no hash can notice that a page went stale.  This is the trace that makes it
  * detectable: the pipeline reports what it applied, \c applyProcessingResults() stores
  * it on the \c InputFile, and \c detectCanvasConfigChange() compares it next time.
+ *
+ * The hash is taken by the run, on its own thread, right after it read the page: it
+ * describes the content that was rendered, and the apply that records it reads no file.
  *
  * Lives in Models — like \c ProcessingSliceRecord — so \c ProjectItem can consume it
  * without depending on Core.
@@ -67,6 +71,7 @@ struct AppliedCanvasProfile {
     std::string fingerprint;    //!< canvasRenderFingerprint() of it ("" when profileId is empty).
     int         width  = 0;     //!< Display width the run resolved against (0 = not recorded).
     int         height = 0;     //!< Display height the run resolved against (0 = not recorded).
+    std::string sha256;         //!< SHA-256 of the input as the run read it ("" = it could not be read again).
 };
 
 } // namespace Platemaker::Models

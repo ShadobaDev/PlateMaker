@@ -235,7 +235,8 @@ public:
     /**
      * \brief Applies the results of a pipeline run to all tracked records.
      *
-     * Updates each \c Models::InputFile with its current SHA-256 hash, sets status
+     * Updates each \c Models::InputFile with the SHA-256 the run took of it
+     * (\c Models::AppliedCanvasProfile::sha256), sets status
      * to \c Processed, fills \c contributesTo from the provenance data in
      * \p records, records the canvas profile applied to each page from
      * \p appliedProfiles, rebuilds the \c Models::OutputFile list and the runtime lookup
@@ -247,6 +248,9 @@ public:
      *
      * This method centralises all post-processing bookkeeping that was
      * previously scattered across the CLI layer.
+     *
+     * Reads no file: every hash comes from \p records and \p appliedProfiles, so the call is cheap
+     * on the consumer's UI thread.
      *
      * \param records           One record per saved output file, in order.
      * \param appliedProfiles   One entry per input the run considered.
@@ -261,8 +265,9 @@ public:
      * \param outputDirectory   Absolute path where output files were written.
      * \param timestamp         ISO 8601 string for \c Models::InputFile::lastProcessed.
      *
-     * \return The typed failures that happened *after* a successful render — one per input whose
-     *         content hash could not be computed (code \c InputHashFailed, category \c Io). Such an
+     * \return The typed failures that happened *after* a successful render — one per input the
+     *         run has no hash of: it could not read the page again once rendered, or it has no
+     *         entry in \p appliedProfiles (code \c InputHashFailed, category \c Io). Such an
      *         input is set to \c Models::FileStatus::Error rather than left \c Pending, so it no longer
      *         silently forces a full re-render on every subsequent run. Empty on a clean apply. The
      *         caller should surface these (CLI print / GUI log + tile) — ignoring them re-hides the

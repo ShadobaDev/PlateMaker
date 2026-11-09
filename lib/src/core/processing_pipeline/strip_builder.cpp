@@ -14,6 +14,7 @@
 
 #include "pipeline_log.hpp"
 
+#include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/models/canvas_profile.hpp>
 
 #include <utility>
@@ -75,14 +76,16 @@ void StripBuilder::appendOnePage(const Models::InputFile& file, ProcessingOutcom
 
     // Record what was actually applied to this page. Editing a profile leaves both the input and
     // the output file byte-identical, so this is the only trace that lets the next run notice the
-    // page went stale.
+    // page went stale. The hash is filled in once the page is read (below).
     outcome.appliedProfiles.push_back(Models::AppliedCanvasProfile{
         file.filePath,
         plan.profile ? plan.profile->id : std::string{},
         plan.profile ? Models::canvasRenderFingerprint(*plan.profile)
                      : std::string{},
         plan.geo.width,
-        plan.geo.height});
+        plan.geo.height,
+        {}});
+    const std::size_t appliedAt = outcome.appliedProfiles.size() - 1;
 
     // Grade this page when the grade would change something and the page is not excluded. A neutral
     // grade takes scaledPage() down exactly the historical code paths (byte-identical output), which is
@@ -96,6 +99,10 @@ void StripBuilder::appendOnePage(const Models::InputFile& file, ProcessingOutcom
 
     m_strip.append(m_pages.scaledPage(plan, file.filePath,
                                       applyGrade ? &m_colourCorrection : nullptr));
+
+    // Hashed here, on the render's thread, while the page is fresh in the OS cache: the hash describes
+    // what was just rendered, and recording it later reads no file (applyProcessingResults()).
+    outcome.appliedProfiles[appliedAt].sha256 = Infrastructure::FileMetaData::computeFileSha256(file.filePath);
 
     if (!file.uid.empty())
         m_pageTopByUid[file.uid] = pageTopY;

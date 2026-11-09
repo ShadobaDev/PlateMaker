@@ -51,12 +51,27 @@ ProjectItem projectWithInput(const std::string& path)
     return p;
 }
 
-// A rendered input whose hash fails afterwards → Error + a returned typed failure (not left Pending).
+// The input's hash is the one the run took: the apply reads no file, so a page that is not on disk
+// (any more) still records what was rendered.
+TEST(PostRenderErrorTest, InputHashComesFromTheRun)
+{
+    ProjectItem p = projectWithInput("not-on-disk.png");
+    const std::vector<Models::AppliedCanvasProfile> applied{{"not-on-disk.png", "", "", 0, 0, "abc123"}};
+
+    const auto errors = Infrastructure::ProjectEditor{p}.applyProcessingResults(
+        /*records*/ {}, applied, /*skipped*/ {}, /*workspaceProfiles*/ {},
+        /*outDir*/ "out", /*ts*/ "2026-08-05T00:00:00Z");
+
+    EXPECT_TRUE(errors.empty());
+    EXPECT_EQ(p.getInputImages().front().status, FileStatus::Processed);
+    EXPECT_EQ(p.getInputImages().front().sha256, "abc123");
+}
+
+// A rendered input the run has no hash of → Error + a returned typed failure (not left Pending).
 TEST(PostRenderErrorTest, UnhashableInputBecomesErrorAndIsReturned)
 {
-    // A path that does not exist makes computeFileSha256() return "" — the same empty result a locked /
-    // permission-denied / offline file produces. applyProcessingResults() does not check existence, so
-    // this exercises exactly the post-render hash-failure branch.
+    // No entry in appliedProfiles: the run took no hash — the same as a page it could not read again
+    // once rendered (locked / permission-denied / offline), which it reports with an empty sha256.
     ProjectItem p = projectWithInput("does-not-exist-after-render.png");
 
     const auto errors = Infrastructure::ProjectEditor{p}.applyProcessingResults(

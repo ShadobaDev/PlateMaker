@@ -8,6 +8,12 @@
   longer writes `FileStatus::Desynchronized`: a configuration change leaves every status clean. Ask
   `ProjectItem::detectFileStaleness()` which files are out of sync, and `detectStaleness()` whether the
   project needs a render. `replaceInputFile()` and `mergeFileScan()` no longer mark the slices either.
+- **The render hashes each input as it reads it, and recording the render reads no file.** The hash is
+  in the new `AppliedCanvasProfile::sha256`; `ProjectEditor::applyProcessingResults()` takes it from
+  there instead of hashing every input again, which held a consumer's UI thread for seconds on a large
+  chapter. The recorded hash is now that of the content rendered, even if a page is saved during the
+  render. An input with no hash in the outcome becomes `FileStatus::Error` with `InputHashFailed`, as an
+  unreadable one did.
 
 ### Added
 

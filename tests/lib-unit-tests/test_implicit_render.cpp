@@ -22,6 +22,7 @@
 
 #include <platemaker/core/processing_pipeline/processing_pipeline.hpp>
 #include <platemaker/core/processing_callbacks/processing_callbacks.hpp>
+#include <platemaker/infrastructure/file/file_meta_data.hpp>
 #include <platemaker/infrastructure/log/log.hpp>
 #include <platemaker/infrastructure/thumbnail_cache/thumbnail_cache.hpp>
 #include <platemaker/infrastructure/control/cancellation_token.hpp>
@@ -205,6 +206,9 @@ TEST(ImplicitRenderTest, UnmatchedPageIsAppendedNotSkipped)
     ASSERT_NE(findApplied(unmatched), nullptr);
     EXPECT_EQ(findApplied(matched)->profileId, "cp-linked");
     EXPECT_TRUE(findApplied(unmatched)->profileId.empty());
+    // The run hashes each page it read, so recording the render reads no file afterwards.
+    EXPECT_FALSE(findApplied(matched)->sha256.empty());
+    EXPECT_EQ(findApplied(matched)->sha256, Infrastructure::FileMetaData::computeFileSha256(matched));
 
     ASSERT_TRUE(cap.byPath.count(matched));
     ASSERT_TRUE(cap.byPath.count(unmatched));

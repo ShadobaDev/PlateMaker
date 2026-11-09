@@ -277,8 +277,8 @@ TEST(InputCompositionTest, ApplyProcessingResultsCapturesBaseline)
     // (The unreadable inputs now come back as post-render Error entries; this test only cares about
     // the baseline, so the returned errors are intentionally discarded.)
     // A page the run could not measure keeps the size an earlier render recorded.
-    const std::vector<Models::AppliedCanvasProfile> applied{{"p0.png", "", "", 0, 0},
-                                                            {"p1.png", "", "", 640, 960}};
+    const std::vector<Models::AppliedCanvasProfile> applied{{"p0.png", "", "", 0, 0, ""},
+                                                            {"p1.png", "", "", 640, 960, ""}};
     (void)Infrastructure::ProjectEditor{p}.applyProcessingResults(/*records*/ {}, applied, /*skipped*/ {},
                                    /*workspaceProfiles*/ {}, /*outDir*/ "out", /*ts*/ "2026-07-29T00:00:00Z");
 

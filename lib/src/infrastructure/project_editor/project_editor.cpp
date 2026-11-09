@@ -321,8 +321,9 @@ std::vector<Models::ProcessingError> ProjectEditor::applyProcessingResults(
             continue;
         }
 
-        const std::string h =
-            Infrastructure::FileMetaData::computeFileSha256(inf.filePath);
+        // The hash the run took right after it read the page; no file is read here.
+        const auto ap = applied.find(inf.filePath);
+        const std::string h = (ap != applied.end()) ? ap->second->sha256 : std::string{};
         if (!h.empty()) {
             inf.sha256        = h;
             inf.status        = Models::FileStatus::Processed;
@@ -350,7 +351,6 @@ std::vector<Models::ProcessingError> ProjectEditor::applyProcessingResults(
         // Record which profile produced this page, so a later edit to it is detectable.
         // Inputs the run never reached (e.g. Missing) get no entry — clear the baseline
         // rather than leave a stale one claiming a profile was applied.
-        const auto ap = applied.find(inf.filePath);
         if (ap != applied.end()) {
             inf.canvasProfileId   = ap->second->profileId;
             inf.canvasFingerprint = ap->second->fingerprint;
