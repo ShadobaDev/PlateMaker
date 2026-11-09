@@ -24,17 +24,19 @@ struct Counter {
     VipsImage* image  = nullptr;   // what it returns; null: it fails
 };
 
-// libvips calls back from its worker threads, so the counters are shared.
+// libvips calls back from its worker threads, so the counters are shared. Neither is ever destroyed: a
+// wrapped libc function (fread) is still called while the program exits, by libgcov writing its counts,
+// after a function-local static would have been.
 std::mutex& lock()
 {
-    static std::mutex m;
-    return m;
+    static auto* m = new std::mutex;
+    return *m;
 }
 
 std::map<std::string, Counter>& counters()
 {
-    static std::map<std::string, Counter> c;
-    return c;
+    static auto* c = new std::map<std::string, Counter>;
+    return *c;
 }
 
 Counter& wrapped(const char* function)

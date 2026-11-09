@@ -477,7 +477,8 @@ TEST(WorkspaceEditorSnapshotMetaTest, MetaChangesNamesWhatAStepTouched)
     const std::string tpl     = ed.addCanvasProfile(canvas("", "Templated", 900, 1000));
     const std::string removed = ed.addCanvasProfile(canvas("", "Removed", 1000, 1000));
     ed.addCanvasProfile(canvas("", "Kept", 1100, 1000));
-    const std::string out = ed.addOutputProfile(output("", "Mine"));
+    const std::string out     = ed.addOutputProfile(output("", "Mine"));
+    const std::string outGone = ed.addOutputProfile(output("", "Gone"));
     ed.addProject("Chapter 01");
     const std::string before = ed.snapshotMeta();
     EXPECT_TRUE(Infrastructure::WorkspaceEditor::metaChanges(before, before).empty());
@@ -490,6 +491,7 @@ TEST(WorkspaceEditorSnapshotMetaTest, MetaChangesNamesWhatAStepTouched)
         Models::CanvasTemplateInfo t; t.path = "tpl.psd"; return t; }()}));
     std::vector<Models::OutputProfile> outputs(ws.outputProfiles().begin(), ws.outputProfiles().end());
     outputs[0].name = "Renamed output";
+    outputs.erase(outputs.begin() + 1);                              // a removal
     ed.replaceOutputProfiles(outputs);
     ws.projectItems[0].name = "Renamed";
     ed.addProject("Chapter 02");                                     // the roster is no step's change
@@ -499,7 +501,7 @@ TEST(WorkspaceEditorSnapshotMetaTest, MetaChangesNamesWhatAStepTouched)
     EXPECT_FALSE(changes.empty());
     EXPECT_EQ(changes.canvasProfiles, (std::vector<std::string>{edited, removed}));
     EXPECT_EQ(changes.canvasTemplates, std::vector<std::string>{tpl});
-    EXPECT_EQ(changes.outputProfiles, std::vector<std::string>{out});
+    EXPECT_EQ(changes.outputProfiles, (std::vector<std::string>{out, outGone}));
     EXPECT_EQ(changes.renamedProjects, std::vector<std::string>{ws.projectItems[0].uid});
     // Undo reads the same step backwards: the same ids.
     EXPECT_EQ(Infrastructure::WorkspaceEditor::metaChanges(after, before).canvasProfiles,
