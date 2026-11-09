@@ -469,6 +469,43 @@ TEST(WorkspaceEditorSnapshotMetaTest, RestoresCanvasTemplatesExactly)
     EXPECT_EQ(ws.canvasProfiles()[0].templates[0].sha256, "abc");
 }
 
+TEST(WorkspaceEditorSnapshotMetaTest, MetaChangesNamesWhatAStepTouched)
+{
+    Models::Workspace ws;
+    Infrastructure::WorkspaceEditor ed(ws);
+    const std::string edited  = ed.addCanvasProfile(canvas("", "Edited", 800, 1000));
+    const std::string tpl     = ed.addCanvasProfile(canvas("", "Templated", 900, 1000));
+    const std::string removed = ed.addCanvasProfile(canvas("", "Removed", 1000, 1000));
+    ed.addCanvasProfile(canvas("", "Kept", 1100, 1000));
+    const std::string out = ed.addOutputProfile(output("", "Mine"));
+    ed.addProject("Chapter 01");
+    const std::string before = ed.snapshotMeta();
+    EXPECT_TRUE(Infrastructure::WorkspaceEditor::metaChanges(before, before).empty());
+
+    std::vector<Models::CanvasProfile> palette(ws.canvasProfiles().begin(), ws.canvasProfiles().end());
+    palette[0].margins.top = 10;                                     // an edit of the profile
+    palette.erase(palette.begin() + 2);                              // a removal
+    ed.replaceCanvasProfiles(palette);
+    ASSERT_TRUE(ed.setCanvasProfileTemplates(tpl, {[] {               // template work alone
+        Models::CanvasTemplateInfo t; t.path = "tpl.psd"; return t; }()}));
+    std::vector<Models::OutputProfile> outputs(ws.outputProfiles().begin(), ws.outputProfiles().end());
+    outputs[0].name = "Renamed output";
+    ed.replaceOutputProfiles(outputs);
+    ws.projectItems[0].name = "Renamed";
+    ed.addProject("Chapter 02");                                     // the roster is no step's change
+    const std::string after = ed.snapshotMeta();
+
+    const Infrastructure::MetaChanges changes = Infrastructure::WorkspaceEditor::metaChanges(before, after);
+    EXPECT_FALSE(changes.empty());
+    EXPECT_EQ(changes.canvasProfiles, (std::vector<std::string>{edited, removed}));
+    EXPECT_EQ(changes.canvasTemplates, std::vector<std::string>{tpl});
+    EXPECT_EQ(changes.outputProfiles, std::vector<std::string>{out});
+    EXPECT_EQ(changes.renamedProjects, std::vector<std::string>{ws.projectItems[0].uid});
+    // Undo reads the same step backwards: the same ids.
+    EXPECT_EQ(Infrastructure::WorkspaceEditor::metaChanges(after, before).canvasProfiles,
+              (std::vector<std::string>{edited, removed}));
+}
+
 TEST(WorkspaceEditorSnapshotMetaTest, LeavesProjectContentsUntouched)
 {
     Models::Workspace ws;

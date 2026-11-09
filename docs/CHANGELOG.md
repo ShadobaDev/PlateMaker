@@ -26,6 +26,10 @@
   file and is safe on any thread, and `applyDiskChecks()` sets the statuses from the results. A result
   is ignored when the project no longer has the file, or when a render has recorded a new hash for it
   since the result was asked for. `sanitize()` is the three run in sequence.
+- **`WorkspaceEditor::metaChanges(before, after)`**, which says what a workspace-level step changed, read
+  from two `snapshotMeta()` strings: the canvas profiles edited, added or removed, those whose templates
+  alone changed, the output profiles, and the renamed projects. A consumer can show what an undo touched
+  without reading the snapshot.
 
 ### Fixed
 

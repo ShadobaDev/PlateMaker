@@ -48,6 +48,26 @@ struct ImportProfilesReport {
 };
 
 /**
+ * \struct MetaChanges
+ * \brief What differs between two workspace-level snapshots — see \c WorkspaceEditor::metaChanges().
+ *
+ * Ids in the order of the later snapshot, then those only the earlier one holds (a profile removed).
+ */
+struct MetaChanges {
+    std::vector<std::string> canvasProfiles;  //!< Canvas profiles added, removed, or changed in anything but their templates.
+    std::vector<std::string> canvasTemplates; //!< Canvas profiles whose templates or template settings alone changed.
+    std::vector<std::string> outputProfiles;  //!< Output profiles added, removed or changed.
+    std::vector<std::string> renamedProjects; //!< Uids of projects whose name changed.
+
+    //! True when the snapshots describe the same workspace-level state.
+    [[nodiscard]] bool empty() const
+    {
+        return canvasProfiles.empty() && canvasTemplates.empty() && outputProfiles.empty()
+            && renamedProjects.empty();
+    }
+};
+
+/**
  * \class WorkspaceEditor
  * \brief Intent-level, invariant-enforcing edits to a \c Models::Workspace.
  *
@@ -283,6 +303,17 @@ public:
      * \throws nlohmann::json::exception if \p snapshot is not valid metadata JSON.
      */
     void restoreMeta(const std::string& snapshot);
+
+    /**
+     * \brief What a step from \p before to \p after changed, read from two \c snapshotMeta() strings.
+     *
+     * Lets a consumer show what an undo or redo of that step touched without reading the snapshot,
+     * whose format is the library's. Reads no workspace; the order of the snapshots does not matter
+     * for which ids are listed.
+     *
+     * \throws nlohmann::json::exception if either is not valid metadata JSON.
+     */
+    [[nodiscard]] static MetaChanges metaChanges(const std::string& before, const std::string& after);
 
 private:
     // --- invariant helpers (one copy of the rules, shared by the ops above and installLoaded) ---
