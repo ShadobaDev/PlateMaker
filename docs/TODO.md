@@ -41,6 +41,11 @@ pre-process could split the strip at input boundaries into segments that each
 yield a whole number of slices; independent segments could then be scaled/sliced
 on separate threads and the slice files numbered deterministically afterwards.
 
+Measure first. libvips already runs its operations on a thread pool of its own (`vips_concurrency_set()`),
+so a render may keep the cores busy as it is. Record the CPU use per core and the wall time of a render
+of the largest real chapter. Split the strip only if the cores sit idle, and keep the number as the
+baseline the split has to beat.
+
 ---
 
 ## MAJOR — next: 1.0.0
