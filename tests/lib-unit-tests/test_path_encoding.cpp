@@ -170,6 +170,22 @@ TEST(NonAsciiPathTest, FileHashIsEmptyForAFolderOrAMissingFile)
               Infrastructure::FileMetaData::computeSha256(k_content, std::string(k_content).size()));
 }
 
+TEST(NonAsciiPathTest, FileHashCoversAFileLargerThanTheReadBuffer)
+{
+    // Larger than the reader's 1 MiB buffer and not a multiple of its 64 KiB blocks, so the hash spans
+    // several refills and ends on a short block.
+    constexpr std::size_t k_size = (std::size_t{3} << 20) + 12345;
+    std::string content(k_size, '\0');
+    for (std::size_t i = 0; i < k_size; ++i)
+        content[i] = static_cast<char>((i * 31u) & 0xFFu);
+
+    const NonAsciiDir dir;
+    const std::string file = dir.writeChild("large.bin", content);
+
+    EXPECT_EQ(Infrastructure::FileMetaData::computeFileSha256(file),
+              Infrastructure::FileMetaData::computeSha256(content.data(), content.size()));
+}
+
 TEST(NonAsciiPathTest, SanitizeReportsProcessedRatherThanPending)
 {
     // The end-to-end shape of the render bug: an input that was hashed at render time must

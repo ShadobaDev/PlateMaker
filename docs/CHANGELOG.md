@@ -31,6 +31,9 @@
 
 - **The CLI accepts folders and files whose names are not ASCII on Windows.** Such a folder was rejected
   as "not a directory", and a file could not be opened or written.
+- **Hashing a file and packing a workspace read a cloud drive at full speed on Windows.** On Google
+  Drive a file was read at about 25 MB/s, so checking a chapter's files took ten seconds and slowed every
+  other read of the drive meanwhile; it now reads at the drive's own speed.
 
 ## [0.6.0] — 06.11.2026
 

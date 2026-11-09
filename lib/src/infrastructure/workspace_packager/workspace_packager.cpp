@@ -18,6 +18,7 @@
 
 #include "infrastructure/file/folder_paths.hpp"        // genericUtf8(), relativeInside()
 #include "infrastructure/file/atomic_file.hpp"         // publishTempFile()
+#include "infrastructure/file/file_reader.hpp"         // FileReader
 #include "infrastructure/model_json/model_json.hpp"   // the shared Models JSON codec
 
 #include <platemaker/infrastructure/file/path_utf8.hpp>
@@ -457,8 +458,8 @@ bool WorkspacePackager::write(const PackagePlan&       plan,
 
         for (std::size_t i = 0; i < plan.files.size() && !cancelled; ++i) {
             const auto&   f = plan.files[i];
-            std::ifstream in(utf8ToPath(f.source), std::ios::binary);
-            if (!in)
+            FileReader    in(utf8ToPath(f.source));
+            if (!in.isOpen())
                 throw refuse("cannot read '" + f.source + "'");
             zip.begin(f.target, sizes[i]);
             for (std::uint64_t left = sizes[i]; left > 0;) {
@@ -466,11 +467,10 @@ bool WorkspacePackager::write(const PackagePlan&       plan,
                     cancelled = true;
                     break;
                 }
-                const auto n = static_cast<std::streamsize>(std::min<std::uint64_t>(left, k_chunkBytes));
-                in.read(buffer.data(), n);
-                if (in.gcount() != n)
+                const auto n = static_cast<std::size_t>(std::min<std::uint64_t>(left, k_chunkBytes));
+                if (in.read(buffer.data(), n) != n)
                     throw refuse("'" + f.source + "' changed while it was being packed");
-                zip.data(buffer.data(), static_cast<std::size_t>(n), f.target);
+                zip.data(buffer.data(), n, f.target);
                 left -= static_cast<std::uint64_t>(n);
                 advance(static_cast<std::uint64_t>(n));
             }
