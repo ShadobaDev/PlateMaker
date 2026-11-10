@@ -449,4 +449,74 @@ void WorkspaceEditor::restoreMeta(const std::string& snapshot)
     }
 }
 
+namespace {
+
+//! The entries of a snapshot array keyed by \p key, in order: their key, then the entry.
+std::vector<std::pair<std::string, nlohmann::json>> keyed(const nlohmann::json& array, const char* key)
+{
+    std::vector<std::pair<std::string, nlohmann::json>> entries;
+    for (const auto& e : array)
+        entries.emplace_back(e.at(key).get<std::string>(), e);
+    return entries;
+}
+
+/**
+ * \brief Calls \p differs for every key whose entry differs between \p before and \p after: in
+ *        \p after's order, then the keys only \p before holds. An entry on one side only is passed with
+ *        the other as null.
+ */
+template <typename Visit>
+void forEachDifferent(const nlohmann::json& before, const nlohmann::json& after, const char* key, Visit differs)
+{
+    const auto was = keyed(before, key);
+    const auto now = keyed(after, key);
+    const auto find = [](const auto& entries, const std::string& k) -> const nlohmann::json* {
+        for (const auto& [ek, e] : entries)
+            if (ek == k)
+                return &e;
+        return nullptr;
+    };
+    for (const auto& [k, e] : now) {
+        const nlohmann::json* old = find(was, k);
+        if (!old || *old != e)
+            differs(k, old, &e);
+    }
+    for (const auto& [k, e] : was)
+        if (!find(now, k))
+            differs(k, &e, nullptr);
+}
+
+} // namespace
+
+MetaChanges WorkspaceEditor::metaChanges(const std::string& before, const std::string& after)
+{
+    const nlohmann::json was = nlohmann::json::parse(before);
+    const nlohmann::json now = nlohmann::json::parse(after);
+    MetaChanges changes;
+
+    // A canvas profile whose template fields alone differ was changed by template work, not by an edit
+    // of the profile: the two are shown in different places.
+    forEachDifferent(was.at("canvasProfiles"), now.at("canvasProfiles"), "id",
+        [&](const std::string& id, const nlohmann::json* old, const nlohmann::json* cur) {
+            const auto withoutTemplates = [](nlohmann::json j) {
+                j.erase("templates");
+                j.erase("templateSettings");
+                return j;
+            };
+            const bool templatesOnly = old && cur && withoutTemplates(*old) == withoutTemplates(*cur);
+            (templatesOnly ? changes.canvasTemplates : changes.canvasProfiles).push_back(id);
+        });
+    forEachDifferent(was.at("outputProfiles"), now.at("outputProfiles"), "id",
+        [&](const std::string& id, const nlohmann::json*, const nlohmann::json*) {
+            changes.outputProfiles.push_back(id);
+        });
+    // Only a rename: the roster itself is not part of a step (adding or removing a project is not undoable).
+    forEachDifferent(was.at("projects"), now.at("projects"), "uid",
+        [&](const std::string& uid, const nlohmann::json* old, const nlohmann::json* cur) {
+            if (old && cur)
+                changes.renamedProjects.push_back(uid);
+        });
+    return changes;
+}
+
 } // namespace Platemaker::Infrastructure

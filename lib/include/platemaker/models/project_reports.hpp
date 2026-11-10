@@ -2,7 +2,7 @@
  * \file lib/include/platemaker/models/project_reports.hpp
  * \brief What ProjectItem's staleness and re-scan queries answer with.
  *
- * Two small report types, each returned by one \c ProjectItem query.  Kept apart from the
+ * The report types the \c ProjectItem queries return.  Kept apart from the
  * render's own results (\c processing_results.hpp) because they describe what *changed* about a
  * project's configuration or its files on disk, not what a render produced.
  *
@@ -124,6 +124,42 @@ struct StalenessReport {
     {
         return contentDirty || configurationChanged();
     }
+};
+
+/**
+ * \brief Why one file no longer matches the project's configuration, axis by axis.
+ *
+ * The per-file counterpart of \c StalenessReport, returned inside \c FileStalenessReport by
+ * \c ProjectItem::detectFileStaleness().  The configuration's verdict on a file, derived from the
+ * model on every call rather than recorded as a \c FileStatus, so a configuration edit and its
+ * undo are both reflected without anything having to be reset.
+ *
+ * Only an input's \c canvasProfile can be set; the other axes move every slice of the strip at
+ * once and are reported on outputs.
+ */
+struct FileStaleness {
+    bool canvasProfile   = false; //!< Input: the profile it would render with changed. Output: fed by such a page.
+    bool composition     = false; //!< Output: pages added, removed or reordered since the render.
+    bool unrenderedPage  = false; //!< Output: a page in the strip has not been rendered yet (added or replaced since).
+    bool outputProfile   = false; //!< Output: the output profile (format, width, slice height, quality) changed.
+    bool processingSteps = false; //!< Output: the colour correction or the overlays changed.
+
+    //! True when any axis makes the file out of sync.
+    [[nodiscard]] bool any() const noexcept
+    {
+        return canvasProfile || composition || unrenderedPage || outputProfile || processingSteps;
+    }
+};
+
+/**
+ * \brief \c FileStaleness for every file of a project, returned by \c ProjectItem::detectFileStaleness().
+ *
+ * Positional, like the project's own lists: entry \c i describes \c getInputImages()[i] or
+ * \c getOutputImages()[i] as they were when the query ran.
+ */
+struct FileStalenessReport {
+    std::vector<FileStaleness> inputs;  //!< One per input, in \c getInputImages() order.
+    std::vector<FileStaleness> outputs; //!< One per output, in \c getOutputImages() order.
 };
 
 } // namespace Platemaker::Models

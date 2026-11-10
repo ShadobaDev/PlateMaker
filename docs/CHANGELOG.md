@@ -2,10 +2,42 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking — `ProjectEditor::sanitize()` records disk facts only.** It takes no arguments and no
+  longer writes `FileStatus::Desynchronized`: a configuration change leaves every status clean. Ask
+  `ProjectItem::detectFileStaleness()` which files are out of sync, and `detectStaleness()` whether the
+  project needs a render. `replaceInputFile()` and `mergeFileScan()` no longer mark the slices either.
+- **The render hashes each input as it reads it, and recording the render reads no file.** The hash is
+  in the new `AppliedCanvasProfile::sha256`; `ProjectEditor::applyProcessingResults()` takes it from
+  there instead of hashing every input again, which held a consumer's UI thread for seconds on a large
+  chapter. The recorded hash is now that of the content rendered, even if a page is saved during the
+  render. An input with no hash in the outcome becomes `FileStatus::Error` with `InputHashFailed`, as an
+  unreadable one did.
+
+### Added
+
+- **`ProjectItem::detectFileStaleness()`**, which says for each input and output which setting has put it
+  out of sync since the render: a canvas profile, the page order, an unrendered page, the output profile,
+  or the grade and overlays. It reads no file, so it can be asked on every repaint, and it accepts any
+  canvas-profile list, such as one still being edited.
+- **`sanitize()`'s disk pass in three parts**, so a consumer can check files on its own threads:
+  `ProjectEditor::diskCheckRequests()` lists what to look at, the static `checkOnDisk()` looks at one
+  file and is safe on any thread, and `applyDiskChecks()` sets the statuses from the results. A result
+  is ignored when the project no longer has the file, or when a render has recorded a new hash for it
+  since the result was asked for. `sanitize()` is the three run in sequence.
+- **`WorkspaceEditor::metaChanges(before, after)`**, which says what a workspace-level step changed, read
+  from two `snapshotMeta()` strings: the canvas profiles edited, added or removed, those whose templates
+  alone changed, the output profiles, and the renamed projects. A consumer can show what an undo touched
+  without reading the snapshot.
+
 ### Fixed
 
 - **The CLI accepts folders and files whose names are not ASCII on Windows.** Such a folder was rejected
   as "not a directory", and a file could not be opened or written.
+- **Hashing a file and packing a workspace read a cloud drive at full speed on Windows.** On Google
+  Drive a file was read at about 25 MB/s, so checking a chapter's files took ten seconds and slowed every
+  other read of the drive meanwhile; it now reads at the drive's own speed.
 
 ## [0.6.0] — 06.11.2026
 

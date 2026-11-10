@@ -149,8 +149,10 @@ TEST(ProjectEditorTest, ReplaceInputFileKeepsThePageAndForgetsTheOldFile)
     EXPECT_EQ(after.width, 0);
     EXPECT_EQ(after.height, 0);
     EXPECT_TRUE(after.canvasProfileId.empty());
-    // A page of another height moves every slice below it.
-    EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Desynchronized);
+    // A page of another height moves every slice below it. That is the query's to say, from the
+    // Pending page; the slice's own status is a disk fact and stays as it was.
+    EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Done);
+    EXPECT_TRUE(p.detectFileStaleness({}, Models::OutputProfile{}).outputs[0].unrenderedPage);
     EXPECT_EQ(orderSeqUids(p), (std::vector<std::string>{"u0", "u1", "u2"}));
 }
 
@@ -245,9 +247,11 @@ TEST(InputCompositionTest, DetectsReorderAgainstBaseline)
     p.inputOrderAtRender = {"u0", "u1", "u2"};
 
     EXPECT_FALSE(p.detectInputCompositionChange());          // unchanged
+    EXPECT_FALSE(p.detectFileStaleness({}, Models::OutputProfile{}).outputs[0].composition);
 
     Infrastructure::ProjectEditor(p).setInputOrder({"u1", "u0", "u2"});
     EXPECT_TRUE(p.detectInputCompositionChange());           // reordered
+    EXPECT_TRUE(p.detectFileStaleness({}, Models::OutputProfile{}).outputs[0].composition);
 }
 
 TEST(InputCompositionTest, NoOutputsOrNoBaselineReportsNoChange)
@@ -273,8 +277,8 @@ TEST(InputCompositionTest, ApplyProcessingResultsCapturesBaseline)
     // (The unreadable inputs now come back as post-render Error entries; this test only cares about
     // the baseline, so the returned errors are intentionally discarded.)
     // A page the run could not measure keeps the size an earlier render recorded.
-    const std::vector<Models::AppliedCanvasProfile> applied{{"p0.png", "", "", 0, 0},
-                                                            {"p1.png", "", "", 640, 960}};
+    const std::vector<Models::AppliedCanvasProfile> applied{{"p0.png", "", "", 0, 0, ""},
+                                                            {"p1.png", "", "", 640, 960, ""}};
     (void)Infrastructure::ProjectEditor{p}.applyProcessingResults(/*records*/ {}, applied, /*skipped*/ {},
                                    /*workspaceProfiles*/ {}, /*outDir*/ "out", /*ts*/ "2026-07-29T00:00:00Z");
 
@@ -363,10 +367,11 @@ TEST_F(SerializedProject, BackfillsBaselineFromOutputProvenance)
 }
 
 // ---------------------------------------------------------------------------
-// sanitize() marks outputs out-of-sync on a reorder (disk-backed — sanitize hashes files)
+// A reorder leaves every file clean on disk and puts every slice out of sync (disk-backed —
+// sanitize hashes files)
 // ---------------------------------------------------------------------------
 
-TEST(InputCompositionSanitizeTest, ReorderMarksOutputsDesynchronized)
+TEST(InputCompositionSanitizeTest, ReorderLeavesFilesCleanAndPutsSlicesOutOfSync)
 {
     const fs::path dir = fs::temp_directory_path() / "pm-reorder-sanitize";
     fs::remove_all(dir);
@@ -398,15 +403,19 @@ TEST(InputCompositionSanitizeTest, ReorderMarksOutputsDesynchronized)
     p.inputOrderAtRender = {"u0", "u1", "u2"};   // baseline from the "render"
     p.rebuildLookupTables();
 
-    EXPECT_TRUE(Infrastructure::ProjectEditor{p}.sanitize(/*workspaceProfiles*/ {}));   // unchanged → everything settled
+    EXPECT_TRUE(Infrastructure::ProjectEditor{p}.sanitize());   // unchanged → everything settled
 
-    // Reorder, then re-sanitize: outputs go out of sync, inputs stay Processed.
+    // Reorder, then re-sanitize: every file is still clean on disk, and every slice is out of sync.
     Infrastructure::ProjectEditor(p).setInputOrder({"u2", "u1", "u0"});
-    EXPECT_FALSE(Infrastructure::ProjectEditor{p}.sanitize({}));
+    EXPECT_TRUE(Infrastructure::ProjectEditor{p}.sanitize());
     for (const auto& out : p.getOutputImages())
-        EXPECT_EQ(out.status, FileStatus::Desynchronized);
+        EXPECT_EQ(out.status, FileStatus::Done);
     for (const auto& inf : p.getInputImages())
         EXPECT_EQ(inf.status, FileStatus::Processed);
+    const auto report = p.detectFileStaleness({}, Models::OutputProfile{});
+    for (const auto& out : report.outputs)
+        EXPECT_TRUE(out.composition);
+    EXPECT_TRUE(p.detectStaleness({}, Models::OutputProfile{}).needsRender());
 
     std::error_code ec; fs::remove_all(dir, ec);
 }
@@ -455,6 +464,54 @@ OutputFile outputNamed(const std::string& name, const std::string& sha256, FileS
 
 } // namespace
 
+TEST(ProjectEditorTest, DiskPassHashesOnlyWhereAHashDecides)
+{
+    ProjectItem p = makeProject(3);
+    p.getOutputDirectory() = "out";
+    p.getInputImages()[0].sha256 = "a";                       // recorded hash → compare it
+    p.getInputImages()[1].status = FileStatus::Error;         // unverified → retry the hash
+    p.getInputImages()[2].status = FileStatus::Pending;       // never rendered → existence only
+    OutputFile hashed;  hashed.fileName = "s1.png"; hashed.sha256 = "b";
+    OutputFile legacy;  legacy.fileName = "s2.png";            // no recorded hash → existence only
+    p.getOutputImages() = {hashed, legacy};
+
+    const auto requests = Infrastructure::ProjectEditor{p}.diskCheckRequests();
+    ASSERT_EQ(requests.size(), 5u);
+    EXPECT_EQ(requests[0].path, "p0.png"); EXPECT_TRUE(requests[0].hash);
+    EXPECT_EQ(requests[0].recordedSha256, "a");
+    EXPECT_TRUE(requests[1].hash);
+    EXPECT_FALSE(requests[2].hash);
+    EXPECT_EQ(requests[3].path, "out/s1.png"); EXPECT_TRUE(requests[3].hash);
+    EXPECT_FALSE(requests[4].hash);
+}
+
+TEST(ProjectEditorTest, DiskResultsApplyByPathAndLateOnesDoNoHarm)
+{
+    // Results computed elsewhere may arrive after the project changed: a result for a path it no
+    // longer has is ignored, and a file with no result keeps the status it had.
+    ProjectItem p = makeProject(2);
+    p.getOutputDirectory() = "out";
+    p.getInputImages()[0].sha256 = "a";
+    p.getInputImages()[1].sha256 = "b";
+    OutputFile out; out.fileName = "s1.png"; out.sha256 = "c"; out.status = FileStatus::Missing;
+    p.getOutputImages() = {out};
+
+    const std::vector<Infrastructure::DiskCheck> checks{
+        {"p0.png", "a", true, "changed"},   // this page was edited on disk
+        {"gone.png", "x", true, "x"},       // a page the project no longer has
+        {"out/s1.png", "old", true, "c"},   // measured before a render recorded "c": describes a file that is gone
+    };
+    EXPECT_FALSE(Infrastructure::ProjectEditor{p}.applyDiskChecks(checks));
+    EXPECT_EQ(p.getInputImages()[0].status, FileStatus::Modified);
+    EXPECT_EQ(p.getInputImages()[1].status, FileStatus::Processed) << "no result: left as it was";
+    EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Missing)  << "a stale result: left as it was";
+
+    // checkOnDisk() itself: a file that is not there has no hash, whatever was asked.
+    const auto absent = Infrastructure::ProjectEditor::checkOnDisk({"no/such/file.png", true, ""});
+    EXPECT_FALSE(absent.exists);
+    EXPECT_TRUE(absent.sha256.empty());
+}
+
 TEST(ProjectEditorTest, MoveInputNeedsTwoInputs)
 {
     ProjectItem none = makeProject(0);
@@ -483,7 +540,7 @@ TEST(SanitizeOutputsTest, MissingLegacyAndEditedOutputsAreToldApart)
         outputNamed("output_003.png", oldHash,    FileStatus::Done),   // edited after the render
     };
 
-    EXPECT_FALSE(Infrastructure::ProjectEditor{p}.sanitize({}));
+    EXPECT_FALSE(Infrastructure::ProjectEditor{p}.sanitize());
     EXPECT_EQ(p.getOutputImages()[0].status, FileStatus::Missing);
     EXPECT_EQ(p.getOutputImages()[1].status, FileStatus::Done);
     EXPECT_EQ(p.getOutputImages()[2].status, FileStatus::Done) << "existence is trusted without a hash";
@@ -508,7 +565,7 @@ TEST(SanitizeInputsTest, ErrorInputStaysErrorWhileStillUnreadable)
     inf.status   = FileStatus::Error;
     p.getInputImages().push_back(inf);
 
-    (void)Infrastructure::ProjectEditor{p}.sanitize({});
+    (void)Infrastructure::ProjectEditor{p}.sanitize();
     EXPECT_EQ(p.getInputImages()[0].status, FileStatus::Error);
     EXPECT_TRUE(p.getInputImages()[0].sha256.empty());
     fs::permissions(page, fs::perms::owner_all);

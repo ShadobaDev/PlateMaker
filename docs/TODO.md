@@ -41,6 +41,11 @@ pre-process could split the strip at input boundaries into segments that each
 yield a whole number of slices; independent segments could then be scaled/sliced
 on separate threads and the slice files numbered deterministically afterwards.
 
+Measure first. libvips already runs its operations on a thread pool of its own (`vips_concurrency_set()`),
+so a render may keep the cores busy as it is. Record the CPU use per core and the wall time of a render
+of the largest real chapter. Split the strip only if the cores sit idle, and keep the number as the
+baseline the split has to beat.
+
 ---
 
 ## MAJOR — next: 1.0.0
@@ -159,7 +164,7 @@ FetchContent URL, so until a lib version is on GitHub Releases anyone without a 
 local build + upload. How to: `docs/GITHUB-RELEASE.md`.
 
 **Lockstep on a lib bump the GUI needs.** The GUI pins the lib version it requires — currently
-`LIBPLATEMAKER_VERSION 0.6.0` (`find_package(platemaker ${LIBPLATEMAKER_VERSION} CONFIG REQUIRED)`) —
+`LIBPLATEMAKER_VERSION 0.7.0` (`find_package(platemaker ${LIBPLATEMAKER_VERSION} CONFIG REQUIRED)`) —
 so an older lib is rejected at configure time. With the config-version file `SameMinorVersion`, that pin
 also rejects a later breaking `0.MINOR`. A lib PATCH lets the GUI bump its pin with a one-liner and no
 code change.

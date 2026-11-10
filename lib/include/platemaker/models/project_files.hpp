@@ -37,7 +37,8 @@ enum class FileStatus {
     Processed,      //!< File processed and its hash matches the stored hash.
     Modified,       //!< File exists on disk but its content has changed since last processing.
     Missing,        //!< File was registered but cannot be found on disk.
-    Desynchronized, //!< Output is out-of-sync with the current input set.
+    Desynchronized, //!< Out of sync with the configuration. Never written by the library, which leaves that
+                    //!< verdict to ProjectItem::detectFileStaleness(); a consumer may use it to display one.
     Done,           //!< Output slice is up-to-date with the current input set and workspace config.
     Skipped,        //!< Input the last render could not include: the file is missing or failed to
                     //!< load. A size mismatch is NOT a skip — an unmatched page is rendered without

@@ -18,7 +18,7 @@ import subprocess
 
 import pytest
 
-from helpers import create_workspace, make_solid_png
+from helpers import add_profile, create_workspace, make_solid_png
 
 
 # ---------------------------------------------------------------------------
@@ -383,6 +383,16 @@ def test_project_status_processed(tmp_path, platemaker_bin):
     assert r.returncode == 0
     assert "PROCESSED" in r.stdout
     assert re.search(r"up-to-date\s*:\s*yes", r.stdout)
+
+    # A profile that now matches the page changes its margins without touching a file: the page and
+    # its slices read DESYNC and the project is no longer up to date.
+    add_profile(platemaker_bin, ws, name="Page", canvas="800x1200", margins="50,50,50,50")
+    r = _run(platemaker_bin, "project", "status",
+             "--workspace", str(ws), "--name", "Ch01")
+    assert r.returncode == 0
+    assert "DESYNC" in r.stdout
+    assert "PROCESSED" not in r.stdout
+    assert re.search(r"up-to-date\s*:\s*no", r.stdout)
 
 
 def test_project_status_not_found(tmp_path, platemaker_bin):

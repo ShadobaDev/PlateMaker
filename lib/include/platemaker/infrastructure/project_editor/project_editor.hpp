@@ -44,6 +44,28 @@
 namespace Platemaker::Infrastructure {
 
 /**
+ * \brief One file the disk pass has to look at: whether it exists and, when asked, its content hash.
+ *
+ * Returned by \c ProjectEditor::diskCheckRequests(). It is plain data, so a consumer can hand a list of
+ * them to worker threads and run \c ProjectEditor::checkOnDisk() on each, in any order.
+ */
+struct DiskCheckRequest {
+    std::string path;           //!< Absolute path, spelled as the project spells it; the key a result is applied by.
+    bool        hash = false;   //!< Whether the content hash is needed, not only whether the file exists.
+    std::string recordedSha256; //!< The hash the project recorded for the file when this was asked for.
+};
+
+/**
+ * \brief What the disk said about one \c DiskCheckRequest, as \c ProjectEditor::checkOnDisk() found it.
+ */
+struct DiskCheck {
+    std::string path;           //!< The request's path.
+    std::string recordedSha256; //!< The request's recorded hash: what this result was measured against.
+    bool        exists = false; //!< Whether a file is there.
+    std::string sha256;         //!< Its SHA-256 hex digest; empty when not asked for or when it could not be read.
+};
+
+/**
  * \class ProjectEditor
  * \brief Intent-level edits to a single \c Models::ProjectItem's content.
  */
@@ -87,8 +109,8 @@ public:
      * This keeps \c uid and \c order, the page's identity and its place in the strip, and resets
      * exactly the state that described the *old* file: its hash, status, recorded size, thumbnail and
      * the canvas profile it was matched to. The new file is \c Pending until the next \c sanitize()
-     * hashes it. Every output is marked \c Desynchronized, as \c mergeFileScan() does for any
-     * structural change — a page of a different height moves every slice below it.
+     * hashes it. A page of a different height moves every slice below it, which
+     * \c ProjectItem::detectFileStaleness() reports for the Pending page; no status is written.
      *
      * \param uid     The input to repoint.
      * \param newPath Path of the replacement file, in the same form the project's other paths use.
@@ -145,7 +167,11 @@ public:
     // -----------------------------------------------------------------------
 
     /**
-     * \brief Refreshes the status of every tracked file against disk *and* config.
+     * \brief Refreshes the status of every tracked file against disk.
+     *
+     * The three steps below, run here one file after another: \c diskCheckRequests(), \c checkOnDisk()
+     * for each, \c applyDiskChecks(). A consumer that must not wait on the disk runs the middle step on
+     * its own threads instead.
      *
      * For each \c Models::InputFile:
      * - \c Missing   — file no longer exists on disk.
@@ -158,26 +184,59 @@ public:
      * - \c Modified  — slice exists but its SHA-256 differs from the stored hash.
      * - \c Done      — slice exists and (if hashed) matches.
      *
-     * Finally, pages whose canvas profile changed since the render that produced them
-     * — or was never recorded at all — are marked \c Desynchronized, along with the
-     * outputs they fed.  A profile edit changes neither the input nor the output file,
-     * so hashes alone can never notice it; this is what surfaces it (and what makes the
-     * GUI colour those tiles "out of sync").  See \c detectCanvasConfigChange().
+     * These are disk facts only. What a configuration change (a canvas or output profile, the
+     * page order, the grade or the overlays) has put out of sync is never written as a status,
+     * because no file changed: ask \c ProjectItem::detectFileStaleness() for it, and
+     * \c ProjectItem::detectStaleness() for whether the project needs a render.
      *
      * Sets the internal up-to-date flag to \c false if any input is not
      * \c Processed or any output is not \c Done.
      *
-     * \param workspaceProfiles The canvas profiles currently in effect. Required rather
-     *        than optional: an overload without it could be called by accident and would
-     *        silently skip the config check — exactly the class of bug this detects.
      * \return \c true if every input is \c Processed and every output is \c Done.
      */
-    bool sanitize(const std::vector<Models::CanvasProfile>& workspaceProfiles);
+    bool sanitize();
+
+    /**
+     * \brief The files the disk pass has to look at, and which of them it has to hash.
+     *
+     * Every input and every output. A file is hashed only where a hash decides its status: an input
+     * with a recorded hash, or one marked \c Error (whose hash is retried); an output with a recorded
+     * hash. Reads the model only.
+     *
+     * \return One request per tracked file: the inputs first, in \c getInputImages() order, then the
+     *         outputs, in \c getOutputImages() order.
+     */
+    [[nodiscard]] std::vector<DiskCheckRequest> diskCheckRequests() const;
+
+    /**
+     * \brief Looks one file up on disk: whether it exists, and its hash when the request asks for it.
+     *
+     * Touches no project, so it is safe on any thread, for any number of files at once.
+     *
+     * \param request What to look at.
+     * \return What the disk said.
+     */
+    [[nodiscard]] static DiskCheck checkOnDisk(const DiskCheckRequest& request);
+
+    /**
+     * \brief Sets each file's status from what the disk said, by the rules \c sanitize() documents.
+     *
+     * Results are matched to files by path. A file with no result is left as it is, and a result is
+     * ignored when the project no longer has its path, or when the file's recorded hash is no longer
+     * the one the result was measured against (a render recorded a new one since). So results that
+     * arrive after the project changed do no harm.
+     *
+     * \param checks Results from \c checkOnDisk(), in any order.
+     * \return \c true if every input is settled (\c Processed, \c Skipped or \c Error) and every
+     *         output is \c Done.
+     */
+    bool applyDiskChecks(const std::vector<DiskCheck>& checks);
 
     /**
      * \brief Applies the results of a pipeline run to all tracked records.
      *
-     * Updates each \c Models::InputFile with its current SHA-256 hash, sets status
+     * Updates each \c Models::InputFile with the SHA-256 the run took of it
+     * (\c Models::AppliedCanvasProfile::sha256), sets status
      * to \c Processed, fills \c contributesTo from the provenance data in
      * \p records, records the canvas profile applied to each page from
      * \p appliedProfiles, rebuilds the \c Models::OutputFile list and the runtime lookup
@@ -189,6 +248,9 @@ public:
      *
      * This method centralises all post-processing bookkeeping that was
      * previously scattered across the CLI layer.
+     *
+     * Reads no file: every hash comes from \p records and \p appliedProfiles, so the call is cheap
+     * on the consumer's UI thread.
      *
      * \param records           One record per saved output file, in order.
      * \param appliedProfiles   One entry per input the run considered.
@@ -203,8 +265,9 @@ public:
      * \param outputDirectory   Absolute path where output files were written.
      * \param timestamp         ISO 8601 string for \c Models::InputFile::lastProcessed.
      *
-     * \return The typed failures that happened *after* a successful render — one per input whose
-     *         content hash could not be computed (code \c InputHashFailed, category \c Io). Such an
+     * \return The typed failures that happened *after* a successful render — one per input the
+     *         run has no hash of: it could not read the page again once rendered, or it has no
+     *         entry in \p appliedProfiles (code \c InputHashFailed, category \c Io). Such an
      *         input is set to \c Models::FileStatus::Error rather than left \c Pending, so it no longer
      *         silently forces a full re-render on every subsequent run. Empty on a clean apply. The
      *         caller should surface these (CLI print / GUI log + tile) — ignoring them re-hides the
@@ -249,9 +312,9 @@ public:
      * - Old files no longer present: removed.
      *
      * If any structural change is detected (file added, removed, or
-     * reordered at a different strip position), all \c Models::OutputFile entries are
-     * marked \c Desynchronized and \c Models::ScanMergeResult::outputsInvalidated is
-     * set to \c true.
+     * reordered at a different strip position), \c Models::ScanMergeResult::outputsInvalidated
+     * is set to \c true. The slices' statuses are left alone; \c ProjectItem::detectFileStaleness()
+     * reports them out of sync from the model.
      *
      * \param newFilePaths Absolute paths from the new directory scan, in
      *                     the desired strip order (typically sorted by name).

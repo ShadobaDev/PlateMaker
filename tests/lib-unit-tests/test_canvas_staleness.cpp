@@ -166,6 +166,25 @@ private:
     std::filesystem::path m_dir;
 };
 
+/// The configuration's verdict, from detectFileStaleness(): exactly the inputs and outputs listed are
+/// out of sync. sanitize() records disk facts only, so this is where a profile change shows.
+void expectOutOfSync(const ProjectItem& p, const std::vector<CanvasProfile>& ws,
+                     const std::vector<std::size_t>& inputs, const std::vector<std::size_t>& outputs)
+{
+    const FileStalenessReport report = p.detectFileStaleness(ws, OutputProfile{});
+    ASSERT_EQ(report.inputs.size(), p.getInputImages().size());
+    ASSERT_EQ(report.outputs.size(), p.getOutputImages().size());
+    const auto listed = [](const std::vector<std::size_t>& v, std::size_t i) {
+        return std::find(v.begin(), v.end(), i) != v.end();
+    };
+    for (std::size_t i = 0; i < report.inputs.size(); ++i)
+        EXPECT_EQ(report.inputs[i].canvasProfile, listed(inputs, i)) << "input " << i;
+    for (std::size_t o = 0; o < report.outputs.size(); ++o) {
+        const FileStaleness& f = report.outputs[o];
+        EXPECT_EQ(f.canvasProfile || f.composition || f.unrenderedPage, listed(outputs, o)) << "output " << o;
+    }
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -403,6 +422,12 @@ TEST(CanvasConfigChangeTest, NeverRenderedProjectReportsNothing)
     p.getInputImages().push_back(std::move(inf));
 
     EXPECT_FALSE(p.detectCanvasConfigChange(ws).anyChanged());
+
+    // Nor anything per file: a Pending page of a project never rendered has no slice to move.
+    const FileStalenessReport files = p.detectFileStaleness(ws, OutputProfile{});
+    ASSERT_EQ(files.inputs.size(), 1u);
+    EXPECT_FALSE(files.inputs[0].any());
+    EXPECT_TRUE(files.outputs.empty());
 }
 
 TEST(CanvasConfigChangeTest, LegacyWorkspaceWithoutFingerprintsReRendersOnce)
@@ -550,10 +575,11 @@ TEST(CanvasConfigChangePreciseTest, DuplicateSizeResolvesByEffectiveOrder)
 }
 
 // ---------------------------------------------------------------------------
-// sanitize() — config staleness surfaces as FileStatus::Desynchronized
+// sanitize() records disk facts; a configuration change shows in the query
 //
-// This is what paints the tiles amber in the UI, so it is asserted on the statuses
-// themselves rather than on the detection helper.
+// A profile edit touches no file, so sanitize() leaves every status clean and the project
+// up to date on disk. detectFileStaleness() is what a consumer paints amber, so each case
+// asserts it on exactly the files the change reaches.
 // ---------------------------------------------------------------------------
 
 TEST(SanitizeCanvasTest, UnchangedConfigLeavesEverythingClean)
@@ -561,11 +587,12 @@ TEST(SanitizeCanvasTest, UnchangedConfigLeavesEverythingClean)
     const std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
     DiskProject d("clean", 3, ws, "p1");
 
-    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
+    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize());
     for (int i = 0; i < 3; ++i) {
         EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed) << "input " << i;
         EXPECT_EQ(d.outputStatus(i), FileStatus::Done)      << "output " << i;
     }
+    expectOutOfSync(d.project, ws, {}, {});
 }
 
 TEST(SanitizeCanvasTest, SkippedInputIsStickyAndDoesNotForceARender)
@@ -593,24 +620,25 @@ TEST(SanitizeCanvasTest, SkippedInputIsStickyAndDoesNotForceARender)
 
     // Reopen: both skips survive, page 2 stays Processed, and the project is up to date (every output
     // is Done; a skipped page is terminal, not pending work).
-    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
+    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize());
     EXPECT_EQ(d.inputStatus(0), FileStatus::Skipped) << "never-rendered skip must not become Pending";
     EXPECT_EQ(d.inputStatus(1), FileStatus::Skipped) << "stale-hash skip must not become Processed";
     EXPECT_EQ(d.inputStatus(2), FileStatus::Processed);
     EXPECT_TRUE(d.project.isUpToDate());
 
     // Idempotent across a second reopen.
-    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
+    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize());
     EXPECT_EQ(d.inputStatus(0), FileStatus::Skipped);
     EXPECT_EQ(d.inputStatus(1), FileStatus::Skipped);
 
     // But editing a skipped file must re-open it for evaluation (Modified), not leave it stuck.
     std::ofstream(pages[1].filePath, std::ios::binary) << "CHANGED-CONTENT";
-    EXPECT_FALSE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
+    EXPECT_FALSE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize());
     EXPECT_EQ(d.inputStatus(1), FileStatus::Modified);
+    expectOutOfSync(d.project, ws, {}, {});
 }
 
-TEST(SanitizeCanvasTest, MarginEditDesynchronizesOnlyTheAffectedPages)
+TEST(SanitizeCanvasTest, MarginEditPutsOnlyTheAffectedPagesOutOfSync)
 {
     // Page 1 uses a different profile from pages 0 and 2, so editing that profile must
     // touch page 1 and its slice — and nothing else. The precision is the whole point:
@@ -626,25 +654,22 @@ TEST(SanitizeCanvasTest, MarginEditDesynchronizesOnlyTheAffectedPages)
     pages[1].canvasProfileId   = "p2";
     pages[1].canvasFingerprint = canvasRenderFingerprint(ws[1]);
 
-    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws)) << "baseline must start clean";
+    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize()) << "baseline must start clean";
 
     ws[1].margins.top = 999;   // edit only the profile page 1 uses
 
-    EXPECT_FALSE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
-
-    EXPECT_EQ(d.inputStatus(0),  FileStatus::Processed);
-    EXPECT_EQ(d.outputStatus(0), FileStatus::Done);
-
-    EXPECT_EQ(d.inputStatus(1),  FileStatus::Desynchronized) << "page using the edited profile";
-    EXPECT_EQ(d.outputStatus(1), FileStatus::Desynchronized) << "the slice it fed";
-
-    EXPECT_EQ(d.inputStatus(2),  FileStatus::Processed);
-    EXPECT_EQ(d.outputStatus(2), FileStatus::Done);
+    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize()) << "no file changed";
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed) << "input " << i;
+        EXPECT_EQ(d.outputStatus(i), FileStatus::Done)      << "output " << i;
+    }
+    EXPECT_TRUE(d.project.detectStaleness(ws, OutputProfile{}).canvas.anyChanged());
 
     EXPECT_TRUE(d.project.outputsForInput("not-a-page.png").empty()) << "a path that fed nothing";
+    expectOutOfSync(d.project, ws, {1}, {1});   // the page using the edited profile, and the slice it fed
 }
 
-TEST(SanitizeCanvasTest, AddingAMatchingProfileDesynchronizesOnlyThePagesItMatches)
+TEST(SanitizeCanvasTest, AddingAMatchingProfilePutsOnlyThePagesItMatchesOutOfSync)
 {
     // The end-to-end tile story for the reported bug. Three pages rendered without a profile,
     // dimensions recorded: pages 0 and 2 are 1600×10240, page 1 is 800×1280. Adding a profile
@@ -655,17 +680,11 @@ TEST(SanitizeCanvasTest, AddingAMatchingProfileDesynchronizesOnlyThePagesItMatch
     pages[1].width = 800;  pages[1].height = 1280;
     pages[2].width = 1600; pages[2].height = 10240;
 
-    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(std::vector<CanvasProfile>{})) << "baseline clean with no profiles";
+    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize()) << "baseline clean with no profiles";
 
     const std::vector<CanvasProfile> ws{makeProfile("p1", 800, 1280, 40)};   // matches page 1 only
-    EXPECT_FALSE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
-
-    EXPECT_EQ(d.inputStatus(0),  FileStatus::Processed);
-    EXPECT_EQ(d.outputStatus(0), FileStatus::Done);
-    EXPECT_EQ(d.inputStatus(1),  FileStatus::Desynchronized) << "the page the new profile matches";
-    EXPECT_EQ(d.outputStatus(1), FileStatus::Desynchronized) << "the slice it fed";
-    EXPECT_EQ(d.inputStatus(2),  FileStatus::Processed);
-    EXPECT_EQ(d.outputStatus(2), FileStatus::Done);
+    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize()) << "no file changed";
+    expectOutOfSync(d.project, ws, {1}, {1});   // the page the new profile matches, and the slice it fed
 }
 
 TEST(SanitizeCanvasTest, AddingANonMatchingProfileLeavesEverythingClean)
@@ -675,17 +694,18 @@ TEST(SanitizeCanvasTest, AddingANonMatchingProfileLeavesEverythingClean)
     DiskProject d("addnomatch", 3, /*profiles*/ {}, /*usedProfileId*/ "");
     for (auto& inf : d.project.getInputImages()) { inf.width = 1600; inf.height = 10240; }
 
-    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(std::vector<CanvasProfile>{}));
+    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize());
 
     const std::vector<CanvasProfile> ws{makeProfile("p1", 800, 1280, 40)};   // matches nothing here
-    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws)) << "a profile that matches nothing must not desynchronize";
+    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize()) << "a profile that matches nothing must not desynchronize";
     for (int i = 0; i < 3; ++i) {
         EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed) << "input " << i;
         EXPECT_EQ(d.outputStatus(i), FileStatus::Done)      << "output " << i;
     }
+    expectOutOfSync(d.project, ws, {}, {});
 }
 
-TEST(SanitizeCanvasTest, LegacyWorkspaceDesynchronizesEverything)
+TEST(SanitizeCanvasTest, LegacyWorkspacePutsEverythingOutOfSync)
 {
     // No baseline recorded at all: which page used which profile is unknowable, so
     // everything is suspect. This is the "why is it all amber?" case the UI explains.
@@ -698,11 +718,8 @@ TEST(SanitizeCanvasTest, LegacyWorkspaceDesynchronizesEverything)
     }
     d.project.canvasProfileIdsAtRender.clear();
 
-    EXPECT_FALSE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
-    for (int i = 0; i < 3; ++i) {
-        EXPECT_EQ(d.inputStatus(i),  FileStatus::Desynchronized) << "input " << i;
-        EXPECT_EQ(d.outputStatus(i), FileStatus::Desynchronized) << "output " << i;
-    }
+    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize()) << "no file changed";
+    expectOutOfSync(d.project, ws, {0, 1, 2}, {0, 1, 2});
 }
 
 TEST(SanitizeCanvasTest, ColourEditLeavesEverythingClean)
@@ -710,16 +727,17 @@ TEST(SanitizeCanvasTest, ColourEditLeavesEverythingClean)
     // The regression that would make every tile amber on a harmless overlay tweak.
     std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
     DiskProject d("colour", 2, ws, "p1");
-    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
+    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize());
 
     ws[0].visualColour     = RGBA{1, 2, 3, 4};
     ws[0].backgroundColour = RGBA{5, 6, 7, 8};
 
-    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws)) << "template-only fields must not desynchronize";
+    EXPECT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize()) << "template-only fields must not desynchronize";
     for (int i = 0; i < 2; ++i) {
         EXPECT_EQ(d.inputStatus(i),  FileStatus::Processed);
         EXPECT_EQ(d.outputStatus(i), FileStatus::Done);
     }
+    expectOutOfSync(d.project, ws, {}, {});
 }
 
 TEST(SanitizeCanvasTest, MissingFileIsNotMaskedByConfigChange)
@@ -728,15 +746,16 @@ TEST(SanitizeCanvasTest, MissingFileIsNotMaskedByConfigChange)
     // config pass must not overwrite it.
     std::vector<CanvasProfile> ws{makeProfile("p1", 1600, 10240, 100)};
     DiskProject d("missing", 2, ws, "p1");
-    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
+    ASSERT_TRUE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize());
 
     std::filesystem::remove(d.project.getInputImages()[0].filePath);
     ws[0].margins.top = 999;   // config changes too
 
-    EXPECT_FALSE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize(ws));
+    EXPECT_FALSE(Platemaker::Infrastructure::ProjectEditor{d.project}.sanitize());
     EXPECT_EQ(d.inputStatus(0), FileStatus::Missing)
         << "Missing must survive the config pass";
-    EXPECT_EQ(d.inputStatus(1), FileStatus::Desynchronized);
+    EXPECT_EQ(d.inputStatus(1), FileStatus::Processed) << "the configuration's verdict is not a status";
+    expectOutOfSync(d.project, ws, {0, 1}, {0, 1});   // the query flags both; Missing still wins on page 0's tile
 }
 
 // ---------------------------------------------------------------------------
@@ -768,6 +787,7 @@ TEST(OutputProfileSignatureTest, CatchesFormatAndQualityChanges)
     auto project = makeRenderedProject({}, "");   // one slice, "output_001.png"
     project.outputSignature = outputProfileSignature(a);
     EXPECT_FALSE(project.detectStaleness({}, a).configurationChanged());
+    EXPECT_FALSE(project.detectFileStaleness({}, a).outputs[0].any()) << "the per-file form agrees";
 
     auto report = project.detectStaleness({}, c);
     EXPECT_TRUE(report.outputProfileChanged);
@@ -776,6 +796,14 @@ TEST(OutputProfileSignatureTest, CatchesFormatAndQualityChanges)
     report = project.detectStaleness({}, b);
     EXPECT_TRUE(report.outputProfileChanged);
     EXPECT_TRUE(report.outputFormatChanged);
+    EXPECT_TRUE(project.detectFileStaleness({}, b).outputs[0].outputProfile);
+    EXPECT_FALSE(project.detectFileStaleness({}, b).inputs[0].any()) << "a page does not change with the output profile";
+
+    // A grade made after the render puts every slice out of sync, and no page.
+    project.colourCorrection.brightness = 0.25;
+    EXPECT_TRUE(project.detectFileStaleness({}, a).outputs[0].processingSteps);
+    EXPECT_FALSE(project.detectFileStaleness({}, a).inputs[0].any());
+    project.colourCorrection = ColourCorrection{};
 
     // Without a stored signature only the names can tell, and a name without an extension tells nothing.
     project.outputSignature.clear();
