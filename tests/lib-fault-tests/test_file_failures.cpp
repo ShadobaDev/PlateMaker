@@ -3,7 +3,7 @@
  * \brief Files that cannot be written or read whole, archives that fail mid-way, paths that cannot be
  *        resolved: what the caller is told, and that nothing half-made is left behind.
  *
- * A full disk is /dev/full where the library opens the file itself, a failing write() or fread() (fault.hpp)
+ * A full disk is /dev/full where the library opens the file itself, a failing write() or read() (fault.hpp)
  * where it opens it in a folder of its own; a path that cannot be resolved is a symbolic link to itself.
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
@@ -180,7 +180,7 @@ TEST_F(FileFailureTest, AFileThatCannotBeReadWholeHasNoHash)
     writeFile(file, std::string(256 * 1024, 'b'));
     ASSERT_FALSE(FileMetaData::computeFileSha256(file).empty());
 
-    Fault::failCall("fread", 2);   // the first block is read, the second is not
+    Fault::failCall("read", 2);   // the first block is read, the second is not
     EXPECT_EQ(FileMetaData::computeFileSha256(file), "");
 }
 
