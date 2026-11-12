@@ -20,7 +20,6 @@
 
 #include <cerrno>
 #include <cstdarg>
-#include <cstdio>
 #include <vector>
 
 // --- libvips operations ---------------------------------------------------------------------------
@@ -162,10 +161,8 @@ FAULT_C_FUNCTION(const char*, archive_error_string, (struct archive* a), (a), nu
 FAULT_C_FUNCTION(const char*, archive_entry_pathname, (struct archive_entry* entry), (entry), nullptr)
 FAULT_C_FUNCTION(const char*, archive_entry_pathname_utf8, (struct archive_entry* entry), (entry), nullptr)
 
-// --- libc: what std::ofstream writes with, and what FileReader reads with -----------------------------------
-// fread(), not read(): glibc's stdio reaches the system call internally, past the exported read().
-FAULT_C_FUNCTION(size_t, fread, (void* into, size_t size, size_t count, FILE* stream), (into, size, count, stream),
-                 (errno = EIO, size_t{0}))
+// --- libc: what std::ifstream and std::ofstream read and write with -------------------------------------
+FAULT_C_FUNCTION(ssize_t, read, (int fd, void* buffer, size_t size), (fd, buffer, size), (errno = EIO, -1))
 FAULT_C_FUNCTION(ssize_t, write, (int fd, const void* buffer, size_t size), (fd, buffer, size), (errno = ENOSPC, -1))
 
 // glibc declares it noexcept, so it is written out to match; failing, it says the locale does not exist.
