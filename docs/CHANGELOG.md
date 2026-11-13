@@ -17,6 +17,9 @@
 
 ### Added
 
+- **`StripOverlay::content`**, the consumer's own description of an overlay's asset, saved in the workspace
+  file as a JSON object beside the placement. The library stores it and never reads it; it is not part of
+  staleness.
 - **`ProjectItem::detectFileStaleness()`**, which says for each input and output which setting has put it
   out of sync since the render: a canvas profile, the page order, an unrendered page, the output profile,
   or the grade and overlays. It reads no file, so it can be asked on every repaint, and it accepts any

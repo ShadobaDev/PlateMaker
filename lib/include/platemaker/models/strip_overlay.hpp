@@ -126,6 +126,19 @@ struct StripOverlay {
     BlendMode blend   = BlendMode::Over; //!< How it blends onto the slice beneath.
 
     /**
+     * \brief What the consumer made the asset from — its own editable description — as the text of a JSON
+     *        object; empty for none.
+     *
+     * The library stores it with the overlay and never reads it: it renders the asset, and the content is
+     * whatever the consumer needs to edit the asset again (a bubble's shape, line and words). So the
+     * description lives in the workspace file beside the placement it belongs to, and the asset can be
+     * derived from it again. The workspace file embeds it as a JSON object; text that is not one is not
+     * written, and a value that is not one is not read, so a consumer always gets back an object or nothing.
+     * It takes no part in staleness: the asset's \c sha256 is what a render depends on.
+     */
+    std::string content;
+
+    /**
      * Brief Value equality over every field.
      *
      * So that a consumer can ask whether an edit changed anything without re-deriving the answer field
@@ -137,7 +150,7 @@ struct StripOverlay {
     {
         return uid == o.uid && assetPath == o.assetPath && sha256 == o.sha256
             && anchorInputUid == o.anchorInputUid && xFrac == o.xFrac && yFrac == o.yFrac
-            && wFrac == o.wFrac && enabled == o.enabled && blend == o.blend;
+            && wFrac == o.wFrac && enabled == o.enabled && blend == o.blend && content == o.content;
     }
     [[nodiscard]] bool operator!=(const StripOverlay& o) const noexcept 
     { 

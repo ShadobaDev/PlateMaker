@@ -281,6 +281,13 @@ void to_json(nlohmann::json& j, const StripOverlay& v) {
         {"enabled",    v.enabled},
         {"blend",      v.blend}
     };
+    // Embedded as the object it is, so the file stays readable; parsed without throwing, and only an object
+    // is written (StripOverlay::content).
+    if (!v.content.empty()) {
+        nlohmann::json content = nlohmann::json::parse(v.content, nullptr, /*allow_exceptions=*/false);
+        if (content.is_object())
+            j["content"] = std::move(content);
+    }
 }
 void from_json(const nlohmann::json& j, StripOverlay& v) {
     if (j.contains("uid"))        j.at("uid").get_to(v.uid);
@@ -293,6 +300,9 @@ void from_json(const nlohmann::json& j, StripOverlay& v) {
     if (j.contains("wFrac"))      j.at("wFrac").get_to(v.wFrac);
     if (j.contains("enabled"))    j.at("enabled").get_to(v.enabled);
     if (j.contains("blend"))      j.at("blend").get_to(v.blend); // additive (default Over)
+    // Additive: absent, or not an object → no content (StripOverlay::content).
+    if (j.contains("content") && j.at("content").is_object())
+        v.content = j.at("content").dump();
 }
 
 // --- InputFile ---
