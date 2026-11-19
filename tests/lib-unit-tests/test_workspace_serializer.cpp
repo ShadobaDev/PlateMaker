@@ -677,6 +677,7 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     ovl.yFrac          = 1.875;
     ovl.enabled        = true;
     ovl.blend          = Models::BlendMode::Multiply;
+    ovl.content        = R"({"shape":{"kind":"box"},"text":{"body":"HEY!"}})";   // the consumer's, kept as it is
     proj.getStripOverlays().push_back(std::move(ovl));
     original.projectItems.push_back(std::move(proj));
 
@@ -710,8 +711,48 @@ TEST(WorkspaceSerializerTest, RoundTripPreservesProcessingSteps)
     EXPECT_DOUBLE_EQ(p.getStripOverlays()[0].yFrac, 1.875);
     EXPECT_TRUE(p.getStripOverlays()[0].enabled);
     EXPECT_EQ(p.getStripOverlays()[0].blend, Models::BlendMode::Multiply);
+    EXPECT_EQ(nlohmann::json::parse(p.getStripOverlays()[0].content),
+              nlohmann::json::parse(original.projectItems.front().getStripOverlays()[0].content));
+    EXPECT_EQ(p.getStripOverlays()[0], original.projectItems.front().getStripOverlays()[0])
+        << "the content's text comes back as it was written, so an overlay compares equal to itself";
+
+    // In the file it is the object itself, not a string holding one: a reader of the workspace sees it.
+    nlohmann::json j;
+    { std::ifstream in(tmp); in >> j; }
+    EXPECT_TRUE(j["projectItems"][0]["stripOverlays"][0]["content"].is_object());
 
     std::filesystem::remove(tmp);
+}
+
+TEST(WorkspaceSerializerTest, AnOverlaysContentIsAnObjectOrNothing)
+{
+    // The library never reads the content; it only promises the consumer an object back, or none.
+    const WorkspaceSerializer ser;
+    Models::Workspace         original = makeMinimalWorkspace();
+    Models::ProjectItem       proj;
+    proj.uid = "proj-content-001";
+    for (const char* content : {"", "[1, 2]", "not json"}) {
+        Models::StripOverlay ov;
+        ov.uid     = std::string("ovl-") + std::to_string(proj.getStripOverlays().size());
+        ov.content = content;
+        proj.getStripOverlays().push_back(ov);
+    }
+    original.projectItems.push_back(std::move(proj));
+
+    const std::filesystem::path tmp = std::filesystem::temp_directory_path() / "pm_test_overlay_content.json";
+    ser.save(original, tmp.string());
+    nlohmann::json j;
+    { std::ifstream in(tmp); in >> j; }
+    for (const auto& ov : j["projectItems"].back()["stripOverlays"])
+        EXPECT_FALSE(ov.contains("content")) << "written: " << ov.dump() << " — only an object is";
+
+    // A file whose content is not an object (written by hand, or by something else) loads it as none.
+    j["projectItems"].back()["stripOverlays"][0]["content"] = 5;
+    { std::ofstream out(tmp); out << j.dump(2); }
+    const Models::Workspace loaded = ser.load(tmp.string());
+    std::filesystem::remove(tmp);
+    for (const auto& ov : loaded.projectItems.back().getStripOverlays())
+        EXPECT_TRUE(ov.content.empty()) << ov.uid;
 }
 
 TEST(WorkspaceSerializerTest, LegacyProjectLoadsProcessingDefaults)
